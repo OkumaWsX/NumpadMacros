@@ -51,9 +51,10 @@ class KeyMaps(unittest.TestCase):
         self.assertEqual(mac_missing, set())
         self.assertTrue(hasattr(send_win, "KeySender"))
         try:
-            from npm.send_linux import _tables
+            import evdev  # noqa: F401  (solo existe en Linux)
         except ImportError:
             return
+        from npm.send_linux import _tables
         k, m = _tables()
         self.assertTrue(set(keys.KEY_CHOICES) <= set(k))
         self.assertTrue(set(keys.MODIFIERS) <= set(m))
