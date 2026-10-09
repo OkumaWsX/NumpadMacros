@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+build/
+dist/
+interception.dll
+
+third_party/
+dist-installer/

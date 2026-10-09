@@ -1,0 +1,39 @@
+name: Reporte de error
+description: Algo no funciona como debería
+labels: ["error"]
+body:
+  - type: markdown
+    attributes:
+      value: "Gracias por reportar. Mientras más detalles, más rápido se arregla."
+  - type: dropdown
+    id: sistema
+    attributes:
+      label: Sistema operativo
+      options: [Windows 11, Windows 10, Linux, macOS]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Versión de Numpad Macros
+      description: Aparece en la pestaña «Creador».
+      placeholder: "3.2.1"
+    validations:
+      required: true
+  - type: input
+    id: hardware
+    attributes:
+      label: Numpad / teclado
+      placeholder: "Numpad USB genérico, HyperX Alloy Origins Core…"
+  - type: textarea
+    id: que-paso
+    attributes:
+      label: ¿Qué pasó?
+      description: Qué hiciste, qué esperabas y qué pasó en realidad.
+    validations:
+      required: true
+  - type: textarea
+    id: mensaje
+    attributes:
+      label: Mensaje en la barra de abajo de la ventana (si hay)
+      render: text

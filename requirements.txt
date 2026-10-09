@@ -1,0 +1,9 @@
+# Icono en la bandeja del sistema (Windows y Linux)
+pystray>=0.19; sys_platform != "darwin"
+Pillow>=10; sys_platform != "darwin"
+# Botonera propia en Windows y macOS
+numpy>=1.24; sys_platform != "linux"
+sounddevice>=0.4.6; sys_platform != "linux"
+soundfile>=0.12; sys_platform != "linux"
+# Captura del numpad y teclado virtual en Linux
+evdev>=1.6; sys_platform == "linux"

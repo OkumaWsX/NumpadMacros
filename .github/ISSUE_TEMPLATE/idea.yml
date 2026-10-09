@@ -1,0 +1,15 @@
+name: Idea / mejora
+description: Propón una función nueva o un cambio
+labels: ["mejora"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: ¿Qué te gustaría que hiciera la app?
+    validations:
+      required: true
+  - type: textarea
+    id: para-que
+    attributes:
+      label: ¿Para qué lo usarías?
+      description: Contar el caso de uso ayuda a diseñarlo bien.

@@ -1,0 +1,179 @@
+<div align="center">
+
+<img src="assets/icon.png" width="110" alt="Icono de Numpad Macros">
+
+# Numpad Macros
+
+**Convierte un numpad USB (o la fila de números de tu teclado) en una botonera de sonidos y atajos, sin tocar tu teclado principal.**
+
+[![Descargar](https://img.shields.io/github/v/release/OkumaWsX/NumpadMacros?label=descargar&color=f2a33a)](https://github.com/OkumaWsX/NumpadMacros/releases/latest)
+[![Compilación](https://github.com/OkumaWsX/NumpadMacros/actions/workflows/build.yml/badge.svg)](https://github.com/OkumaWsX/NumpadMacros/actions/workflows/build.yml)
+[![Licencia: LGPL-3.0](https://img.shields.io/badge/licencia-LGPL--3.0-blue)](LICENSE)
+![Windows · Linux · macOS](https://img.shields.io/badge/plataformas-Windows%20%C2%B7%20Linux%20%C2%B7%20macOS-lightgrey)
+[![Discord](https://img.shields.io/badge/Discord-soporte-5865f2?logo=discord&logoColor=white)](https://discord.gg/hcutJcBx9)
+
+<img src="docs/img/principal.png" width="820" alt="Ventana principal de Numpad Macros">
+
+</div>
+
+---
+
+## ¿Qué es?
+
+Numpad Macros es una aplicación de escritorio **gratuita y de código abierto** pensada para streamers, gamers y creadores de contenido. Cada tecla del numpad puede **reproducir un sonido** (que se escucha en tus audífonos y también por tu micrófono en Discord, OBS o el juego) o **enviar un atajo de teclado** a cualquier programa.
+
+Es independiente: trae su propia biblioteca y su propio reproductor de sonidos, así que **no necesita Soundpad** ni otro programa.
+
+## Características
+
+| | |
+|---|---|
+| 🎹 **Solo tu numpad** | Detecta el numpad exacto y lo toma en exclusiva. Tu teclado principal sigue funcionando normal. |
+| ⌨️ **Sin numpad también** | El **modo macros** (`Ctrl+Alt+M`) convierte la fila `1–0`, `-` y `=` de tu teclado en teclas macro. Las demás teclas siguen escribiendo. |
+| 🔊 **Biblioteca de sonidos** | Agrega archivos o carpetas completas (MP3, WAV, OGG, FLAC, OPUS), búscalos, escúchalos y asígnalos con un clic. |
+| 🎙️ **Micrófono virtual** | Los sonidos salen por tus audífonos y por un micrófono virtual. También puedes mezclar tu micrófono real para hablar y lanzar efectos a la vez. |
+| ⏯️ **4 formas de sonar** | Superponer, Reiniciar, Alternar (pulsa para sonar y otra vez para detener) o *Mientras se mantiene*. Volumen por tecla. |
+| 🧩 **Atajos de teclado** | Cualquier combinación (por ejemplo `Ctrl+Shift+F13`) para OBS, Discord u otro programa. Se mantiene apretada mientras mantienes la tecla (sirve para push-to-talk). |
+| 🗂️ **Bancos** | Varias páginas de asignaciones. La capa *Global* aplica en todos los bancos; `NumLock` cambia de banco. |
+| 📥 **Importa desde Soundpad** | Trae tus sonidos desde una lista `.spl` de Soundpad. |
+| 💻 **Multiplataforma** | Windows 10/11, Linux (X11 y Wayland) y macOS. |
+
+## Descarga
+
+Descarga la última versión desde **[Releases](https://github.com/OkumaWsX/NumpadMacros/releases/latest)**:
+
+| Sistema | Archivo | Cómo se instala |
+|---|---|---|
+| **Windows 10/11** | `NumpadMacros-Windows-Setup.exe` | Asistente *Siguiente → Siguiente → Instalar* |
+| Windows (portátil) | `NumpadMacros-Windows-portable.zip` | Descomprimir y abrir `NumpadMacros.exe` |
+| **Linux** | `NumpadMacros-Linux.tar.gz` | Descomprimir y ejecutar `./instalar_linux.sh` |
+| **macOS** | `NumpadMacros-macOS.zip` | Mover a *Aplicaciones* y abrir con clic derecho → *Abrir* |
+
+> **Windows:** como la app no tiene una firma digital pagada, la primera vez puede aparecer «Windows protegió su PC». Pulsa **Más información → Ejecutar de todas formas**.
+
+## Instalación
+
+<details open>
+<summary><b>Windows</b></summary>
+
+1. Abre `NumpadMacros-Windows-Setup.exe` y sigue el asistente.
+2. En el paso de componentes vienen marcados:
+   - **Driver Interception**, para que la app use *solo* tu numpad (incluido en el instalador).
+   - **VB-Cable**, el micrófono virtual. Se descarga de la página oficial de VB-Audio; en su ventana pulsa **Install Driver**.
+3. Reinicia cuando el instalador lo pida.
+4. En la pestaña **Audio** elige «CABLE Input» como micrófono virtual, y en Discord, OBS o el juego elige «CABLE Output» como micrófono.
+
+<p align="center"><img src="docs/img/instalador-1.png" width="420" alt="Instalador: bienvenida"> <img src="docs/img/instalador-2.png" width="420" alt="Instalador: componentes"></p>
+
+Sin el driver Interception la app funciona igual en *modo sin driver* (captura el numpad de cualquier teclado).
+</details>
+
+<details>
+<summary><b>Linux</b></summary>
+
+1. Descomprime `NumpadMacros-Linux.tar.gz` y ejecuta `./instalar_linux.sh`. La app queda en el menú de aplicaciones.
+2. La primera vez, en **Numpad y opciones**, pulsa **Dar permisos…** y escribe tu contraseña. Funciona al instante, sin cerrar sesión.
+3. El micrófono virtual **NumpadMacros-Mic** se crea solo (PipeWire o PulseAudio). Elígelo como micrófono en Discord, OBS o el juego.
+</details>
+
+<details>
+<summary><b>macOS</b></summary>
+
+1. Descomprime `NumpadMacros-macOS.zip`, mueve **Numpad Macros** a *Aplicaciones* y ábrelo con **clic derecho → Abrir**.
+2. En **Ajustes del Sistema → Privacidad y seguridad**, activa Numpad Macros en **Monitoreo de entrada** y en **Accesibilidad**.
+3. Para el micrófono virtual instala **[BlackHole 2ch](https://existential.audio/blackhole/)** (gratis) y elígelo en la pestaña **Audio** y en Discord, OBS o el juego.
+</details>
+
+## Uso rápido
+
+1. **Numpad y opciones → Detectar numpad**, y pulsa una tecla de tu numpad.
+2. **Sonidos → ＋ Carpeta…** para cargar tus efectos.
+3. Haz clic en una tecla del dibujo, elige un sonido y pulsa **Asignar**.
+4. Elige cómo suena y pruébalo con **▶ Probar**.
+
+¿Sin numpad? Asigna sonidos a la **fila de números** del dibujo y pulsa `Ctrl+Alt+M` para activar el modo macros.
+
+La guía completa está en **[LEEME.md](LEEME.md)**.
+
+<details>
+<summary><b>Más capturas</b></summary>
+
+| Biblioteca de sonidos | Numpad y opciones |
+|---|---|
+| <img src="docs/img/sonidos.png" alt="Biblioteca de sonidos"> | <img src="docs/img/opciones.png" alt="Opciones"> |
+| **Audio** | **Creador y soporte** |
+| <img src="docs/img/audio.png" alt="Audio"> | <img src="docs/img/creador.png" alt="Creador"> |
+</details>
+
+## Cómo funciona
+
+| Sistema | Captura del numpad | Envío de atajos | Micrófono virtual |
+|---|---|---|---|
+| Windows | Driver [Interception](https://github.com/oblitum/Interception) (por dispositivo) o hook de teclado | `SendInput` | [VB-Cable](https://vb-audio.com/Cable/) |
+| Linux | `evdev` con acceso exclusivo (`EVIOCGRAB`) | Teclado virtual `uinput` | Creado con PipeWire / PulseAudio |
+| macOS | IOKit (`IOHIDManager`, modo *seize*) y `CGEventTap` | Eventos Quartz | [BlackHole](https://existential.audio/blackhole/) |
+
+Más detalles para desarrolladores en **[docs/ARQUITECTURA.md](docs/ARQUITECTURA.md)**.
+
+## Compilar desde el código
+
+Requisitos: **Python 3.12** (con tkinter).
+
+```bash
+git clone https://github.com/OkumaWsX/NumpadMacros.git
+cd NumpadMacros
+python -m pip install -r requirements.txt
+python NumpadMacros.pyw            # ejecutar sin compilar
+python -m unittest discover -s tests   # pruebas
+```
+
+Para crear los programas:
+
+| Sistema | Comando | Resultado |
+|---|---|---|
+| Windows | `crear_instalador.bat` (requiere [Inno Setup 6](https://jrsoftware.org/isinfo.php)) | `dist-installer\NumpadMacros-Setup-x.y.z.exe` |
+| Linux / macOS | `./compilar.sh` | `dist/NumpadMacros` o `dist/Numpad Macros.app` |
+
+Cada vez que se publica una etiqueta `v*`, **GitHub Actions** compila las tres versiones y crea la Release automáticamente ([`build.yml`](.github/workflows/build.yml)).
+
+## Estructura del proyecto
+
+```
+NumpadMacros/
+├── NumpadMacros.pyw        # punto de entrada
+├── npm/                    # código de la app
+│   ├── gui.py              # ventana (tkinter)
+│   ├── engine.py           # lógica de teclas, bancos y modo macros
+│   ├── capture_*.py        # captura del teclado por sistema
+│   ├── send_*.py           # envío de atajos por sistema
+│   ├── soundboard.py       # reproductor y micrófono virtual
+│   └── library.py          # biblioteca de sonidos
+├── tests/                  # pruebas automáticas
+├── installer/              # instalador de Windows (Inno Setup)
+├── assets/                 # icono e imágenes
+├── docs/                   # documentación y capturas
+└── NumpadMacros.spec       # empaquetado con PyInstaller
+```
+
+## Contribuir
+
+¡Los reportes de errores, ideas y pull requests son bienvenidos! Lee **[CONTRIBUTING.md](CONTRIBUTING.md)** antes de empezar. Para dudas rápidas, entra al **[servidor de Discord](https://discord.gg/hcutJcBx9)**.
+
+## Apoya el proyecto
+
+Numpad Macros es gratis. Si te sirve y quieres apoyar su desarrollo:
+
+<p align="center"><a href="https://ceneka.net/OkumaWsX"><img src="https://img.shields.io/badge/%E2%99%A5%20Donar-ceneka.net%2FOkumaWsX-f2a33a?style=for-the-badge" alt="Donar"></a></p>
+
+## Licencia
+
+Numpad Macros es software libre bajo la **[GNU Lesser General Public License v3.0](LICENSE)** (o posterior). La LGPL complementa a la [GNU GPL v3](COPYING), incluida también en el repositorio.
+
+Componentes de terceros: ver **[THIRD_PARTY.md](THIRD_PARTY.md)**.
+
+## Creador
+
+Hecho por **OkumaWsX**
+
+[![Instagram](https://img.shields.io/badge/Instagram-@okumawsx-c13584?logo=instagram&logoColor=white)](https://www.instagram.com/okumawsx)
+[![Discord](https://img.shields.io/badge/Discord-comunidad%20y%20soporte-5865f2?logo=discord&logoColor=white)](https://discord.gg/hcutJcBx9)
