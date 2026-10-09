@@ -99,10 +99,33 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Notas de la versión (desde CHANGELOG.md)
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          awk -v v="$ver" '$0 ~ "^## \\["v"\\]" {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md > notas.md
+          cat >> notas.md <<'TXT'
+
+          ### Descargas
+          | Sistema | Archivo |
+          |---|---|
+          | Windows 10/11 (instalador) | `NumpadMacros-Windows-Setup.exe` |
+          | Windows (portátil) | `NumpadMacros-Windows-portable.zip` |
+          | Linux | `NumpadMacros-Linux.tar.gz` |
+          | macOS | `NumpadMacros-macOS.zip` |
+
+          Guía de instalación: [README](https://github.com/OkumaWsX/NumpadMacros#instalación)
+          TXT
+          sed -i 's/^          //' notas.md
+          cat notas.md
+
       - uses: actions/download-artifact@v4
         with:
           path: out
           merge-multiple: true
       - uses: softprops/action-gh-release@v2
         with:
+          name: Numpad Macros ${{ github.ref_name }}
+          body_path: notas.md
           files: out/*
