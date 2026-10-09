@@ -6,7 +6,7 @@
 
 **Convierte un numpad USB (o la fila de números de tu teclado) en una botonera de sonidos y atajos, sin tocar tu teclado principal.**
 
-[![Descargar](https://img.shields.io/github/v/release/OkumaWsX/NumpadMacros?label=descargar&color=f2a33a)](https://github.com/OkumaWsX/NumpadMacros/releases/latest)
+[![Descargar](https://img.shields.io/badge/descargar-v3.2.1-f2a33a)](#descarga)
 [![Compilación](https://github.com/OkumaWsX/NumpadMacros/actions/workflows/build.yml/badge.svg)](https://github.com/OkumaWsX/NumpadMacros/actions/workflows/build.yml)
 [![Licencia: LGPL-3.0](https://img.shields.io/badge/licencia-LGPL--3.0-blue)](LICENSE)
 ![Windows · Linux · macOS](https://img.shields.io/badge/plataformas-Windows%20%C2%B7%20Linux%20%C2%B7%20macOS-lightgrey)
@@ -40,7 +40,17 @@ Es independiente: trae su propia biblioteca y su propio reproductor de sonidos, 
 
 ## Descarga
 
-Descarga la última versión desde **[Releases](https://github.com/OkumaWsX/NumpadMacros/releases/latest)**:
+### Windows 10/11 — descarga directa
+
+<p align="center"><a href="https://github.com/OkumaWsX/NumpadMacros/raw/main/descargas/NumpadMacros-Windows-Setup.exe"><img src="https://img.shields.io/badge/%E2%AC%87%20Descargar%20para%20Windows-instalador%20v3.2.1-f2a33a?style=for-the-badge&logo=windows" alt="Descargar para Windows"></a></p>
+
+Archivo: [`descargas/NumpadMacros-Windows-Setup.exe`](descargas/NumpadMacros-Windows-Setup.exe) (23 MB). Ábrelo y sigue el asistente *Siguiente → Siguiente → Instalar*.
+
+> Como la app no tiene una firma digital pagada, la primera vez puede aparecer «Windows protegió su PC». Pulsa **Más información → Ejecutar de todas formas**.
+
+### Todas las plataformas
+
+En **[Releases](https://github.com/OkumaWsX/NumpadMacros/releases)** se publican todas las versiones:
 
 | Sistema | Archivo | Cómo se instala |
 |---|---|---|
@@ -48,8 +58,6 @@ Descarga la última versión desde **[Releases](https://github.com/OkumaWsX/Nump
 | Windows (portátil) | `NumpadMacros-Windows-portable.zip` | Descomprimir y abrir `NumpadMacros.exe` |
 | **Linux** | `NumpadMacros-Linux.tar.gz` | Descomprimir y ejecutar `./instalar_linux.sh` |
 | **macOS** | `NumpadMacros-macOS.zip` | Mover a *Aplicaciones* y abrir con clic derecho → *Abrir* |
-
-> **Windows:** como la app no tiene una firma digital pagada, la primera vez puede aparecer «Windows protegió su PC». Pulsa **Más información → Ejecutar de todas formas**.
 
 ## Instalación
 

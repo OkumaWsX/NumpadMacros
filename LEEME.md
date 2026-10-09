@@ -58,7 +58,9 @@ Queda en el menú Inicio, con acceso directo en el escritorio, y se desinstala d
 Para que Discord o un juego "escuchen" los sonidos, el sistema necesita un dispositivo de micrófono extra. Crear uno requiere un **driver de audio**: Soundpad trae el suyo dentro del instalador. En Windows y Mac la app usa VB-Cable o BlackHole, que son gratuitos y se instalan una sola vez. En Linux no hace falta, porque PipeWire permite crearlo sin drivers. Sin micrófono virtual, todo funciona igual, pero los sonidos solo se escuchan en tus audífonos.
 
 ## Dónde descargar
-Todas las versiones están en **https://github.com/OkumaWsX/NumpadMacros/releases/latest**: el instalador de Windows (`NumpadMacros-Windows-Setup.exe`), la versión portátil de Windows, Linux (`NumpadMacros-Linux.tar.gz`) y macOS (`NumpadMacros-macOS.zip`).
+**Windows (descarga directa):** https://github.com/OkumaWsX/NumpadMacros/raw/main/descargas/NumpadMacros-Windows-Setup.exe
+
+Todas las versiones se publican en **https://github.com/OkumaWsX/NumpadMacros/releases**: el instalador de Windows (`NumpadMacros-Windows-Setup.exe`), la versión portátil de Windows, Linux (`NumpadMacros-Linux.tar.gz`) y macOS (`NumpadMacros-macOS.zip`).
 
 Para compilar desde el código, consulta la sección «Compilar desde el código» del [README](README.md).
 
