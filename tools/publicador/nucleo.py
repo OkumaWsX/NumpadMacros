@@ -319,6 +319,8 @@ class Package:
                     continue
                 with open(full, "rb") as f:
                     data = f.read()
+                if b"\0" not in data[:8000]:          # texto: GitHub guarda los finales de línea como LF
+                    data = data.replace(b"\r\n", b"\n")
                 execb = rel in self.exec_bits or (os.name != "nt" and os.access(full, os.X_OK) and self.tmp is None)
                 out[rel] = (data, "100755" if execb or rel.endswith(".sh") else "100644")
         return out

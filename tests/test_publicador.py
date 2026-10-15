@@ -119,6 +119,7 @@ class PublicadorTest(unittest.TestCase):
             z.writestr("NumpadMacros/CHANGELOG.md", "# Historial\n\n## [Sin publicar]\n### Añadido\n"
                        "- Algo nuevo\n\n## [3.2.1] - 2026-10-09\n### Añadido\n- Antes\n")
             z.writestr("NumpadMacros/npm/__pycache__/x.pyc", b"basura")
+            z.writestr("NumpadMacros/crear_instalador.bat", b"@echo off\r\nrem prueba\r\n")
         with open(os.path.join(HERE, "npm/about.py"), "rb") as f:
             about = f.read()
         remote = {"README.md": b"viejo", "npm/about.py": about,
@@ -168,6 +169,7 @@ class PublicadorTest(unittest.TestCase):
         files = self.fake.tree_files()
         self.assertIn(b"Nota corregida a mano", files["CHANGELOG.md"])
         self.assertNotIn("descargas/NumpadMacros-Windows-Setup.exe", files)
+        self.assertEqual(files["crear_instalador.bat"], b"@echo off\nrem prueba\n")   # CRLF -> LF
         mode = self.fake.trees[self.fake.commits[self.fake.head]]["compilar.sh"][1]
         self.assertEqual(mode, "100755")
         # sin cambios: no crea otro commit
