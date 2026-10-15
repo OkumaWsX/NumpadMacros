@@ -121,7 +121,7 @@ class PublicadorTest(unittest.TestCase):
             z.writestr("NumpadMacros/npm/__pycache__/x.pyc", b"basura")
             z.writestr("NumpadMacros/crear_instalador.bat", b"@echo off\r\nrem prueba\r\n")
         with open(os.path.join(HERE, "npm/about.py"), "rb") as f:
-            about = f.read()
+            about = f.read().replace(b"\r\n", b"\n")      # GitHub guarda LF (en Windows el disco tiene CRLF)
         remote = {"README.md": b"viejo", "npm/about.py": about,
                   "descargas/NumpadMacros-Windows-Setup.exe": b"exe"}
         self.fake = FakeGitHub(remote)
