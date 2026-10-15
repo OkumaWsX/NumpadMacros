@@ -233,6 +233,9 @@ class App:
         self.chip_row = FlatButton(chips, command=self._toggle_row, bg=C["bg"],
                                    font=(FONT, BASE - 1, "bold"), padx=8, pady=1)
         self.chip_row.pack(side="left")
+        # aviso del compresor o de saturación (junto a los demás indicadores)
+        self.meter_flag = tk.Label(chips, bg=C["bg"], font=(FONT, BASE - 1, "bold"))
+        self.meter_flag.pack(side="left", padx=(14, 0))
 
         bank_box = ttk.Frame(head)
         bank_box.grid(row=0, column=2, sticky="e", padx=(0, 14))
@@ -262,8 +265,6 @@ class App:
             val = tk.Label(mt, text="—", bg=C["bg"], fg=C["muted"], font=(FONT, BASE - 2), width=7, anchor="w")
             val.grid(row=i, column=2, sticky="w", padx=(6, 0))
             self.meters[key] = (m, val)
-        self.meter_flag = tk.Label(mt, bg=C["bg"], font=(FONT, BASE - 2, "bold"), width=16, anchor="w")
-        self.meter_flag.grid(row=0, column=3, rowspan=2, sticky="w", padx=(4, 0))
 
         # aviso de versión nueva (oculto hasta que haya una)
         self.banner = tk.Frame(head, bg="#3a2c14", highlightbackground=C["accent_dim"], highlightthickness=1)
@@ -1988,9 +1989,9 @@ class App:
             shown = meter.set(peak)
             val.configure(text=f"{shown:.0f} dB" if shown > -59 else "")
             if sat:
-                flag, color = "SATURA", C["bad"]
+                flag, color = "● SATURA: baja el volumen", C["bad"]
             elif gr >= 1.0 and not flag:
-                flag, color = f"Compresor −{gr:.0f} dB", C["warn"]
+                flag, color = f"● Compresor bajando {gr:.0f} dB", C["warn"]
         self.meter_flag.configure(text=flag, fg=color)
         if hasattr(self, "comp_live"):
             gr = max((d[2] for d in lv.values() if d), default=0.0)
@@ -2061,7 +2062,7 @@ class App:
                 self.cfg["updates"]["last_check"] = checked_at
             self._save()
         if err:
-            self.upd_lbl.configure(text=f"No se pudo comprobar: {err}")
+            self.upd_lbl.configure(text="No se pudo comprobar (sin conexión con GitHub). Se volverá a intentar.")
             if manual:
                 self._set_status("No pude consultar si hay versiones nuevas (¿hay internet?).", bad=True)
             return

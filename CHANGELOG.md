@@ -3,6 +3,9 @@
 Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
+### Corregido
+- El aviso del compresor y de saturación ya no queda cortado junto a los medidores: ahora aparece con los demás indicadores.
+- Mensaje más claro cuando no se puede buscar actualizaciones por falta de conexión.
 
 ## [3.3.0] - 2026-10-15
 ### Añadido
