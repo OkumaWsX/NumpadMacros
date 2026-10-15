@@ -17,6 +17,28 @@ import urllib.error
 import urllib.request
 
 REPO = os.environ.get("GITHUB_REPOSITORY", "OkumaWsX/NumpadMacros")
+# Acepta discord.com / discordapp.com / ptb. / canary. y /api/v10/webhooks/, aunque venga con texto alrededor
+WEBHOOK_RE = re.compile(r"https://(?:[a-z]+\.)?discord(?:app)?\.com/api/(?:v\d+/)?webhooks/\d+/[\w-]+")
+
+
+def describe(text: str) -> str:
+    """Qué hay guardado en el secreto, sin mostrar la parte secreta."""
+    t = text.strip()
+    if "discord.gg/" in t or "discord.com/invite/" in t:
+        return ("Guardaste un enlace de invitación al servidor, no la URL del webhook. En Discord: Editar canal → "
+                "Integraciones → Webhooks → elige el webhook → «Copiar URL del webhook».")
+    if "discord.com/channels/" in t:
+        return ("Guardaste el enlace de un canal, no la URL del webhook. En Discord: Editar canal → Integraciones → "
+                "Webhooks → elige el webhook → «Copiar URL del webhook».")
+    if "webhooks" in t:
+        cut = t[:t.index("webhooks") + len("webhooks")]
+        return (f"Empieza con «{cut}…» pero está incompleta o tiene otro formato: copia de nuevo la URL completa "
+                "con «Copiar URL del webhook».")
+    start = t[:8] + "…" if len(t) > 8 else t
+    return (f"Tiene {len(t)} caracteres y empieza con «{start}». La URL correcta empieza con "
+            "https://discord.com/api/webhooks/ y se obtiene con «Copiar URL del webhook».")
+
+
 HINTS = {
     401: "el webhook no es válido: vuelve a copiar su URL en Discord y guárdala de nuevo en el secreto DISCORD_WEBHOOK.",
     403: "Discord rechazó el mensaje: revisa que el webhook siga existiendo y tenga permiso en el canal.",
@@ -35,10 +57,11 @@ def main():
     if not hook:
         print("::notice::No hay webhook de Discord configurado (secreto DISCORD_WEBHOOK): no se anuncia.")
         return 0
-    if not re.match(r"^https://(?:\w+\.)?(?:discord|discordapp)\.com/api/webhooks/\d+/[\w-]+", hook):
-        print("::error::El secreto DISCORD_WEBHOOK no parece una URL de webhook de Discord "
-              "(debe empezar con https://discord.com/api/webhooks/). Vuelve a copiarla en Discord.")
+    found = WEBHOOK_RE.search(hook)
+    if not found:
+        print("::error::El secreto DISCORD_WEBHOOK no contiene una URL de webhook de Discord. " + describe(hook))
         return 1
+    hook = found.group(0)
     url = f"https://github.com/{REPO}/releases/tag/v{a.version}"
     msg = (f"🎉 **Numpad Macros {a.version}**{a.extra} ya está disponible.\n"
            + (f"Novedades: {a.resumen}.\n" if a.resumen else "")
