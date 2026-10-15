@@ -41,6 +41,18 @@ DEFAULT = {
         "mix_mic": False,            # mezclar el micrófono real con los sonidos
         "mic_input": "",
         "volume": 1.0,
+        "normalize": True,           # igualar el volumen de todos los sonidos
+        "target_lufs": -16.0,        # volumen objetivo al igualar (LUFS)
+        "compressor": {              # compresor/limitador de la mezcla
+            "on": True, "preset": "media", "thr": -18.0, "ratio": 3.0, "ceil": -1.0},
+    },
+    "updates": {                     # buscar versiones nuevas en GitHub
+        "auto": True,                # una vez al día, al abrir la app
+        "beta": False,               # recibir también versiones de prueba
+        "skip": "",                  # versión que el usuario decidió omitir
+        "last_check": 0,
+        "show_news": True,           # mostrar novedades al abrir una versión nueva
+        "last_seen": "",             # última versión cuyas novedades se mostraron
     },
     "last_dir": "",
     "library": [],                   # biblioteca de sonidos: [{"path", "title"}]
@@ -76,7 +88,13 @@ def load(path: str | None = None) -> dict:
     cfg["row_mode"] = row
     audio = copy.deepcopy(DEFAULT["audio"])
     audio.update(cfg.get("audio") or {})
+    comp = copy.deepcopy(DEFAULT["audio"]["compressor"])
+    comp.update(audio.get("compressor") or {})
+    audio["compressor"] = comp
     cfg["audio"] = audio
+    upd = copy.deepcopy(DEFAULT["updates"])
+    upd.update(cfg.get("updates") or {})
+    cfg["updates"] = upd
     from .capture import MODES, PLATFORM
     if cfg.get("mode") not in [m[0] for m in MODES[PLATFORM]]:
         cfg["mode"] = MODES[PLATFORM][0][0]

@@ -54,6 +54,17 @@ def single_instance() -> bool:
         return False
 
 
+def release_instance():
+    """Suelta el candado de instancia única (antes de abrir la versión nueva)."""
+    global _lock
+    try:
+        if _lock is not None and hasattr(_lock, "close"):
+            _lock.close()
+    except Exception:
+        pass
+    _lock = None
+
+
 def _command() -> list[str]:
     if getattr(sys, "frozen", False):
         return [sys.executable, "--minimizado"]

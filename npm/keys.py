@@ -188,3 +188,61 @@ def combo_text(combo: str) -> str:
     except ValueError:
         return combo
     return "+".join([m.capitalize() for m in mods] + [key.upper()])
+
+
+# ---------------------------------------------------------------- grabar combinaciones
+# Nombre de tecla de tkinter (keysym) -> nombre interno
+_KEYSYM = {"space": "espacio", "return": "enter", "kp_enter": "enter", "tab": "tab",
+           "escape": "esc", "backspace": "retroceso", "insert": "insert", "delete": "supr",
+           "home": "inicio", "end": "fin", "prior": "repag", "next": "avpag", "up": "arriba",
+           "down": "abajo", "left": "izquierda", "right": "derecha", "print": "impr",
+           "pause": "pausa", "scroll_lock": "bloqdespl", "xf86audiomute": "silenciar",
+           "xf86audiolowervolume": "vol-", "xf86audioraisevolume": "vol+",
+           "xf86audionext": "pista_sig", "xf86audioprev": "pista_ant",
+           "xf86audiostop": "detener", "xf86audioplay": "play_pausa"}
+_KP = {"kp_insert": "0", "kp_end": "1", "kp_down": "2", "kp_next": "3", "kp_left": "4",
+       "kp_begin": "5", "kp_right": "6", "kp_home": "7", "kp_up": "8", "kp_prior": "9"}
+MODIFIER_KEYSYMS = {"control_l": "ctrl", "control_r": "ctrl", "shift_l": "shift", "shift_r": "shift",
+                    "alt_l": "alt", "alt_r": "alt", "meta_l": "alt", "meta_r": "alt",
+                    "iso_level3_shift": "alt", "super_l": "win", "super_r": "win",
+                    "win_l": "win", "win_r": "win", "command": "win", "option": "alt"}
+
+
+def keysym_to_key(keysym: str) -> str | None:
+    """'F13' -> 'f13', 'a' -> 'a', 'KP_1' -> 'num1'... None si no se puede usar."""
+    k = (keysym or "").lower()
+    if k in MODIFIER_KEYSYMS:
+        return None
+    if k.startswith("f") and k[1:].isdigit() and 1 <= int(k[1:]) <= 24:
+        return k
+    if len(k) == 1 and (k.isalpha() or k.isdigit()) and k.isascii():
+        return k
+    if k.startswith("kp_") and k[3:].isdigit():
+        return "num" + k[3:]
+    if k in _KP:
+        return "num" + _KP[k]
+    return _KEYSYM.get(k)
+
+
+def join_combo(mods, key: str) -> str:
+    """Combinación en orden fijo: ctrl, shift, alt, win + tecla."""
+    order = [m for m in MODIFIERS if m in set(mods)]
+    return "+".join(order + [key])
+
+
+# Combinaciones que ya usan casi todos los programas
+BUSY_COMBOS = {"ctrl+c": "copiar", "ctrl+v": "pegar", "ctrl+x": "cortar", "ctrl+z": "deshacer",
+               "ctrl+y": "rehacer", "ctrl+s": "guardar", "ctrl+a": "seleccionar todo",
+               "ctrl+f": "buscar", "ctrl+p": "imprimir", "ctrl+w": "cerrar pestañas",
+               "ctrl+t": "abrir pestañas", "ctrl+n": "abrir ventanas", "ctrl+q": "salir de programas",
+               "alt+f4": "cerrar ventanas", "alt+tab": "cambiar de ventana",
+               "ctrl+shift+esc": "abrir el administrador de tareas", "win+l": "bloquear el equipo",
+               "win+d": "mostrar el escritorio", "win+e": "abrir el explorador", "win+r": "Ejecutar"}
+
+
+def busy_reason(combo: str) -> str | None:
+    try:
+        mods, key = parse_combo(combo)
+    except ValueError:
+        return None
+    return BUSY_COMBOS.get(join_combo(mods, key))

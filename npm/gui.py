@@ -9,28 +9,19 @@ import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from . import __version__, about, capture, config, library, sysutil
+from . import __version__, about, capture, config, library, sysutil, updater
+from . import loudness as ld
 from .capture import PLATFORM, BackendError, describe_device
 from .engine import Engine
-from .keys import (KEY_CHOICES, MODIFIERS, NUMPAD_IDS, NUMPAD_LAYOUT, ROW_IDS, ROW_LAYOUT,
-                   TOGGLE_CHOICES, combo_text, key_label, parse_combo, parse_toggle)
+from .dialogs import NewsDialog, UpdateDialog
+from .keys import (KEY_CHOICES, MODIFIER_KEYSYMS, MODIFIERS, NUMPAD_IDS, NUMPAD_LAYOUT, ROW_IDS,
+                   ROW_LAYOUT, TOGGLE_CHOICES, busy_reason, combo_text, join_combo, key_label,
+                   keysym_to_key, parse_combo, parse_toggle)
 from .senders import make_sender
 from .soundboard import AUDIO_EXT, PLAY_MODES, clean_env, make_soundboard, title_of
+from .widgets import CompCurve, Meter
 
-IS_WIN, IS_MAC, IS_LINUX = PLATFORM == "win", PLATFORM == "mac", PLATFORM == "linux"
-FONT = {"win": "Segoe UI", "mac": "Helvetica Neue", "linux": "DejaVu Sans"}[PLATFORM]
-BASE = 13 if IS_MAC else 10           # macOS dibuja las fuentes más chicas
-OS_NAME = {"win": "Windows", "mac": "macOS", "linux": "Linux"}[PLATFORM]
-MOD_LABEL = {"ctrl": "Ctrl", "shift": "Shift", "alt": "Option" if IS_MAC else "Alt",
-             "win": "Cmd" if IS_MAC else ("Win" if IS_WIN else "Super")}
-
-C = {
-    "bg": "#14161b", "panel": "#1c1f26", "panel2": "#232730", "line": "#2e333d",
-    "text": "#e9e9ec", "muted": "#8b909b", "accent": "#f2a33a", "accent_dim": "#7a5520",
-    "key": "#262a33", "key_set": "#1f3a4f", "key_set_line": "#3d7aa8",
-    "key_global": "#33294a", "key_global_line": "#7e5fc4",
-    "ok": "#4cc38a", "bad": "#e5534b", "warn": "#e2b340",
-}
+from .theme import BASE, C, FONT, IS_LINUX, IS_MAC, IS_WIN, MOD_LABEL, OS_NAME
 
 ACTION_TYPES = [
     ("none", "— Sin acción —"),
@@ -101,6 +92,7 @@ class App:
 
     def __init__(self, root: tk.Tk, start_minimized=False):
         self.root = root
+        self.first_run = not os.path.exists(config.config_path())
         self.cfg = config.load()
         self.uiq: queue.Queue = queue.Queue()     # mensajes de otros hilos -> GUI
         self.sender, self.sender_err = make_sender()
@@ -115,6 +107,16 @@ class App:
         self.toast = None
         self._editor_lock = False
         self._save_job = None
+        self.relaunch = None                          # ruta del programa nuevo (Linux)
+        self._rec = None                              # grabando una combinación: "keys"/"toggle"
+        self._rec_mods = set()
+        self.update_rel = None                        # versión nueva encontrada
+        self._upd_dialog = None
+        self._lufs_q: queue.Queue = queue.Queue()
+        self._lufs_busy = False
+        for item in self.cfg.get("library", []):      # mediciones guardadas
+            if item.get("lufs_mtime"):
+                self.board.set_known_loudness(item["path"], item["lufs_mtime"], item.get("lufs"))
 
         self._style()
         self._set_icon()
@@ -130,18 +132,22 @@ class App:
         self._load_editor()
         self._update_bank_label()
         self.root.after(30, self._poll)
+        self.root.after(200, self._tick_meters)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self._setup_tray()
         if start_minimized and self.tray:
             self.root.withdraw()
+        self._queue_loudness()
+        self.root.after(1200, self._startup_news)
+        self.root.after(3000, lambda: self._check_updates(manual=False))
 
     # ================================================================ estilo
     def _style(self):
         r = self.root
         r.title("Numpad Macros")
         r.configure(bg=C["bg"])
-        r.geometry("1100x790")
-        r.minsize(1000, 740)
+        r.geometry("1120x820")
+        r.minsize(1020, 760)
         s = ttk.Style(r)
         s.theme_use("clam")
         s.configure(".", background=C["bg"], foreground=C["text"], fieldbackground=C["panel2"],
@@ -181,6 +187,18 @@ class App:
         s.configure("TEntry", foreground=C["text"], insertcolor=C["text"])
         s.configure("TSpinbox", foreground=C["text"], arrowcolor=C["text"])
         s.configure("Horizontal.TScale", background=C["panel"], troughcolor=C["panel2"])
+        s.configure("Horizontal.TProgressbar", background=C["accent"], troughcolor=C["panel2"],
+                    bordercolor=C["panel2"], lightcolor=C["accent"], darkcolor=C["accent"])
+        s.configure("Banner.TFrame", background="#3a2c14")
+        s.configure("Card.TFrame", background=C["panel2"])
+        s.configure("Card.TLabel", background=C["panel2"])
+        s.configure("CardMuted.TLabel", background=C["panel2"], foreground=C["muted"], font=(FONT, BASE - 1))
+        s.configure("Card.TCheckbutton", background=C["panel2"], foreground=C["text"])
+        s.map("Card.TCheckbutton", background=[("active", C["panel2"])],
+              indicatorcolor=[("selected", C["accent"]), ("!selected", C["panel"])])
+        s.configure("Card.TRadiobutton", background=C["panel2"], foreground=C["text"])
+        s.map("Card.TRadiobutton", background=[("active", C["panel2"])],
+              indicatorcolor=[("selected", C["accent"]), ("!selected", C["panel"])])
         s.configure("Vertical.TScrollbar", background=C["line"], troughcolor=C["panel2"],
                     arrowcolor=C["muted"], bordercolor=C["panel2"])
         s.map("Vertical.TScrollbar", background=[("active", C["muted"])])
@@ -231,6 +249,37 @@ class App:
         self.btn_active.grid(row=0, column=3, sticky="e")
         self._paint_active()
         self._paint_row()
+
+        # medidores de volumen en tiempo real
+        mt = ttk.Frame(head)
+        mt.grid(row=0, column=1, sticky="e", padx=(10, 22))
+        self.meters = {}
+        for i, (key, name) in enumerate((("spk", "Audífonos"), ("mic", "Micrófono virtual"))):
+            tk.Label(mt, text=name, bg=C["bg"], fg=C["muted"], font=(FONT, BASE - 2), anchor="e").grid(
+                row=i, column=0, sticky="e", padx=(0, 6))
+            m = Meter(mt, width=190, height=9)
+            m.grid(row=i, column=1, pady=1)
+            val = tk.Label(mt, text="—", bg=C["bg"], fg=C["muted"], font=(FONT, BASE - 2), width=7, anchor="w")
+            val.grid(row=i, column=2, sticky="w", padx=(6, 0))
+            self.meters[key] = (m, val)
+        self.meter_flag = tk.Label(mt, bg=C["bg"], font=(FONT, BASE - 2, "bold"), width=16, anchor="w")
+        self.meter_flag.grid(row=0, column=3, rowspan=2, sticky="w", padx=(4, 0))
+
+        # aviso de versión nueva (oculto hasta que haya una)
+        self.banner = tk.Frame(head, bg="#3a2c14", highlightbackground=C["accent_dim"], highlightthickness=1)
+        self.banner.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(10, 0))
+        self.banner.columnconfigure(1, weight=1)
+        self.banner_icon = tk.Label(self.banner, text="⬇", bg="#3a2c14", fg=C["accent"], font=(FONT, BASE + 3, "bold"))
+        self.banner_icon.grid(row=0, column=0, padx=(12, 8), pady=6)
+        self.banner_lbl = tk.Label(self.banner, bg="#3a2c14", fg=C["text"], font=(FONT, BASE, "bold"), anchor="w")
+        self.banner_lbl.grid(row=0, column=1, sticky="ew")
+        self.banner_btn = FlatButton(self.banner, text="Actualizar", command=self._open_update,
+                                     bg=C["accent"], fg="#1a1306", font=(FONT, BASE - 1, "bold"), padx=14, pady=4)
+        self.banner_btn.grid(row=0, column=2, padx=6, pady=6)
+        self.banner_later = FlatButton(self.banner, text="Más tarde", command=self._hide_banner,
+                                       bg="#3a2c14", fg=C["text"], font=(FONT, BASE - 1), padx=10, pady=4)
+        self.banner_later.grid(row=0, column=3, padx=(0, 10))
+        self.banner.grid_remove()
 
         # ---------- izquierda: numpad
         left = ttk.Frame(r, style="Panel.TFrame", padding=16)
@@ -292,12 +341,15 @@ class App:
         foot.columnconfigure(0, weight=1)
         self.status = tk.Label(foot, anchor="w", bg=C["bg"], fg=C["muted"], font=(FONT, BASE - 1))
         self.status.grid(row=0, column=0, sticky="ew")
+        FlatButton(foot, text=f"v{__version__} · Novedades", command=self._show_news,
+                   bg=C["bg"], fg=C["muted"], font=(FONT, BASE - 1), padx=10, pady=4,
+                   highlightbackground=C["line"], highlightthickness=1).grid(row=0, column=1, padx=(10, 0))
         FlatButton(foot, text=f"Creado por {about.CREATOR} · Soporte", command=self._show_about,
                    bg=C["panel2"], fg=C["text"], font=(FONT, BASE - 1), padx=12, pady=4).grid(
-            row=0, column=1, padx=(10, 6))
+            row=0, column=2, padx=(6, 6))
         FlatButton(foot, text="♥ Donar", command=lambda: self._open(about.DONATE),
                    bg=C["accent"], fg="#1a1306", font=(FONT, BASE - 1, "bold"), padx=12, pady=4).grid(
-            row=0, column=2)
+            row=0, column=3)
         self._refresh_layer_combo()
 
     # ---------------------------------------------------------------- editor
@@ -357,14 +409,23 @@ class App:
         self.mode_cb.set(MODE_LABEL.get(act.get("mode", "overlap")))
         self.mode_cb.grid(row=0, column=1, sticky="w", padx=10)
         self.mode_cb.bind("<<ComboboxSelected>>", lambda e: self._on_file_opt())
-        ttk.Label(opts, text="Volumen", style="Panel.TLabel").grid(row=1, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(opts, text="Volumen", style="Panel.TLabel").grid(row=1, column=0, sticky="nw", pady=(10, 0))
         vrow = ttk.Frame(opts, style="Panel.TFrame")
         vrow.grid(row=1, column=1, sticky="w", padx=10, pady=(8, 0))
         self.vol_var = tk.DoubleVar(value=round(float(act.get("volume", 1.0)) * 100))
-        ttk.Scale(vrow, from_=0, to=150, variable=self.vol_var, length=240,
-                  command=lambda _v: self._on_volume()).pack(side="left")
-        self.vol_lbl = ttk.Label(vrow, style="Panel.TLabel", width=5)
-        self.vol_lbl.pack(side="left", padx=8)
+        ttk.Scale(vrow, from_=0, to=150, variable=self.vol_var, length=300,
+                  command=lambda _v: self._on_volume()).grid(row=0, column=0, sticky="w")
+        self.vol_lbl = tk.Label(vrow, bg=C["panel2"], fg=C["accent"], font=(FONT, BASE, "bold"),
+                                width=15, padx=6, pady=2)
+        self.vol_lbl.grid(row=0, column=1, sticky="w", padx=(10, 0))
+        marks = tk.Canvas(vrow, width=300, height=14, bg=C["panel"], highlightthickness=0)
+        marks.grid(row=1, column=0, sticky="w")
+        for v, txt in ((0, "0"), (50, "50"), (100, "100 · original"), (150, "150")):
+            x = 8 + (300 - 16) * v / 150
+            marks.create_text(x, 7, text=txt, fill=C["muted"], font=(FONT, BASE - 3),
+                              anchor="w" if v == 0 else ("e" if v == 150 else "center"))
+        self.norm_lbl = ttk.Label(vrow, style="Muted.TLabel", wraplength=430, justify="left")
+        self.norm_lbl.grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 0))
 
         lines = ttk.Frame(f, style="Panel.TFrame")
         lines.grid(row=4, column=0, sticky="ew", pady=(10, 0))
@@ -402,10 +463,18 @@ class App:
         self.key_cb.set(key.upper())
         self.key_cb.pack(side="left")
         self.key_cb.bind("<<ComboboxSelected>>", lambda e: self._on_combo_change())
-        self.combo_preview = tk.Label(f, bg=C["panel2"], fg=C["accent"], font=(FONT, BASE + 8, "bold"),
+        prow = ttk.Frame(f, style="Panel.TFrame")
+        prow.grid(row=2, column=0, sticky="w", pady=(4, 12))
+        self.combo_preview = tk.Label(prow, bg=C["panel2"], fg=C["accent"], font=(FONT, BASE + 8, "bold"),
                                       padx=16, pady=8)
-        self.combo_preview.grid(row=2, column=0, sticky="w", pady=(4, 12))
+        self.combo_preview.pack(side="left")
         self.combo_preview.configure(text=self._combo_text(act.get("combo", "f13")))
+        self.btn_rec_keys = ttk.Button(prow, text="⏺ Grabar pulsando las teclas",
+                                       command=lambda: self._start_rec("keys"))
+        self.btn_rec_keys.pack(side="left", padx=(12, 0))
+        self.keys_warn = ttk.Label(f, style="Warn.TLabel", wraplength=500, justify="left")
+        self.keys_warn.grid(row=5, column=0, columnspan=2, sticky="w", pady=(10, 0))
+        self._paint_keys_warn(act.get("combo", "f13"))
         hint = {
             "win": "F13–F24 son teclas que Windows reconoce pero ningún teclado trae, así que no "
                    "chocan con nada.",
@@ -506,15 +575,37 @@ class App:
         ttk.Label(t, style="Muted.TLabel", wraplength=520, justify="left", text=(
             "¿Dudas, ideas o algo no funciona? Escríbeme o entra al servidor de Discord: ahí "
             "respondo preguntas, recibo sugerencias y aviso de las nuevas versiones.")).grid(
-            row=1, column=0, sticky="w", pady=(22, 14))
+            row=1, column=0, sticky="w", pady=(14, 10))
 
         for i, (name, sub, url) in enumerate((about.INSTAGRAM, about.DISCORD, about.GITHUB)):
-            self._link_card(t, name, sub, url).grid(row=2 + i, column=0, sticky="ew", pady=(0, 10))
+            self._link_card(t, name, sub, url).grid(row=2 + i, column=0, sticky="ew", pady=(0, 6))
         ttk.Label(t, style="Muted.TLabel", text=f"Software libre bajo licencia {about.LICENSE}.").grid(
             row=5, column=0, sticky="nw", pady=(4, 0))
 
+        up = ttk.Frame(t, style="Card.TFrame", padding=(16, 12))
+        up.grid(row=6, column=0, sticky="ew", pady=(6, 0))
+        up.columnconfigure(1, weight=1)
+        ttk.Label(up, text="Actualizaciones", style="Card.TLabel", font=(FONT, BASE + 1, "bold")).grid(
+            row=0, column=0, sticky="w")
+        ttk.Label(up, text=f"Versión instalada: {__version__}", style="Card.TLabel").grid(
+            row=0, column=1, sticky="w", padx=14)
+        self.upd_lbl = ttk.Label(up, style="CardMuted.TLabel", text="")
+        self.upd_lbl.grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 6))
+        upd = self.cfg["updates"]
+        self.upd_auto = tk.BooleanVar(value=upd.get("auto", True))
+        self.upd_beta = tk.BooleanVar(value=upd.get("beta", False))
+        ttk.Checkbutton(up, text="Buscar actualizaciones al iniciar (una vez al día)", variable=self.upd_auto,
+                        style="Card.TCheckbutton", command=self._on_upd_opts).grid(row=2, column=0, columnspan=3, sticky="w")
+        ttk.Checkbutton(up, text="Recibir también versiones de prueba (beta)", variable=self.upd_beta,
+                        style="Card.TCheckbutton", command=self._on_upd_opts).grid(row=3, column=0, columnspan=3, sticky="w")
+        ub = ttk.Frame(up, style="Card.TFrame")
+        ub.grid(row=4, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        self.btn_check = ttk.Button(ub, text="Buscar ahora", command=lambda: self._check_updates(manual=True))
+        self.btn_check.pack(side="left")
+        ttk.Button(ub, text="Novedades de esta versión", command=self._show_news).pack(side="left", padx=8)
+
         don = tk.Frame(t, bg=C["panel2"], highlightbackground=C["accent"], highlightthickness=1)
-        don.grid(row=6, column=0, sticky="ew", pady=(10, 0))
+        don.grid(row=8, column=0, sticky="ew", pady=(10, 0))
         don.columnconfigure(0, weight=1)
         tk.Label(don, text="¿Te sirve la app?", bg=C["panel2"], fg=C["text"],
                  font=(FONT, BASE + 1, "bold"), anchor="w").grid(row=0, column=0, sticky="w", padx=16, pady=(12, 0))
@@ -613,6 +704,14 @@ class App:
         self.tog_key.pack(side="left")
         self.tog_key.bind("<<ComboboxSelected>>", lambda e: self._on_row_opts())
         r += 1
+        self.btn_rec_tog = ttk.Button(t, text="⏺ Grabar pulsando las teclas",
+                                      command=lambda: self._start_rec("toggle"))
+        self.btn_rec_tog.grid(row=r, column=0, sticky="w", pady=(6, 0))
+        r += 1
+        self.tog_warn = ttk.Label(t, style="Warn.TLabel", wraplength=520, justify="left")
+        self.tog_warn.grid(row=r, column=0, sticky="w")
+        self._paint_tog_warn(rm.get("toggle", ""))
+        r += 1
         ttk.Label(t, style="Muted.TLabel", wraplength=520, justify="left", text=(
             "Con el modo macros apagado la fila de números escribe normal. Al activarlo, 1–0, - y = "
             "lanzan lo que asignes en la fila de números del dibujo (cada banco tiene las suyas); "
@@ -646,21 +745,40 @@ class App:
         r = 0
         ttk.Label(t, text="Salida de los sonidos", style="H.TLabel").grid(row=r, column=0, columnspan=2, sticky="w")
         r += 1
-        self.board_lbl = ttk.Label(t, style="Muted.TLabel", wraplength=500, justify="left")
-        self.board_lbl.grid(row=r, column=0, columnspan=2, sticky="w", pady=(4, 10))
+        self.board_lbl = ttk.Label(t, style="Muted.TLabel", wraplength=580, justify="left")
+        self.board_lbl.grid(row=r, column=0, columnspan=2, sticky="w", pady=(2, 6))
+
+        # falta el micrófono virtual (Windows: VB-Cable, macOS: BlackHole)
+        r += 1
+        self.vmic_card = tk.Frame(t, bg="#3a2c14", highlightbackground=C["accent_dim"], highlightthickness=1)
+        self.vmic_card.grid(row=r, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        self.vmic_card.columnconfigure(0, weight=1)
+        need = "VB-Cable" if IS_WIN else "BlackHole 2ch"
+        tk.Label(self.vmic_card, text=f"No se encontró el micrófono virtual ({need})", bg="#3a2c14",
+                 fg=C["text"], font=(FONT, BASE, "bold"), anchor="w").grid(row=0, column=0, sticky="ew", padx=12, pady=(8, 0))
+        self.vmic_lbl = tk.Label(self.vmic_card, bg="#3a2c14", fg="#c9b48f", font=(FONT, BASE - 1), anchor="w",
+                                 justify="left", wraplength=470, text=(
+                                     "Sin él los sonidos solo se escuchan en tus audífonos: nadie te oye en "
+                                     "Discord, OBS o el juego. Es gratis y se instala una sola vez."))
+        self.vmic_lbl.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 8))
+        self.vmic_btn = FlatButton(self.vmic_card, text="Instalar VB-Cable" if IS_WIN else "Descargar BlackHole ↗",
+                                   command=self._install_vmic, bg=C["accent"], fg="#1a1306",
+                                   font=(FONT, BASE - 1, "bold"), padx=14, pady=5)
+        self.vmic_btn.grid(row=0, column=1, rowspan=2, padx=12)
+        self.vmic_card.grid_remove()
 
         ok, _msg = self.board.available()
         self.audio_widgets = []
         if self.board.kind == "mixer":
             outs = ["(predeterminada del sistema)"] + self.board.outputs()
             r += 1
-            ttk.Label(t, text="Tus audífonos", style="Panel.TLabel").grid(row=r, column=0, sticky="w", pady=4)
+            ttk.Label(t, text="Tus audífonos", style="Panel.TLabel").grid(row=r, column=0, sticky="w", pady=3)
             self.mon_cb = ttk.Combobox(t, state="readonly", width=44, values=outs)
             self.mon_cb.set(a["monitor_device"] or outs[0])
             self.mon_cb.grid(row=r, column=1, sticky="w", padx=10)
             self.mon_cb.bind("<<ComboboxSelected>>", lambda e: self._on_audio())
             r += 1
-            ttk.Label(t, text="Micrófono virtual", style="Panel.TLabel").grid(row=r, column=0, sticky="w", pady=4)
+            ttk.Label(t, text="Micrófono virtual", style="Panel.TLabel").grid(row=r, column=0, sticky="w", pady=3)
             mics = ["(ninguno)"] + self.board.outputs()
             if not a["mic_device"] and self.board.suggested_mic():
                 a["mic_device"] = self.board.suggested_mic()
@@ -673,40 +791,169 @@ class App:
         self.mix_var = tk.BooleanVar(value=a["mix_mic"])
         mix = ttk.Checkbutton(t, text="Mezclar mi micrófono real (hablo y suenan los efectos por el mismo mic)",
                               variable=self.mix_var, command=self._on_audio)
-        mix.grid(row=r, column=0, columnspan=2, sticky="w", pady=(12, 4))
+        mix.grid(row=r, column=0, columnspan=2, sticky="w", pady=(8, 2))
         r += 1
-        ttk.Label(t, text="Mi micrófono", style="Panel.TLabel").grid(row=r, column=0, sticky="w", pady=4)
+        ttk.Label(t, text="Mi micrófono", style="Panel.TLabel").grid(row=r, column=0, sticky="w", pady=3)
         ins = ["(predeterminado)"] + self.board.inputs()
         self.micin_cb = ttk.Combobox(t, state="readonly", width=44, values=ins)
         self.micin_cb.set(a["mic_input"] if a["mic_input"] in ins else ins[0])
         self.micin_cb.grid(row=r, column=1, sticky="w", padx=10)
         self.micin_cb.bind("<<ComboboxSelected>>", lambda e: self._on_audio())
         r += 1
-        ttk.Label(t, text="Volumen general", style="Panel.TLabel").grid(row=r, column=0, sticky="w", pady=(12, 4))
+        ttk.Label(t, text="Volumen general", style="Panel.TLabel").grid(row=r, column=0, sticky="w", pady=(8, 2))
+        mrow = ttk.Frame(t, style="Panel.TFrame")
+        mrow.grid(row=r, column=1, sticky="w", padx=10, pady=(8, 2))
         self.master_var = tk.DoubleVar(value=round(float(a.get("volume", 1.0)) * 100))
-        ttk.Scale(t, from_=0, to=150, variable=self.master_var, length=260,
-                  command=lambda _v: self._on_master()).grid(row=r, column=1, sticky="w", padx=10, pady=(12, 4))
+        ttk.Scale(mrow, from_=0, to=150, variable=self.master_var, length=260,
+                  command=lambda _v: self._on_master()).pack(side="left")
+        self.master_lbl = tk.Label(mrow, bg=C["panel2"], fg=C["accent"], font=(FONT, BASE, "bold"),
+                                   width=15, padx=6, pady=2)
+        self.master_lbl.pack(side="left", padx=10)
+        self.master_lbl.configure(text=self._vol_text(round(self.master_var.get())))
         self.audio_widgets += [mix, self.micin_cb]
+
+        # ---- procesamiento: igualar volumen + compresor
+        r += 1
+        proc = ttk.Frame(t, style="Panel.TFrame")
+        proc.grid(row=r, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+        proc.columnconfigure(0, weight=1, uniform="p")
+        proc.columnconfigure(1, weight=1, uniform="p")
+
+        nf = ttk.Frame(proc, style="Card.TFrame", padding=12)
+        nf.grid(row=0, column=0, sticky="nsew", padx=(0, 6))
+        self.norm_var = tk.BooleanVar(value=a.get("normalize", True))
+        ttk.Checkbutton(nf, text="Igualar volumen de los sonidos", variable=self.norm_var,
+                        style="Card.TCheckbutton", command=self._on_processing).pack(anchor="w")
+        ttk.Label(nf, style="CardMuted.TLabel", wraplength=255, justify="left", text=(
+            "Mide cuánto «suena» cada archivo (LUFS) y los ajusta para que todos se escuchen "
+            "parecido: ni uno muy despacio ni otro que te reviente los oídos.")).pack(anchor="w", pady=(4, 8))
+        ttk.Label(nf, text="Volumen objetivo", style="Card.TLabel").pack(anchor="w")
+        trow = ttk.Frame(nf, style="Card.TFrame")
+        trow.pack(anchor="w", pady=(2, 0))
+        self.target_var = tk.DoubleVar(value=float(a.get("target_lufs", -16)))
+        ttk.Scale(trow, from_=-24, to=-10, variable=self.target_var, length=170,
+                  command=lambda _v: self._on_processing(save_later=True)).pack(side="left")
+        self.target_lbl = ttk.Label(trow, style="Card.TLabel", width=9)
+        self.target_lbl.pack(side="left", padx=8)
+        ttk.Label(nf, style="CardMuted.TLabel", wraplength=255, justify="left",
+                  text="−16 LUFS es lo recomendado para Discord y streams.").pack(anchor="w", pady=(4, 0))
+
+        cf = ttk.Frame(proc, style="Card.TFrame", padding=12)
+        cf.grid(row=0, column=1, sticky="nsew", padx=(6, 0))
+        cf.columnconfigure(0, weight=1)
+        comp = a["compressor"]
+        self.comp_on = tk.BooleanVar(value=comp.get("on", True))
+        ttk.Checkbutton(cf, text="Compresor / limitador", variable=self.comp_on, style="Card.TCheckbutton",
+                        command=self._on_processing).grid(row=0, column=0, columnspan=2, sticky="w")
+        ttk.Label(cf, style="CardMuted.TLabel", wraplength=255, justify="left", text=(
+            "Baja los picos fuertes para que no sature ni se corte en Discord.")).grid(
+            row=1, column=0, columnspan=2, sticky="nw", pady=(4, 6))
+        self.curve = CompCurve(cf, size=104)
+        self.curve.grid(row=2, column=1, rowspan=2, sticky="ne", padx=(8, 0))
+        prow = ttk.Frame(cf, style="Card.TFrame")
+        prow.grid(row=2, column=0, sticky="nw")
+        self.preset_var = tk.StringVar(value=comp.get("preset", "media"))
+        for i, (pid, name) in enumerate(ld.PRESET_NAMES):
+            ttk.Radiobutton(prow, text=name, value=pid, variable=self.preset_var, style="Card.TRadiobutton",
+                            command=self._on_processing).grid(row=i, column=0, sticky="w")
+        self.custom = ttk.Frame(cf, style="Card.TFrame")
+        self.custom.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(6, 0))
+        self.comp_vars = {}
+        for i, (key, name, lo, hi) in enumerate((("thr", "Umbral", -40, 0), ("ratio", "Relación", 1, 10),
+                                                 ("ceil", "Techo", -6, 0))):
+            ttk.Label(self.custom, text=name, style="Card.TLabel").grid(row=i, column=0, sticky="w")
+            v = tk.DoubleVar(value=float(comp.get(key, {"thr": -18, "ratio": 3, "ceil": -1}[key])))
+            ttk.Scale(self.custom, from_=lo, to=hi, variable=v, length=120,
+                      command=lambda _v: self._on_processing(save_later=True)).grid(row=i, column=1, padx=6)
+            lbl = ttk.Label(self.custom, style="Card.TLabel", width=8)
+            lbl.grid(row=i, column=2, sticky="w")
+            self.comp_vars[key] = (v, lbl)
+        self.comp_live = ttk.Label(cf, style="CardMuted.TLabel")
+        self.comp_live.grid(row=3, column=0, sticky="w", pady=(6, 0))
+        self._paint_processing()
+
         r += 1
         ttk.Button(t, text="Aplicar / reconectar audio", command=self._apply_audio_async).grid(
-            row=r, column=0, columnspan=2, sticky="w", pady=(16, 0))
+            row=r, column=0, columnspan=2, sticky="w", pady=(12, 0))
         r += 1
         help_txt = {
-            "win": "Para que te escuchen en Discord/OBS/el juego hace falta un micrófono virtual: instala "
-                   "VB-Cable (gratis, vb-audio.com/Cable). Elige «CABLE Input» como micrófono virtual "
-                   "aquí y «CABLE Output» como micrófono en Discord/OBS/el juego. Sin él, los sonidos "
-                   "solo se escuchan en tus audífonos.",
-            "mac": "Para que te escuchen en Discord/OBS/el juego hace falta un micrófono virtual: instala "
-                   "BlackHole 2ch (gratis, existential.audio/blackhole). Elígelo aquí como micrófono "
-                   "virtual y también como micrófono en Discord/OBS/el juego.",
-            "linux": "El programa crea el micrófono virtual «NumpadMacros-Mic» al iniciar (con PipeWire o "
-                     "PulseAudio) y lo quita al cerrar. Elígelo como micrófono en Discord/OBS/el juego.",
+            "win": "En Discord, OBS o el juego elige «CABLE Output» como micrófono; aquí, «CABLE Input» "
+                   "como micrófono virtual.",
+            "mac": "Elige BlackHole aquí como micrófono virtual y también como micrófono en Discord, OBS o "
+                   "el juego.",
+            "linux": "El micrófono virtual «NumpadMacros-Mic» se crea al iniciar (PipeWire o PulseAudio) y "
+                     "se quita al cerrar. Elígelo como micrófono en Discord, OBS o el juego.",
         }[PLATFORM]
-        ttk.Label(t, style="Muted.TLabel", wraplength=500, justify="left", text=help_txt).grid(
-            row=r, column=0, columnspan=2, sticky="w", pady=(18, 0))
+        ttk.Label(t, style="Muted.TLabel", wraplength=580, justify="left", text=help_txt).grid(
+            row=r, column=0, columnspan=2, sticky="w", pady=(8, 0))
         if not ok:
             for wdg in self.audio_widgets:
                 wdg.state(["disabled"])
+        self._paint_vmic()
+
+    def _paint_processing(self):
+        a = self.cfg["audio"]
+        self.target_lbl.configure(text=f"{a.get('target_lufs', -16):.0f} LUFS")
+        comp = a["compressor"]
+        custom = comp.get("preset") == "custom"
+        if custom:
+            self.custom.grid()
+        else:
+            self.custom.grid_remove()
+        for key, (v, lbl) in self.comp_vars.items():
+            val = comp.get(key)
+            lbl.configure(text=f"{val:.1f}:1" if key == "ratio" else f"{val:.0f} dB")
+        thr, ratio, ceil = ld.comp_params(a)
+        self.curve.draw(thr, ratio, ceil, on=comp.get("on", True))
+
+    def _on_processing(self, save_later=False):
+        a = self.cfg["audio"]
+        with self.engine.lock:
+            a["normalize"] = self.norm_var.get()
+            a["target_lufs"] = float(round(self.target_var.get()))
+            comp = a["compressor"]
+            comp["on"] = self.comp_on.get()
+            comp["preset"] = self.preset_var.get()
+            for key, (v, _l) in self.comp_vars.items():
+                comp[key] = round(v.get(), 1 if key == "ratio" else 0)
+        self._paint_processing()
+        self._paint_volume()
+        self._fill_library()
+        if save_later:
+            self._save_later()
+        else:
+            self._save()
+
+    def _paint_vmic(self):
+        missing = getattr(self.board, "virtual_mic_missing", lambda: False)()
+        if missing and not IS_LINUX:
+            self.vmic_card.grid()
+        else:
+            self.vmic_card.grid_remove()
+
+    def _install_vmic(self):
+        if IS_MAC:
+            self._open("https://existential.audio/blackhole/")
+            return
+        self.vmic_btn.configure(text="Descargando…")
+        self._set_status("Descargando VB-Cable desde vb-audio.com…")
+
+        def job():
+            try:
+                updater.install_vbcable()
+                self.uiq.put(("vbcable", True, ""))
+            except Exception as e:
+                self.uiq.put(("vbcable", False, str(e)))
+        threading.Thread(target=job, daemon=True).start()
+
+    def _after_vbcable(self, ok, msg):
+        self.vmic_btn.configure(text="Instalar VB-Cable")
+        if ok:
+            self.vmic_lbl.configure(text="En la ventana de VB-Cable pulsa «Install Driver». Después reinicia "
+                                         "el PC y elige «CABLE Input» como micrófono virtual aquí.")
+            self._set_status("Se abrió el instalador de VB-Cable: pulsa «Install Driver».")
+        else:
+            self._set_status(msg, bad=True)
 
     # ================================================================ captura
     def _start_backend(self):
@@ -826,6 +1073,8 @@ class App:
         chip = ("● Audio listo" + (" · micrófono virtual" if has_mic else " · solo audífonos")) if good \
             else "● Audio con problemas"
         self.chip_board.configure(text=chip, fg=C["ok"] if good and has_mic else (C["warn"] if good else C["bad"]))
+        if hasattr(self, "vmic_card"):
+            self._paint_vmic()
 
     def _on_audio(self):
         a = self.cfg["audio"]
@@ -844,6 +1093,7 @@ class App:
     def _on_master(self):
         with self.engine.lock:
             self.cfg["audio"]["volume"] = round(self.master_var.get()) / 100
+        self.master_lbl.configure(text=self._vol_text(round(self.master_var.get())))
         self._save_later()
 
     def _save_later(self):
@@ -867,6 +1117,7 @@ class App:
     def _lib_changed(self, msg=None):
         self._save()
         self._fill_library()
+        self._queue_loudness()
         self._fill_pick()
         if msg:
             self._set_status(msg)
@@ -947,6 +1198,7 @@ class App:
             n = used.get(library.norm(x["path"]), 0)
             mark = "⚠ " if not os.path.isfile(x["path"]) else "   "
             tail = f"   · {n} tecla{'s' if n != 1 else ''}" if n else ""
+            tail += self._lufs_text(x)
             lb.insert("end", f" {mark}{x['title']}{tail}")
             if library.norm(x["path"]) in keep:
                 lb.selection_set("end")
@@ -956,6 +1208,54 @@ class App:
             lb.insert("end", "  Agrega tus sonidos con «＋ Archivos…» o «＋ Carpeta…».")
         self._update_assign_label()
         self._lib_sel_changed()
+
+    def _lufs_text(self, item):
+        if "lufs" not in item:
+            return ""
+        if item["lufs"] is None:
+            return "   · silencio"
+        txt = f"   · {item['lufs']:.0f} LUFS"
+        if self.cfg["audio"].get("normalize", True):
+            adj = ld.norm_gain_db(item["lufs"], self.cfg["audio"].get("target_lufs", -16))
+            txt += f" ({adj:+.0f} dB)"
+        return txt
+
+    def _queue_loudness(self):
+        """Mide en segundo plano los sonidos que aún no tienen su volumen (LUFS)."""
+        for item in self.cfg.get("library", []):
+            path = item.get("path", "")
+            try:
+                mtime = os.path.getmtime(path)
+            except OSError:
+                continue
+            if item.get("lufs_mtime") != mtime:
+                self._lufs_q.put(path)
+        if self._lufs_busy or self._lufs_q.empty() or not self.board.available()[0]:
+            return
+        self._lufs_busy = True
+
+        def job():
+            while True:
+                try:
+                    path = self._lufs_q.get_nowait()
+                except queue.Empty:
+                    break
+                try:
+                    mtime = os.path.getmtime(path)
+                    value = self.board.loudness(path)
+                    self.uiq.put(("lufs", path, mtime, value))
+                except Exception:
+                    pass
+            self.uiq.put(("lufs_done",))
+        threading.Thread(target=job, daemon=True).start()
+
+    def _on_lufs(self, path, mtime, value):
+        key = library.norm(path)
+        with self.engine.lock:
+            for item in self.cfg.get("library", []):
+                if library.norm(item["path"]) == key:
+                    item["lufs"], item["lufs_mtime"] = value, mtime
+        self._lufs_dirty = True
 
     def _update_assign_label(self):
         where = "Global" if self.layer == "global" else self.cfg["banks"][self.layer]["name"]
@@ -995,6 +1295,7 @@ class App:
         with self.engine.lock:
             library.add(self.cfg, paths)
         self._fill_library()
+        self._queue_loudness()
         self._assign_file({"path": os.path.abspath(paths[0]), "title": title_of(paths[0])})
         if len(paths) > 1:
             self._set_status(f"Asignado «{title_of(paths[0])}»; los otros {len(paths) - 1} quedaron en la biblioteca.")
@@ -1020,10 +1321,38 @@ class App:
         self.file_lbl.configure(text=("🔊 " + (act.get("title") or title_of(path))) if path
                                 else "Elige un sonido de la lista")
         self.file_warn.configure(text="⚠ No se encuentra el archivo" if path and not os.path.isfile(path) else "")
-        self.vol_lbl.configure(text=f"{round(self.vol_var.get())}%")
+        self._paint_volume(act)
+
+    def _vol_text(self, pct):
+        if pct <= 0:
+            return "0 % · silencio"
+        db = ld.lin_to_db(pct / 100)
+        return f"{pct:.0f} % · {db:+.1f} dB".replace("+0.0", "0.0").replace("-0.0", "0.0")
+
+    def _paint_volume(self, act=None):
+        if not hasattr(self, "vol_lbl") or not self.vol_lbl.winfo_exists():
+            return
+        self.vol_lbl.configure(text=self._vol_text(round(self.vol_var.get())))
+        act = act or self._current_action() or {}
+        path = act.get("path", "")
+        a = self.cfg["audio"]
+        txt = ""
+        if path and a.get("normalize", True):
+            item = next((x for x in self.cfg.get("library", [])
+                         if library.norm(x["path"]) == library.norm(path)), None)
+            if item and "lufs" in item and item.get("lufs") is not None:
+                adj = ld.norm_gain_db(item["lufs"], a.get("target_lufs", -16))
+                txt = (f"Igualar volumen: este sonido mide {item['lufs']:.1f} LUFS → se ajusta "
+                       f"{adj:+.1f} dB para quedar en {a.get('target_lufs', -16):.0f} LUFS. "
+                       "El volumen de la tecla se aplica después.")
+            elif path:
+                txt = "Igualar volumen: midiendo este sonido…"
+        elif path:
+            txt = "Igualar volumen está apagado (pestaña Audio)."
+        self.norm_lbl.configure(text=txt)
 
     def _on_volume(self):
-        self.vol_lbl.configure(text=f"{round(self.vol_var.get())}%")
+        self._paint_volume()
         act = self._current_action()
         if act and act.get("type") == "file":
             with self.engine.lock:
@@ -1346,7 +1675,87 @@ class App:
         key = self.key_cb.get().lower()
         combo = "+".join(mods + [key])
         self.combo_preview.configure(text=self._combo_text(combo))
+        self._paint_keys_warn(combo)
         self._store({"type": "keys", "combo": combo})
+
+    def _paint_keys_warn(self, combo):
+        if not hasattr(self, "keys_warn") or not self.keys_warn.winfo_exists():
+            return
+        why = busy_reason(combo)
+        self.keys_warn.configure(text=f"Ojo: {self._combo_text(combo)} ya se usa para {why} en muchos "
+                                      "programas. Mejor usa F13–F24." if why else "")
+
+    # ---- grabar una combinación pulsándola
+    def _start_rec(self, target):
+        if self._rec == target:
+            self._stop_rec("Grabación cancelada.")
+            return
+        self._rec = target
+        self._rec_mods = set()
+        self.root.bind_all("<KeyPress>", self._rec_key, add="+")
+        self.root.bind_all("<KeyRelease>", self._rec_release, add="+")
+        self.root.focus_force()
+        btn = self.btn_rec_keys if target == "keys" else self.btn_rec_tog
+        btn.configure(text="● Pulsa la combinación… (Esc cancela)")
+        self._set_status("Pulsa en tu teclado la combinación que quieres (con Ctrl/Shift/Alt si quieres). "
+                         "Esc para cancelar.")
+
+    def _stop_rec(self, msg=None):
+        self._rec = None
+        self.root.unbind_all("<KeyPress>")
+        self.root.unbind_all("<KeyRelease>")
+        for name in ("btn_rec_keys", "btn_rec_tog"):
+            b = getattr(self, name, None)
+            if b is not None and b.winfo_exists():
+                b.configure(text="⏺ Grabar pulsando las teclas")
+        if msg:
+            self._set_status(msg)
+
+    def _rec_release(self, ev):
+        m = MODIFIER_KEYSYMS.get((ev.keysym or "").lower())
+        if m:
+            self._rec_mods.discard(m)
+
+    def _rec_key(self, ev):
+        if not self._rec:
+            return
+        sym = (ev.keysym or "").lower()
+        if sym in MODIFIER_KEYSYMS:
+            self._rec_mods.add(MODIFIER_KEYSYMS[sym])
+            return "break"
+        if sym == "escape" and not self._rec_mods:
+            self._stop_rec("Grabación cancelada.")
+            return "break"
+        key = keysym_to_key(ev.keysym)
+        target = self._rec
+        if target == "toggle":
+            if key not in TOGGLE_CHOICES:
+                self._set_status(f"«{ev.keysym}» no sirve para el modo macros: usa una letra, F1–F12 u otra "
+                                 "de la lista.", bad=True)
+                return "break"
+            if not self._rec_mods:
+                self._set_status("Agrega Ctrl, Alt, Shift o Win: una tecla sola dejaría de escribir.", bad=True)
+                return "break"
+        else:
+            unsupported = getattr(self.sender, "unsupported", frozenset())
+            if key is None or key not in KEY_CHOICES or key in unsupported:
+                self._set_status(f"«{ev.keysym}» no se puede enviar: elige la tecla en la lista.", bad=True)
+                return "break"
+        combo = join_combo(self._rec_mods, key)
+        self._stop_rec()
+        if target == "toggle":
+            for m, v in self.tog_vars.items():
+                v.set(m in self._rec_mods)
+            self.tog_key.set(key.upper())
+            self._on_row_opts()
+            self._set_status(f"Modo macros: {self._combo_text(combo)}")
+        else:
+            for m, v in self.mod_vars.items():
+                v.set(m in self._rec_mods)
+            self.key_cb.set(key.upper())
+            self._on_combo_change()
+            self._set_status(f"Combinación grabada: {self._combo_text(combo)}")
+        return "break"
 
     def _test_keys_delayed(self):
         act = self._current_action()
@@ -1419,8 +1828,7 @@ class App:
         except ValueError as e:
             self._set_status(str(e), bad=True)
             return
-        if not mods:
-            self._set_status("Ojo: sin Ctrl/Alt/Shift, esa tecla sola activará el modo macros.")
+        self._paint_tog_warn(combo)
         with self.engine.lock:
             self.cfg["row_mode"]["enabled"] = self.row_on_var.get()
             self.cfg["row_mode"]["toggle"] = combo
@@ -1436,6 +1844,20 @@ class App:
             self.backend._next_scan = 0
 
     # ================================================================ activo / pausa
+    def _paint_tog_warn(self, combo):
+        try:
+            mods, _key = parse_combo(combo)
+        except ValueError:
+            mods = ["?"]
+        why = busy_reason(combo)
+        if not mods:
+            txt = "Ojo: sin Ctrl/Alt/Shift/Win, esa tecla sola activará el modo macros y dejará de escribir."
+        elif why:
+            txt = f"Ojo: {self._combo_text(combo)} ya se usa para {why} en muchos programas."
+        else:
+            txt = ""
+        self.tog_warn.configure(text=txt)
+
     def _toggle_active(self):
         new = not self.engine.active
         if not new:
@@ -1522,6 +1944,21 @@ class App:
             self._set_status(f"Audio: {ev[1]}", bad=True)
         elif kind == "perm":
             self._after_perms(ev[1], ev[2])
+        elif kind == "lufs":
+            self._on_lufs(ev[1], ev[2], ev[3])
+        elif kind == "lufs_done":
+            self._lufs_busy = False
+            if getattr(self, "_lufs_dirty", False):
+                self._lufs_dirty = False
+                self._save()
+                self._fill_library()
+                self._paint_volume()
+            if not self._lufs_q.empty():
+                self._queue_loudness()
+        elif kind == "vbcable":
+            self._after_vbcable(ev[1], ev[2])
+        elif kind == "update":
+            self._on_update_result(*ev[1:])
         elif kind == "tray":
             cmd = ev[1]
             if cmd == "show":
@@ -1532,6 +1969,150 @@ class App:
                 self._toggle_active()
             elif cmd == "quit":
                 self._quit()
+
+    # ================================================================ medidores
+    def _tick_meters(self):
+        try:
+            lv = self.board.levels() if self.board.available()[0] else {}
+        except Exception:
+            lv = {}
+        flag, color = "", C["muted"]
+        for key, (meter, val) in self.meters.items():
+            data = lv.get(key)
+            if data is None:
+                meter.clear()
+                val.configure(text="—" if key == "mic" and not self._has_vmic() else "")
+                continue
+            rms, peak, gr, sat = data
+            shown = meter.set(peak)
+            val.configure(text=f"{shown:.0f} dB" if shown > -59 else "")
+            if sat:
+                flag, color = "SATURA", C["bad"]
+            elif gr >= 1.0 and not flag:
+                flag, color = f"Compresor −{gr:.0f} dB", C["warn"]
+        self.meter_flag.configure(text=flag, fg=color)
+        if hasattr(self, "comp_live"):
+            gr = max((d[2] for d in lv.values() if d), default=0.0)
+            self.comp_live.configure(text=f"Bajando ahora: {gr:.1f} dB" if gr >= 0.5 else "")
+        self.root.after(50, self._tick_meters)
+
+    def _has_vmic(self):
+        return self.board.kind == "pipewire" or bool(self.cfg["audio"].get("mic_device"))
+
+    # ================================================================ novedades
+    def _show_news(self):
+        versions = updater.read_changelog(sysutil.resource("CHANGELOG.md"))
+        self._news_show = tk.BooleanVar(value=self.cfg["updates"].get("show_news", True))
+
+        def changed():
+            with self.engine.lock:
+                self.cfg["updates"]["show_news"] = self._news_show.get()
+            self._save()
+        self.root.deiconify()
+        NewsDialog(self.root, versions, __version__, self._news_show, changed)
+
+    def _startup_news(self):
+        """La primera vez que se abre una versión nueva, muestra sus novedades."""
+        upd = self.cfg["updates"]
+        seen = upd.get("last_seen", "")
+        if seen == __version__:
+            return
+        with self.engine.lock:
+            upd["last_seen"] = __version__
+        self._save()
+        if self.first_run or not upd.get("show_news", True):
+            return
+        if seen and not updater.newer(__version__, seen):
+            return
+        if self.root.state() == "withdrawn":
+            return
+        self._show_news()
+
+    # ================================================================ actualizaciones
+    def _on_upd_opts(self):
+        with self.engine.lock:
+            self.cfg["updates"]["auto"] = self.upd_auto.get()
+            self.cfg["updates"]["beta"] = self.upd_beta.get()
+        self._save()
+
+    def _check_updates(self, manual=False):
+        upd = self.cfg["updates"]
+        if not manual and not updater.due(upd):
+            return
+        if manual:
+            self.upd_lbl.configure(text="Buscando…")
+            self.btn_check.state(["disabled"])
+        snapshot = dict(upd)
+
+        def job():
+            try:
+                rel = updater.check(snapshot, __version__, manual=manual)
+                self.uiq.put(("update", manual, rel, None, snapshot.get("last_check", 0)))
+            except Exception as e:
+                self.uiq.put(("update", manual, None, str(e), 0))
+        threading.Thread(target=job, daemon=True).start()
+
+    def _on_update_result(self, manual, rel, err, checked_at):
+        self.btn_check.state(["!disabled"])
+        if checked_at:
+            with self.engine.lock:
+                self.cfg["updates"]["last_check"] = checked_at
+            self._save()
+        if err:
+            self.upd_lbl.configure(text=f"No se pudo comprobar: {err}")
+            if manual:
+                self._set_status("No pude consultar si hay versiones nuevas (¿hay internet?).", bad=True)
+            return
+        stamp = time.strftime("%H:%M")
+        if not rel:
+            self.upd_lbl.configure(text=f"Estás al día · comprobado a las {stamp}")
+            if manual:
+                self._set_status("Tienes la última versión.")
+            return
+        self.update_rel = rel
+        self.upd_lbl.configure(text=f"Hay una versión nueva: {rel.version}")
+        extra = " · importante" if rel.important else (" · beta" if rel.prerelease else "")
+        self.banner_lbl.configure(text=f"Hay una nueva versión: {rel.version}{extra}   (tienes {__version__})")
+        self.banner.grid()
+        if rel.important:
+            self.banner_later.grid_remove()
+        if manual:
+            self._open_update()
+
+    def _hide_banner(self):
+        self.banner.grid_remove()
+        self._set_status("Te lo recordaré la próxima vez que abras la app.")
+
+    def _open_update(self):
+        rel = self.update_rel
+        if not rel:
+            return
+        if self._upd_dialog is not None and self._upd_dialog.winfo_exists():
+            self._upd_dialog.lift()
+            return
+        self.root.deiconify()
+        self._upd_dialog = UpdateDialog(self.root, rel, updater.install_kind(), self._skip_version,
+                                        self._install_update)
+
+    def _skip_version(self, version):
+        with self.engine.lock:
+            self.cfg["updates"]["skip"] = version
+        self._save()
+        self.banner.grid_remove()
+        self.upd_lbl.configure(text=f"Omitiste la versión {version}")
+        self._set_status(f"No volveré a avisar de la versión {version}.")
+
+    def _install_update(self, path, dialog):
+        kind = updater.install_kind()
+        try:
+            if kind == "installer":
+                updater.install_windows(path)
+                self._quit()                 # el instalador vuelve a abrir la app
+            elif kind == "binary":
+                self.relaunch = updater.install_linux(path)
+                self._quit()
+        except Exception as e:
+            dialog.fail(str(e))
 
     def _set_status(self, msg, bad=False):
         self.status.configure(text=msg, fg=C["bad"] if bad else C["muted"])
@@ -1624,7 +2205,14 @@ class App:
 
 def main():
     minimized = "--minimizado" in sys.argv
-    if not sysutil.single_instance():
+    ok = sysutil.single_instance()
+    if not ok and "--tras-actualizar" in sys.argv:
+        for _ in range(40):                 # la versión anterior se está cerrando
+            time.sleep(0.25)
+            if sysutil.single_instance():
+                ok = True
+                break
+    if not ok:
         r = tk.Tk()
         r.withdraw()
         messagebox.showinfo("Numpad Macros", "Numpad Macros ya está abierto.")
@@ -1637,5 +2225,10 @@ def main():
         except Exception:
             pass
     root = tk.Tk(className="NumpadMacros")
-    App(root, start_minimized=minimized)
+    app = App(root, start_minimized=minimized)
     root.mainloop()
+    if app.relaunch:                        # Linux: abrir la versión recién instalada
+        import subprocess
+        sysutil.release_instance()
+        subprocess.Popen([app.relaunch, "--tras-actualizar"], env=updater.relaunch_env(),
+                         start_new_session=True, close_fds=True)

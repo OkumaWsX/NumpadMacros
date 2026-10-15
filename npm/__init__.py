@@ -1,3 +1,3 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 # Copyright (C) 2026 OkumaWsX
-__version__ = "3.2.1"
+__version__ = "3.3.0"

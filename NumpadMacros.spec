@@ -14,7 +14,8 @@ ROOT = os.path.abspath(SPECPATH)
 sys.path.insert(0, ROOT)
 from npm import __version__  # noqa: E402
 
-datas = [(os.path.join(ROOT, "assets", "icon.png"), "assets")]
+datas = [(os.path.join(ROOT, "assets", "icon.png"), "assets"),
+         (os.path.join(ROOT, "CHANGELOG.md"), ".")]   # ventana de novedades
 binaries = []
 if IS_WIN and os.path.isfile(os.path.join(ROOT, "interception.dll")):
     binaries.append((os.path.join(ROOT, "interception.dll"), "."))
@@ -26,10 +27,10 @@ if IS_WIN:
 elif IS_LINUX:
     hidden += ["pystray._xorg", "pystray._appindicator", "pystray._gtk"]
 
-# En Linux el audio va por PipeWire: no hace falta empaquetar numpy ni PortAudio
+# En Linux la salida va por PipeWire: no hace falta empaquetar PortAudio
 excludes = ["tests"]
 if IS_LINUX:
-    excludes += ["unittest", "pydoc", "numpy", "sounddevice", "soundfile", "_sounddevice_data", "_soundfile_data"]
+    excludes += ["unittest", "pydoc", "sounddevice", "_sounddevice_data"]
 
 a = Analysis(
     [os.path.join(ROOT, "NumpadMacros.pyw")],

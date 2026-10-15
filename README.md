@@ -6,7 +6,7 @@
 
 **Convierte un numpad USB (o la fila de números de tu teclado) en una botonera de sonidos y atajos, sin tocar tu teclado principal.**
 
-[![Descargar](https://img.shields.io/badge/descargar-v3.2.1-f2a33a)](#descarga)
+[![Última versión](https://img.shields.io/github/v/release/OkumaWsX/NumpadMacros?label=descargar&color=f2a33a)](https://github.com/OkumaWsX/NumpadMacros/releases/latest)
 [![Compilación](https://github.com/OkumaWsX/NumpadMacros/actions/workflows/build.yml/badge.svg)](https://github.com/OkumaWsX/NumpadMacros/actions/workflows/build.yml)
 [![Licencia: LGPL-3.0](https://img.shields.io/badge/licencia-LGPL--3.0-blue)](LICENSE)
 ![Windows · Linux · macOS](https://img.shields.io/badge/plataformas-Windows%20%C2%B7%20Linux%20%C2%B7%20macOS-lightgrey)
@@ -34,6 +34,8 @@ Es independiente: trae su propia biblioteca y su propio reproductor de sonidos, 
 | 🎙️ **Micrófono virtual** | Los sonidos salen por tus audífonos y por un micrófono virtual. También puedes mezclar tu micrófono real para hablar y lanzar efectos a la vez. |
 | ⏯️ **4 formas de sonar** | Superponer, Reiniciar, Alternar (pulsa para sonar y otra vez para detener) o *Mientras se mantiene*. Volumen por tecla. |
 | 🧩 **Atajos de teclado** | Cualquier combinación (por ejemplo `Ctrl+Shift+F13`) para OBS, Discord u otro programa. Se mantiene apretada mientras mantienes la tecla (sirve para push-to-talk). |
+| 📊 **Medidores y nivelación** | Medidores en tiempo real, **igualar volumen** (LUFS) para que todos los sonidos suenen parejo y **compresor/limitador** para que nada sature en Discord. |
+| 🔄 **Se actualiza sola** | Avisa cuando hay una versión nueva y se actualiza con un clic, sin perder tu configuración. |
 | 🗂️ **Bancos** | Varias páginas de asignaciones. La capa *Global* aplica en todos los bancos; `NumLock` cambia de banco. |
 | 📥 **Importa desde Soundpad** | Trae tus sonidos desde una lista `.spl` de Soundpad. |
 | 💻 **Multiplataforma** | Windows 10/11, Linux (X11 y Wayland) y macOS. |
@@ -42,9 +44,9 @@ Es independiente: trae su propia biblioteca y su propio reproductor de sonidos, 
 
 ### Windows 10/11 — descarga directa
 
-<p align="center"><a href="https://github.com/OkumaWsX/NumpadMacros/raw/main/descargas/NumpadMacros-Windows-Setup.exe"><img src="https://img.shields.io/badge/%E2%AC%87%20Descargar%20para%20Windows-instalador%20v3.2.1-f2a33a?style=for-the-badge&logo=windows" alt="Descargar para Windows"></a></p>
+<p align="center"><a href="https://github.com/OkumaWsX/NumpadMacros/releases/latest/download/NumpadMacros-Windows-Setup.exe"><img src="https://img.shields.io/badge/%E2%AC%87%20Descargar%20para%20Windows-instalador-f2a33a?style=for-the-badge&logo=windows" alt="Descargar para Windows"></a></p>
 
-Archivo: [`descargas/NumpadMacros-Windows-Setup.exe`](descargas/NumpadMacros-Windows-Setup.exe) (23 MB). Ábrelo y sigue el asistente *Siguiente → Siguiente → Instalar*.
+El botón descarga siempre **la última versión** (`NumpadMacros-Windows-Setup.exe`, unos 25 MB). Ábrelo y sigue el asistente *Siguiente → Siguiente → Instalar*.
 
 > Como la app no tiene una firma digital pagada, la primera vez puede aparecer «Windows protegió su PC». Pulsa **Más información → Ejecutar de todas formas**.
 
@@ -142,7 +144,7 @@ Para crear los programas:
 | Windows | `crear_instalador.bat` (requiere [Inno Setup 6](https://jrsoftware.org/isinfo.php)) | `dist-installer\NumpadMacros-Setup-x.y.z.exe` |
 | Linux / macOS | `./compilar.sh` | `dist/NumpadMacros` o `dist/Numpad Macros.app` |
 
-Cada vez que se publica una etiqueta `v*`, **GitHub Actions** compila las tres versiones y crea la Release automáticamente ([`build.yml`](.github/workflows/build.yml)).
+**GitHub Actions** compila y prueba las tres versiones con cada cambio ([`build.yml`](.github/workflows/build.yml)). Para publicar una versión nueva se usa el robot **«Publicar versión»** ([`publicar.yml`](.github/workflows/publicar.yml)) o el programa **Publicador** ([`tools/publicador`](tools/publicador)); la guía está en **[docs/PUBLICAR.md](docs/PUBLICAR.md)**.
 
 ## Estructura del proyecto
 
@@ -154,10 +156,13 @@ NumpadMacros/
 │   ├── engine.py           # lógica de teclas, bancos y modo macros
 │   ├── capture_*.py        # captura del teclado por sistema
 │   ├── send_*.py           # envío de atajos por sistema
-│   ├── soundboard.py       # reproductor y micrófono virtual
+│   ├── soundboard.py       # mezclador, reproductor y micrófono virtual
+│   ├── loudness.py         # medición LUFS y compresor
+│   ├── updater.py          # actualizaciones desde GitHub
 │   └── library.py          # biblioteca de sonidos
 ├── tests/                  # pruebas automáticas
 ├── installer/              # instalador de Windows (Inno Setup)
+├── tools/                  # publicar versiones (release.py y el Publicador)
 ├── assets/                 # icono e imágenes
 ├── docs/                   # documentación y capturas
 └── NumpadMacros.spec       # empaquetado con PyInstaller

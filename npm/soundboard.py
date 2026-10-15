@@ -9,14 +9,22 @@ micrófono virtual, para que te escuchen en Discord, OBS o el juego.
   efectos por el mismo micrófono virtual.
 - Linux: usa PipeWire/PulseAudio. El programa crea él mismo el micrófono
   virtual "NumpadMacros-Mic" (y lo quita al cerrar).
+
+En todos los sistemas la mezcla la hace el propio programa (clase _Bus):
+iguala el volumen de los sonidos (LUFS), aplica el compresor/limitador y
+mide los niveles que muestran los medidores de la ventana.
 """
 import json
+import math
 import os
 import shutil
 import subprocess
 import sys
 import threading
+import time
 from collections import deque
+
+from . import loudness as ld
 
 SR = 48000
 AUDIO_EXT = (".mp3", ".wav", ".ogg", ".flac", ".opus", ".aiff", ".aif")
@@ -57,12 +65,87 @@ def make_soundboard(settings: dict):
     return MixerBoard(settings)
 
 
-# ============================================================================ Windows / macOS
+
+
+# ============================================================================ mezcla común
+BLOCK = 480                   # 10 ms: tamaño de bloque al escribir por tubería (Linux)
+MAX_VOICES = 16
+
+
 class _Voice:
     __slots__ = ("data", "pos", "gain", "tag")
 
     def __init__(self, data, gain, tag):
         self.data, self.pos, self.gain, self.tag = data, 0, gain, tag
+
+
+class _Bus:
+    """Una salida (audífonos o micrófono virtual): mezcla las voces, aplica el
+    compresor/limitador y mide el nivel para los medidores."""
+
+    def __init__(self, np, settings, mic_feed=None):
+        self.np = np
+        self.settings = settings
+        self.voices: list[_Voice] = []
+        self.lock = threading.Lock()
+        self.mic_feed = mic_feed
+        self.comp = ld.Compressor(np)
+        self.level = (-math.inf, -math.inf, 0.0, False)   # rms dB, pico dB, compresión dB, saturó
+        self._sat_until = 0.0
+
+    def render(self, frames, out=None):
+        np = self.np
+        if out is None:
+            out = np.zeros((frames, 2), dtype=np.float32)
+        else:
+            out.fill(0)
+        with self.lock:
+            keep = []
+            for v in self.voices:
+                n = min(frames, len(v.data) - v.pos)
+                out[:n] += v.data[v.pos:v.pos + n] * v.gain
+                v.pos += n
+                if v.pos < len(v.data):
+                    keep.append(v)
+            self.voices = keep
+        if self.mic_feed is not None:
+            out += self.mic_feed.read(frames)
+        raw_peak = float(np.max(np.abs(out))) if frames else 0.0
+        comp = self.settings.get("compressor") or {}
+        now = time.monotonic()
+        if comp.get("on", True):
+            thr, ratio, ceil = ld.comp_params(self.settings)
+            self.comp.process(out, thr, ratio, ceil)
+        else:
+            self.comp.gr_db = 0.0
+            if raw_peak > 1.0:
+                self._sat_until = now + 0.8
+            np.clip(out, -1.0, 1.0, out=out)
+        if raw_peak > 0:
+            rms = float(np.sqrt(np.mean(out * out)))
+            peak = float(np.max(np.abs(out)))
+            self.level = (ld.lin_to_db(rms), ld.lin_to_db(peak), self.comp.gr_db, now < self._sat_until)
+        else:
+            self.level = (-math.inf, -math.inf, 0.0, now < self._sat_until)
+        return out
+
+    def add(self, data, gain, tag=None):
+        with self.lock:
+            if len(self.voices) >= MAX_VOICES:
+                self.voices.pop(0)
+            self.voices.append(_Voice(data, gain, tag))
+
+    def has(self, tag) -> bool:
+        with self.lock:
+            return any(v.tag == tag for v in self.voices)
+
+    def stop_tag(self, tag):
+        with self.lock:
+            self.voices = [v for v in self.voices if v.tag != tag]
+
+    def clear(self):
+        with self.lock:
+            self.voices = []
 
 
 class _MicFeed:
@@ -118,48 +201,20 @@ class _MicFeed:
             pass
 
 
-class _Output:
-    def __init__(self, sd, np, device, mic_feed=None):
-        self.np = np
-        self.voices: list[_Voice] = []
-        self.lock = threading.Lock()
-        self.mic_feed = mic_feed
+class _SDSink:
+    """Salida por sounddevice (Windows y macOS)."""
+
+    def __init__(self, sd, bus, device):
+        self.bus = bus
         self.stream = sd.OutputStream(samplerate=SR, channels=2, dtype="float32",
                                       device=device, callback=self._cb, latency="low")
         self.stream.start()
 
     def _cb(self, out, frames, _t, _status):
-        out.fill(0)
-        with self.lock:
-            keep = []
-            for v in self.voices:
-                n = min(frames, len(v.data) - v.pos)
-                out[:n] += v.data[v.pos:v.pos + n] * v.gain
-                v.pos += n
-                if v.pos < len(v.data):
-                    keep.append(v)
-            self.voices = keep
-        if self.mic_feed is not None:
-            out += self.mic_feed.read(frames)
-        self.np.clip(out, -1.0, 1.0, out=out)
+        self.bus.render(frames, out)
 
-    def add(self, data, gain, tag=None):
-        with self.lock:
-            if len(self.voices) >= 16:
-                self.voices.pop(0)
-            self.voices.append(_Voice(data, gain, tag))
-
-    def has(self, tag) -> bool:
-        with self.lock:
-            return any(v.tag == tag for v in self.voices)
-
-    def stop_tag(self, tag):
-        with self.lock:
-            self.voices = [v for v in self.voices if v.tag != tag]
-
-    def clear(self):
-        with self.lock:
-            self.voices = []
+    def alive(self):
+        return True
 
     def close(self):
         try:
@@ -169,30 +224,207 @@ class _Output:
             pass
 
 
-class MixerBoard:
+class _PipeSink:
+    """Salida por tubería a pw-cat o pacat (Linux): el programa mezcla y le
+    entrega audio crudo continuamente, en bloques de 10 ms."""
+
+    def __init__(self, cmd, bus):
+        self.bus = bus
+        self.stop = False
+        self.proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
+                                     stderr=subprocess.DEVNULL, env=clean_env(), bufsize=0)
+        try:                         # tubería chica = poca latencia
+            import fcntl
+            fcntl.fcntl(self.proc.stdin.fileno(), 1031, 8192)   # F_SETPIPE_SZ
+        except Exception:
+            pass
+        self.thread = threading.Thread(target=self._loop, daemon=True)
+        self.thread.start()
+
+    def _loop(self):
+        buf = None
+        try:
+            while not self.stop:
+                buf = self.bus.render(BLOCK, buf)
+                self.proc.stdin.write(buf.tobytes())
+        except (BrokenPipeError, OSError, ValueError):
+            pass
+
+    def alive(self):
+        return not self.stop and self.proc.poll() is None and self.thread.is_alive()
+
+    def close(self):
+        self.stop = True
+        try:
+            self.proc.stdin.close()
+        except Exception:
+            pass
+        try:
+            self.proc.terminate()
+            self.proc.wait(timeout=1)
+        except Exception:
+            try:
+                self.proc.kill()
+            except Exception:
+                pass
+
+
+class _BoardBase:
+    """Lo común: cargar archivos, medir su volumen, reproducir y medidores."""
+    kind = ""
+
+    def __init__(self, settings: dict):
+        self.settings = settings
+        self.np = self.sf = None
+        self._err = None
+        try:
+            import numpy as np
+            import soundfile as sf
+            self.np, self.sf = np, sf
+        except Exception as e:
+            self._err = f"Faltan dependencias de audio ({e})"
+        self._lock = threading.Lock()
+        self._cache: dict[str, tuple] = {}
+        self._lufs: dict[str, tuple] = {}
+        self.spk: _Bus | None = None
+        self.mic: _Bus | None = None
+
+    def available(self):
+        return (self._err is None, self._err or "")
+
+    # ---------------------------------------------------------------- archivos
+    def _load(self, path):
+        np = self.np
+        mtime = os.path.getmtime(path)
+        hit = self._cache.get(path)
+        if hit and hit[0] == mtime:
+            return hit[1]
+        try:
+            data, sr = self.sf.read(path, dtype="float32", always_2d=True)
+        except Exception as e:
+            raise SoundboardError(f"No pude leer «{os.path.basename(path)}»: {e}")
+        if data.shape[1] == 1:
+            data = np.repeat(data, 2, axis=1)
+        elif data.shape[1] > 2:
+            data = data[:, :2]
+        if sr != SR and len(data) > 1:
+            n = int(round(len(data) * SR / sr))
+            x_old = np.arange(len(data))
+            x_new = np.linspace(0, len(data) - 1, n)
+            data = np.stack([np.interp(x_new, x_old, data[:, c]) for c in range(2)],
+                            axis=1).astype(np.float32)
+        data = np.ascontiguousarray(data)
+        if len(self._cache) > 64:
+            self._cache.pop(next(iter(self._cache)))
+        self._cache[path] = (mtime, data)
+        return data
+
+    def loudness(self, path):
+        """Volumen percibido del archivo en LUFS (None si es silencio)."""
+        if self._err:
+            raise SoundboardError(self._err)
+        mtime = os.path.getmtime(path)
+        hit = self._lufs.get(path)
+        if hit and hit[0] == mtime:
+            return hit[1]
+        value = ld.measure(self.np, self._load(path))
+        self._lufs[path] = (mtime, value)
+        return value
+
+    def set_known_loudness(self, path, mtime, value):
+        """Medición guardada en la biblioteca (para no volver a calcularla)."""
+        self._lufs[path] = (mtime, value)
+
+    def norm_gain_db(self, path) -> float:
+        if not self.settings.get("normalize", True):
+            return 0.0
+        try:
+            return ld.norm_gain_db(self.loudness(path), self.settings.get("target_lufs", -16.0))
+        except (SoundboardError, OSError):
+            return 0.0
+
+    # ---------------------------------------------------------------- salidas
+    def _buses(self):
+        return [b for b in (self.spk, self.mic) if b]
+
+    def levels(self):
+        """{'spk': (rms, pico, compresión, saturó) o None, 'mic': ...}"""
+        return {"spk": self.spk.level if self.spk else None,
+                "mic": self.mic.level if self.mic else None}
+
+    def playing(self, tag) -> bool:
+        return any(b.has(tag) for b in self._buses())
+
+    def stop_tag(self, tag):
+        for b in self._buses():
+            b.stop_tag(tag)
+
+    def stop_all(self):
+        for b in self._buses():
+            b.clear()
+
+    def _ensure(self):
+        raise NotImplementedError
+
+    def play(self, path, volume=1.0, speakers=True, mic=True, tag=None, mode="overlap"):
+        """Devuelve el título, o None si la tecla detuvo su sonido (modo alternar)."""
+        if self._err:
+            raise SoundboardError(self._err)
+        if mode == "toggle" and tag and self.playing(tag):
+            self.stop_tag(tag)
+            return None
+        if not os.path.isfile(path):
+            raise SoundboardError(f"No existe el archivo «{path}»")
+        data = self._load(path)
+        gain = (max(0.0, float(volume)) * float(self.settings.get("volume", 1.0))
+                * ld.db_to_lin(self.norm_gain_db(path)))
+        with self._lock:
+            try:
+                self._ensure()
+            except SoundboardError:
+                raise
+            except Exception as e:
+                self._close_streams()
+                raise SoundboardError(f"No pude abrir el audio: {e}")
+            if tag and mode in ("restart", "hold"):
+                self.stop_tag(tag)
+            if speakers and self.spk:
+                self.spk.add(data, gain, tag)
+            if mic:
+                if not self.mic:
+                    if not speakers:
+                        raise SoundboardError("Elige el micrófono virtual en la pestaña Audio")
+                else:
+                    self.mic.add(data, gain, tag)
+        return title_of(path)
+
+    def _close_streams(self):
+        raise NotImplementedError
+
+    def close(self):
+        with self._lock:
+            self._close_streams()
+
+
+# ============================================================================ Windows / macOS
+class MixerBoard(_BoardBase):
     kind = "mixer"
     VIRTUAL_HINTS = ("CABLE Input", "BlackHole", "VB-Audio", "Loopback")
 
     def __init__(self, settings: dict):
-        self.settings = settings
-        self.sd = self.np = self.sf = None
-        self._err = None
-        try:
-            import numpy as np
-            import sounddevice as sd
-            import soundfile as sf
-            self.np, self.sd, self.sf = np, sd, sf
-        except Exception as e:   # ImportError u OSError si falta PortAudio
-            self._err = f"Faltan dependencias de audio ({e})"
-        self._lock = threading.Lock()
-        self._mon = self._mic = self._feed = None
+        super().__init__(settings)
+        self.sd = None
+        if not self._err:
+            try:
+                import sounddevice as sd
+                self.sd = sd
+            except Exception as e:   # ImportError u OSError si falta PortAudio
+                self._err = f"Faltan dependencias de audio ({e})"
+        self._sinks: list = []
+        self._feed = None
         self._opened = None
-        self._cache: dict[str, tuple] = {}
 
     # ---------------------------------------------------------------- dispositivos
-    def available(self):
-        return (self._err is None, self._err or "")
-
     def _hostapi(self):
         """En Windows hay varias APIs con los mismos dispositivos repetidos; se usa
         DirectSound, que convierte la frecuencia de muestreo sola."""
@@ -227,6 +459,10 @@ class MixerBoard:
                 return name
         return ""
 
+    def virtual_mic_missing(self) -> bool:
+        """True si no hay ningún micrófono virtual instalado (VB-Cable/BlackHole)."""
+        return not self._err and not self.suggested_mic()
+
     def _index(self, name, kind):
         if not name:
             return None
@@ -251,20 +487,23 @@ class MixerBoard:
         if want == self._opened:
             return
         self._close_streams()
-        self._mon = _Output(self.sd, self.np, self._index(want[0], "out"))
+        np = self.np
+        self.spk = _Bus(np, s)
+        self._sinks.append(_SDSink(self.sd, self.spk, self._index(want[0], "out")))
         if want[1]:
-            feed = None
             if want[2]:
-                feed = _MicFeed(self.sd, self.np, self._index(want[3], "in"))
-            self._feed = feed
-            self._mic = _Output(self.sd, self.np, self._index(want[1], "out"), feed)
+                self._feed = _MicFeed(self.sd, np, self._index(want[3], "in"))
+            self.mic = _Bus(np, s, self._feed)
+            self._sinks.append(_SDSink(self.sd, self.mic, self._index(want[1], "out")))
         self._opened = want
 
     def _close_streams(self):
-        for x in (self._mon, self._mic, self._feed):
+        for x in self._sinks + [self._feed]:
             if x is not None:
                 x.close()
-        self._mon = self._mic = self._feed = None
+        self._sinks = []
+        self._feed = None
+        self.spk = self.mic = None
         self._opened = None
 
     def apply(self):
@@ -275,103 +514,22 @@ class MixerBoard:
             self._close_streams()
             self._ensure()
 
-    def _load(self, path):
-        np = self.np
-        mtime = os.path.getmtime(path)
-        hit = self._cache.get(path)
-        if hit and hit[0] == mtime:
-            return hit[1]
-        try:
-            data, sr = self.sf.read(path, dtype="float32", always_2d=True)
-        except Exception as e:
-            raise SoundboardError(f"No pude leer «{os.path.basename(path)}»: {e}")
-        if data.shape[1] == 1:
-            data = np.repeat(data, 2, axis=1)
-        elif data.shape[1] > 2:
-            data = data[:, :2]
-        if sr != SR and len(data) > 1:
-            n = int(round(len(data) * SR / sr))
-            x_old = np.arange(len(data))
-            x_new = np.linspace(0, len(data) - 1, n)
-            data = np.stack([np.interp(x_new, x_old, data[:, c]) for c in range(2)],
-                            axis=1).astype(np.float32)
-        data = np.ascontiguousarray(data)
-        if len(self._cache) > 64:
-            self._cache.pop(next(iter(self._cache)))
-        self._cache[path] = (mtime, data)
-        return data
-
-    def _outs(self):
-        return [o for o in (self._mon, self._mic) if o]
-
-    def playing(self, tag) -> bool:
-        return any(o.has(tag) for o in self._outs())
-
-    def stop_tag(self, tag):
-        with self._lock:
-            for o in self._outs():
-                o.stop_tag(tag)
-
-    def play(self, path, volume=1.0, speakers=True, mic=True, tag=None, mode="overlap"):
-        """Devuelve el título, o None si la tecla detuvo su sonido (modo alternar)."""
-        if self._err:
-            raise SoundboardError(self._err)
-        if mode == "toggle" and tag and self.playing(tag):
-            self.stop_tag(tag)
-            return None
-        if not os.path.isfile(path):
-            raise SoundboardError(f"No existe el archivo «{path}»")
-        data = self._load(path)
-        gain = float(volume) * float(self.settings.get("volume", 1.0))
-        with self._lock:
-            try:
-                self._ensure()
-            except SoundboardError:
-                raise
-            except Exception as e:
-                self._close_streams()
-                raise SoundboardError(f"No pude abrir el audio: {e}")
-            if tag and mode in ("restart", "hold"):
-                for o in self._outs():
-                    o.stop_tag(tag)
-            if speakers and self._mon:
-                self._mon.add(data, gain, tag)
-            if mic:
-                if not self._mic:
-                    if not speakers:
-                        raise SoundboardError("Elige el micrófono virtual en la pestaña Audio")
-                else:
-                    self._mic.add(data, gain, tag)
-        return title_of(path)
-
-    def stop_all(self):
-        with self._lock:
-            for o in (self._mon, self._mic):
-                if o:
-                    o.clear()
-
-    def close(self):
-        with self._lock:
-            self._close_streams()
-
 
 # ============================================================================ Linux
-class PipeWireBoard:
+class PipeWireBoard(_BoardBase):
     kind = "pipewire"
     SINK = "numpad_macros_sink"
     SRC = "numpad_macros_mic"
     MIC_LABEL = "NumpadMacros-Mic"
 
     def __init__(self, settings: dict):
-        self.settings = settings
-        self.procs: list[tuple[str, subprocess.Popen]] = []
-        self._lock = threading.Lock()
-        self.player = "pw-play" if shutil.which("pw-play") else ("paplay" if shutil.which("paplay") else None)
+        super().__init__(settings)
+        self.player = "pw-cat" if shutil.which("pw-cat") else ("pacat" if shutil.which("pacat") else None)
         self.pactl = shutil.which("pactl")
         self._ready = False
-        self._err = None
-        if not self.pactl or not self.player:
-            self._err = ("Falta PipeWire/PulseAudio (comandos pactl y pw-play o paplay). "
+        self._sinks: list = []
+        if not self._err and (not self.pactl or not self.player):
+            self._err = ("Falta PipeWire/PulseAudio (comandos pactl y pw-cat o pacat). "
                          "En Arch/CachyOS: sudo pacman -S pipewire-pulse")
 
     def _run(self, *args) -> str:
@@ -388,9 +546,6 @@ class PipeWireBoard:
             if len(parts) >= 2:
                 mods.append((parts[0], parts[1], parts[2] if len(parts) > 2 else ""))
         return mods
-
-    def available(self):
-        return (self._err is None, self._err or "")
 
     def outputs(self):
         return []
@@ -420,6 +575,9 @@ class PipeWireBoard:
     def suggested_mic(self):
         return self.MIC_LABEL
 
+    def virtual_mic_missing(self) -> bool:
+        return False                 # en Linux se crea solo
+
     @staticmethod
     def _source_name(label: str) -> str:
         if label.endswith("]") and "[" in label:
@@ -433,96 +591,72 @@ class PipeWireBoard:
             return f"Micrófono virtual «{self.MIC_LABEL}» listo: elígelo como micrófono en Discord/OBS"
         return "El micrófono virtual se crea al iniciar"
 
+    def _setup_modules(self):
+        mods = self._modules()
+        have_sink = any(n == "module-null-sink" and f"sink_name={self.SINK}" in a for _, n, a in mods)
+        have_src = any(n == "module-remap-source" and f"source_name={self.SRC}" in a for _, n, a in mods)
+        for mid, n, a in mods:     # el loopback del mic real se rehace siempre
+            if n == "module-loopback" and f"sink={self.SINK}" in a:
+                self._run("unload-module", mid)
+        if not have_sink:
+            self._run("load-module", "module-null-sink", f"sink_name={self.SINK}",
+                      "sink_properties=device.description=NumpadMacros-Salida")
+        if not have_src:
+            self._run("load-module", "module-remap-source", f"master={self.SINK}.monitor",
+                      f"source_name={self.SRC}",
+                      f"source_properties=device.description={self.MIC_LABEL}")
+        if self.settings.get("mix_mic"):
+            src = self._source_name(self.settings.get("mic_input", "")) or \
+                self._run("get-default-source").strip()
+            if src and src != self.SRC and not src.startswith(self.SINK):
+                self._run("load-module", "module-loopback", f"source={src}",
+                          f"sink={self.SINK}", "latency_msec=20")
+        self._ready = True
+
+    def _cmd(self, target, name):
+        if self.player == "pw-cat":
+            cmd = ["pw-cat", "--playback", "--format", "f32", "--rate", str(SR), "--channels", "2",
+                   "--latency", "20ms", "-P", f"{{ node.description = \"Numpad Macros ({name})\" }}"]
+            if target:
+                cmd += ["--target", target]
+            return cmd + ["-"]
+        cmd = ["pacat", "--playback", "--raw", "--format=float32le", f"--rate={SR}", "--channels=2",
+               "--latency-msec=30", f"--client-name=Numpad Macros ({name})"]
+        if target:
+            cmd.append(f"--device={target}")
+        return cmd
+
+    def _ensure(self):
+        if self._sinks and all(s.alive() for s in self._sinks):
+            return
+        self._close_streams()
+        if not self._ready:
+            self._setup_modules()
+        self.spk = _Bus(self.np, self.settings)
+        self.mic = _Bus(self.np, self.settings)
+        self._sinks = [_PipeSink(self._cmd(None, "audífonos"), self.spk),
+                       _PipeSink(self._cmd(self.SINK, "micrófono"), self.mic)]
+
+    def _close_streams(self):
+        for s in self._sinks:
+            s.close()
+        self._sinks = []
+        self.spk = self.mic = None
+
     def apply(self):
         """Crea (o rehace) el micrófono virtual según los ajustes."""
         if self._err:
             return
         with self._lock:
-            mods = self._modules()
-            have_sink = any(n == "module-null-sink" and f"sink_name={self.SINK}" in a for _, n, a in mods)
-            have_src = any(n == "module-remap-source" and f"source_name={self.SRC}" in a for _, n, a in mods)
-            for mid, n, a in mods:     # el loopback del mic real se rehace siempre
-                if n == "module-loopback" and f"sink={self.SINK}" in a:
-                    self._run("unload-module", mid)
-            if not have_sink:
-                self._run("load-module", "module-null-sink", f"sink_name={self.SINK}",
-                          "sink_properties=device.description=NumpadMacros-Salida")
-            if not have_src:
-                self._run("load-module", "module-remap-source", f"master={self.SINK}.monitor",
-                          f"source_name={self.SRC}",
-                          f"source_properties=device.description={self.MIC_LABEL}")
-            if self.settings.get("mix_mic"):
-                src = self._source_name(self.settings.get("mic_input", "")) or \
-                    self._run("get-default-source").strip()
-                if src and src != self.SRC and not src.startswith(self.SINK):
-                    self._run("load-module", "module-loopback", f"source={src}",
-                              f"sink={self.SINK}", "latency_msec=20")
-            self._ready = True
-
-    @staticmethod
-    def _kill(procs):
-        for p in procs:
-            if p.poll() is None:
-                p.terminate()
-        for p in procs:
-            try:
-                p.wait(timeout=1)
-            except subprocess.TimeoutExpired:
-                p.kill()
-
-    def playing(self, tag) -> bool:
-        with self._lock:
-            return any(t == tag and p.poll() is None for t, p in self.procs)
-
-    def stop_tag(self, tag):
-        with self._lock:
-            mine = [p for t, p in self.procs if t == tag]
-            self.procs = [(t, p) for t, p in self.procs if t != tag]
-        self._kill(mine)
-
-    def play(self, path, volume=1.0, speakers=True, mic=True, tag=None, mode="overlap"):
-        """Devuelve el título, o None si la tecla detuvo su sonido (modo alternar)."""
-        if self._err:
-            raise SoundboardError(self._err)
-        if mode == "toggle" and tag and self.playing(tag):
-            self.stop_tag(tag)
-            return None
-        if not os.path.isfile(path):
-            raise SoundboardError(f"No existe el archivo «{path}»")
-        if mic and not self._ready:
-            self.apply()
-        if tag and mode in ("restart", "hold"):
-            self.stop_tag(tag)
-        v = max(0.0, float(volume) * float(self.settings.get("volume", 1.0)))
-        targets = ([None] if speakers else []) + ([self.SINK] if mic else [])
-        env = clean_env()
-        with self._lock:
-            self.procs = [(t, p) for t, p in self.procs if p.poll() is None]
-            for target in targets:
-                if self.player == "pw-play":
-                    cmd = ["pw-play", "--volume", f"{v:.2f}"]
-                    if target:
-                        cmd += ["--target", target]
-                else:
-                    cmd = ["paplay", f"--volume={int(v * 65536)}"]
-                    if target:
-                        cmd.append(f"--device={target}")
-                cmd.append(path)
-                self.procs.append((tag, subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
-                                                         stderr=subprocess.DEVNULL, env=env)))
-        return title_of(path)
-
-    def stop_all(self):
-        with self._lock:
-            procs = [p for _, p in self.procs]
-            self.procs = []
-        self._kill(procs)
+            self._close_streams()
+            self._setup_modules()
+            self._ensure()
 
     def close(self):
-        self.stop_all()
-        if self._err:
-            return
         with self._lock:
+            self._close_streams()
+            if self._err:
+                return
             try:
                 ours = {"module-loopback": f"sink={self.SINK}",
                         "module-remap-source": f"source_name={self.SRC}",

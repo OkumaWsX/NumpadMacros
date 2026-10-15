@@ -18,6 +18,17 @@ Al pausar o cerrar la app, el numpad vuelve a funcionar como un numpad normal.
 - **Solo tu numpad:** «Detectar numpad» identifica el numpad exacto; los demás teclados no se tocan.
 - **Sin numpad, con la fila de números:** pulsa **Ctrl+Alt+M** para activar el **modo macros**. Con el modo activo, las teclas **1–0, - y =** de tu teclado normal lanzan sus propias acciones (cada banco tiene las suyas, en la fila de números del dibujo). Todas las demás teclas siguen escribiendo normal. Con Ctrl+Alt+M otra vez vuelves a escribir números. La combinación se puede cambiar en «Numpad y opciones».
 
+## Medidores, igualar volumen y compresor
+- Arriba de la ventana hay dos **medidores**: lo que suena en tus audífonos y lo que sale por el micrófono virtual. Si algo satura aparece **SATURA**; si el compresor está bajando el volumen, lo indica.
+- **Igualar volumen** (pestaña *Audio*): la app mide cuánto «suena» cada archivo (en LUFS) y los ajusta para que todos se escuchen parecido. −16 LUFS es lo recomendado para Discord y streams. El volumen de cada tecla se aplica después.
+- **Compresor / limitador**: baja los picos fuertes para que Discord no corte ni distorsione. *Media* sirve para casi todo.
+- El volumen de cada tecla y el general se ven en **% y dB** mientras los mueves.
+
+## Actualizaciones
+Desde la versión 3.3 la app revisa una vez al día si hay una versión nueva. Si la hay, aparece un aviso arriba: **Actualizar** muestra las novedades y, con **Actualizar ahora**, la descarga, comprueba que sea el archivo original y se instala sola (en Windows, Windows pide permiso una vez). Tu configuración, bancos y sonidos no se tocan. Puedes desactivarlo o buscar a mano en la pestaña **Creador**, y ver las novedades de tu versión con el botón **«Novedades»** de abajo.
+
+En macOS y en la versión portátil de Windows la app avisa y abre la página de descarga.
+
 ## Instalación
 
 Descarga el archivo de tu sistema (ver *Cómo obtener los programas* más abajo).
@@ -58,7 +69,7 @@ Queda en el menú Inicio, con acceso directo en el escritorio, y se desinstala d
 Para que Discord o un juego "escuchen" los sonidos, el sistema necesita un dispositivo de micrófono extra. Crear uno requiere un **driver de audio**: Soundpad trae el suyo dentro del instalador. En Windows y Mac la app usa VB-Cable o BlackHole, que son gratuitos y se instalan una sola vez. En Linux no hace falta, porque PipeWire permite crearlo sin drivers. Sin micrófono virtual, todo funciona igual, pero los sonidos solo se escuchan en tus audífonos.
 
 ## Dónde descargar
-**Windows (descarga directa):** https://github.com/OkumaWsX/NumpadMacros/raw/main/descargas/NumpadMacros-Windows-Setup.exe
+**Windows (descarga directa de la última versión):** https://github.com/OkumaWsX/NumpadMacros/releases/latest/download/NumpadMacros-Windows-Setup.exe
 
 Todas las versiones se publican en **https://github.com/OkumaWsX/NumpadMacros/releases**: el instalador de Windows (`NumpadMacros-Windows-Setup.exe`), la versión portátil de Windows, Linux (`NumpadMacros-Linux.tar.gz`) y macOS (`NumpadMacros-macOS.zip`).
 

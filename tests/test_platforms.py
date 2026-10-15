@@ -105,6 +105,9 @@ class MixerTest(unittest.TestCase):
                 {"name": "Micrófono MacBook", "max_output_channels": 0, "max_input_channels": 1, "hostapi": 0},
             ])
         self.settings = copy.deepcopy(config.DEFAULT["audio"])
+        # estas pruebas revisan el ruteo: sin nivelación ni compresor
+        self.settings["normalize"] = False
+        self.settings["compressor"]["on"] = False
         self.board = MixerBoard(self.settings)
         self.board.sd, self.board.np, self.board.sf, self.board._err = sd, np, sf, None
         self.streams = streams
@@ -163,14 +166,34 @@ class MixerTest(unittest.TestCase):
         mon = lambda: [s for k, s in self.streams if k == "out"][0]
         self.board.play(self.wav, tag="k", mode="overlap")
         self.board.play(self.wav, tag="k", mode="overlap")
-        self.assertEqual(len(mon().callback.__self__.voices), 2)
+        self.assertEqual(len(mon().callback.__self__.bus.voices), 2)
         self.board.play(self.wav, tag="k", mode="restart")
-        self.assertEqual(len(mon().callback.__self__.voices), 1)
+        self.assertEqual(len(mon().callback.__self__.bus.voices), 1)
         self.assertIsNone(self.board.play(self.wav, tag="k", mode="toggle"))   # detiene
-        self.assertEqual(len(mon().callback.__self__.voices), 0)
+        self.assertEqual(len(mon().callback.__self__.bus.voices), 0)
         self.assertEqual(self.board.play(self.wav, tag="k", mode="toggle"), "beep")  # vuelve a sonar
         self.board.stop_tag("k")
         self.assertFalse(self.board.playing("k"))
+
+    def test_normalize_compressor_and_meters(self):
+        np = self.np
+        self.settings.update(normalize=True, target_lufs=-16.0)
+        self.settings["compressor"]["on"] = True
+        lufs = self.board.loudness(self.wav)
+        self.assertAlmostEqual(lufs, -6.7, delta=1.0)          # seno de 0,5 (mono -> estéreo)
+        self.assertAlmostEqual(self.board.norm_gain_db(self.wav), -16.0 - lufs, delta=0.01)
+        self.board.play(self.wav, 1.0)
+        out = self.run_cb([s for k, s in self.streams if k == "out"][0], 4800)
+        self.assertLess(abs(out).max(), 0.3)                    # bajó al objetivo
+        rms, peak, gr, sat = self.board.levels()["spk"]
+        self.assertTrue(-30 < peak < 0)
+        self.assertFalse(sat)
+        self.settings["compressor"]["on"] = False
+        self.settings["normalize"] = False
+        self.board.play(self.wav, 4.0)
+        self.run_cb([s for k, s in self.streams if k == "out"][0])
+        self.assertTrue(self.board.levels()["spk"][3])          # saturó: se avisa
+        _ = np
 
     def test_volume_and_clip(self):
         self.settings["volume"] = 0.5
@@ -198,8 +221,11 @@ case "$1" in
   get-default-source) echo alsa_input.usb;;
 esac
 """
-        play = f"#!/bin/sh\necho \"pw-play $*\" >> {self.log}\nsleep 5\n"
-        for name, body in (("pactl", pactl), ("pw-play", play)):
+        # pw-cat falso: anota sus argumentos y guarda el audio que recibe
+        play = (f"#!/bin/sh\necho \"pw-cat $*\" >> {self.log}\n"
+                f"case \"$*\" in *numpad_macros_sink*) exec cat > {self.dir}/mic.raw;; "
+                f"*) exec cat > {self.dir}/spk.raw;; esac\n")
+        for name, body in (("pactl", pactl), ("pw-cat", play)):
             p = os.path.join(self.dir, name)
             with open(p, "w") as f:
                 f.write(body)
@@ -209,11 +235,18 @@ esac
         from npm.soundboard import PipeWireBoard
         self.settings = copy.deepcopy(config.DEFAULT["audio"])
         self.board = PipeWireBoard(self.settings)
+        try:
+            import numpy as np
+            import soundfile as sf
+        except ImportError:
+            self.skipTest("numpy/soundfile no instalados")
+        self.np = np
         self.wav = os.path.join(self.dir, "x.wav")
-        open(self.wav, "wb").close()
+        t = np.arange(48000) / 48000
+        sf.write(self.wav, (0.5 * np.sin(2 * np.pi * 440 * t)).astype("float32"), 48000)
 
     def tearDown(self):
-        self.board.stop_all()
+        self.board.close()
         os.environ["PATH"] = self.old_path
 
     def lines(self):
@@ -233,10 +266,12 @@ esac
         self.assertEqual(mods.count("module-null-sink"), 1)
         self.assertEqual(mods.count("module-loopback"), 1)
         self.board.play(self.wav, 0.8, True, True)
-        time.sleep(0.2)
-        plays = [ln for ln in self.lines() if ln.startswith("pw-play")]
-        self.assertEqual(len(plays), 2)
+        time.sleep(0.4)
+        plays = [ln for ln in self.lines() if ln.startswith("pw-cat")][-2:]   # las de la última conexión
         self.assertTrue(any("--target numpad_macros_sink" in p for p in plays))
+        self.assertTrue(all("--format f32" in p for p in plays))
+        mic = self.np.fromfile(os.path.join(self.dir, "mic.raw"), dtype="float32")
+        self.assertGreater(abs(mic).max(), 0.05)          # el sonido llegó al micrófono virtual
         self.assertEqual(self.board.inputs(), ["Mic USB [alsa_input.usb]"])
         self.board.stop_all()
         # alternar: segunda pulsación detiene

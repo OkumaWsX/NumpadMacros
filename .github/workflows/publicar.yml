@@ -1,0 +1,161 @@
+# Publica una versión nueva de Numpad Macros.
+#
+# Cómo usarlo: pestaña Actions → «Publicar versión» → «Run workflow»
+# (o arrastrando la versión al programa Publicador, que hace lo mismo).
+#
+# 1. preparar:  calcula el número, revisa que el CHANGELOG tenga novedades.
+# 2. compilar:  pruebas + Windows (instalador y portátil), Linux y macOS.
+# 3. publicar:  solo si todo lo anterior salió bien: guarda el número nuevo,
+#               crea la etiqueta vX.Y.Z, la Release con los archivos y sus
+#               huellas SHA256 (las usa la app para actualizarse) y avisa en Discord.
+# Si algo falla, no se publica nada y GitHub te avisa por correo.
+name: Publicar versión
+
+on:
+  workflow_dispatch:
+    inputs:
+      tipo:
+        description: "¿Qué tipo de versión es?"
+        type: choice
+        options: [automatico, correccion, mejora, grande]
+        default: automatico
+      version:
+        description: "Número exacto (opcional; el Publicador lo completa solo)"
+        type: string
+        required: false
+        default: ""
+      beta:
+        description: "Versión de prueba (beta): solo la reciben quienes activaron las betas"
+        type: boolean
+        default: false
+      importante:
+        description: "Importante: los usuarios no pueden omitirla"
+        type: boolean
+        default: false
+      discord:
+        description: "Anunciar en mi Discord"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publicar-version
+  cancel-in-progress: false
+
+jobs:
+  preparar:
+    name: Preparar
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.prep.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Revisar y preparar la versión
+        id: prep
+        run: >
+          python tools/release.py prepare
+          --tipo "${{ inputs.tipo }}"
+          --version "${{ inputs.version }}"
+          ${{ inputs.importante && '--importante' || '' }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: preparado
+          path: |
+            npm/__init__.py
+            CHANGELOG.md
+            notas.md
+            resumen.txt
+          if-no-files-found: error
+
+  compilar:
+    name: Compilar
+    needs: preparar
+    uses: ./.github/workflows/compilar.yml
+    with:
+      preparado: true
+
+  publicar:
+    name: Publicar
+    needs: [preparar, compilar]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.preparar.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: preparado
+          path: .
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: NumpadMacros-*
+          path: out
+          merge-multiple: true
+
+      - name: Huellas de seguridad (SHA256SUMS.txt)
+        run: |
+          cd out
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Guardar el número de versión y crear la etiqueta
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add npm/__init__.py CHANGELOG.md
+          git commit -m "Versión $VERSION" || echo "Sin cambios que guardar"
+          for i in 1 2 3; do
+            git pull --rebase origin main && git push origin HEAD:main && break
+            sleep 5
+          done
+          git tag -a "v$VERSION" -m "Numpad Macros $VERSION"
+          git push origin "v$VERSION"
+
+      - name: Crear la Release
+        run: |
+          flags=""
+          if [ "${{ inputs.beta }}" = "true" ]; then flags="--prerelease"; else flags="--latest"; fi
+          gh release create "v$VERSION" out/* \
+            --title "Numpad Macros $VERSION" \
+            --notes-file notas.md $flags
+
+      - name: Anunciar en Discord
+        if: inputs.discord
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then
+            echo "::notice::No hay webhook de Discord configurado (secreto DISCORD_WEBHOOK): no se anuncia."
+            exit 0
+          fi
+          extra=""
+          [ "${{ inputs.beta }}" = "true" ] && extra=" (versión de prueba)"
+          [ "${{ inputs.importante }}" = "true" ] && extra="$extra · actualización importante"
+          resumen="$(cat resumen.txt)"
+          url="https://github.com/${{ github.repository }}/releases/tag/v$VERSION"
+          python3 - "$WEBHOOK" "$VERSION" "$extra" "$resumen" "$url" <<'PY'
+          import json, sys, urllib.request
+          hook, ver, extra, resumen, url = sys.argv[1:]
+          msg = (f"🎉 **Numpad Macros {ver}**{extra} ya está disponible.\n"
+                 + (f"Novedades: {resumen}.\n" if resumen else "")
+                 + "Abre la app y pulsa «Actualizar», o descárgala aquí: " + url)
+          req = urllib.request.Request(hook, data=json.dumps({"content": msg[:1900]}).encode(),
+                                       headers={"Content-Type": "application/json", "User-Agent": "NumpadMacros"})
+          urllib.request.urlopen(req, timeout=15)
+          print("Anunciado en Discord.")
+          PY
+
+      - name: Resumen
+        run: |
+          echo "## ✓ Numpad Macros $VERSION publicada" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://github.com/${{ github.repository }}/releases/tag/v$VERSION" >> "$GITHUB_STEP_SUMMARY"

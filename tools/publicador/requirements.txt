@@ -1,0 +1,3 @@
+# Publicador (solo para el creador)
+tkinterdnd2>=0.4
+certifi

@@ -1,11 +1,14 @@
 ; Instalador de Numpad Macros para Windows (Inno Setup 6)
-; Compilar:  ISCC.exe /DAppVersion=3.2.0 installer\NumpadMacros.iss
+; Compilar:  ISCC.exe /DAppVersion=3.3.0 installer\NumpadMacros.iss
+; Actualización automática (la lanza la propia app):
+;   NumpadMacros-Windows-Setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /ACTUALIZAR=1
+;   -> solo reemplaza el programa (no toca los drivers) y vuelve a abrir la app
 ; Antes hay que tener:
 ;   dist\NumpadMacros\              (salida de PyInstaller)
 ;   third_party\install-interception.exe y third_party\LGPL-3.0.txt
 
 #ifndef AppVersion
-  #define AppVersion "3.2.1"
+  #define AppVersion "3.3.0"
 #endif
 #define AppName "Numpad Macros"
 #define AppExe "NumpadMacros.exe"
@@ -62,8 +65,8 @@ es.DownloadDesc=Se descarga desde la página oficial de VB-Audio.
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:TaskDesktop}"; GroupDescription: "{cm:GroupShortcuts}"
-Name: "interception"; Description: "{cm:TaskInterception}"; GroupDescription: "{cm:GroupRecommended}"; Check: not InterceptionInstalled
-Name: "vbcable"; Description: "{cm:TaskVBCable}"; GroupDescription: "{cm:GroupRecommended}"
+Name: "interception"; Description: "{cm:TaskInterception}"; GroupDescription: "{cm:GroupRecommended}"; Check: (not InterceptionInstalled) and (not IsUpdate)
+Name: "vbcable"; Description: "{cm:TaskVBCable}"; GroupDescription: "{cm:GroupRecommended}"; Check: (not VBCableInstalled) and (not IsUpdate)
 Name: "autostart"; Description: "{cm:TaskAutostart}"; GroupDescription: "{cm:GroupOptions}"; Flags: unchecked
 
 [Files]
@@ -89,6 +92,8 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueName: 
 Filename: "{app}\drivers\install-interception.exe"; Parameters: "/install"; StatusMsg: "{cm:RunInterception}"; Flags: runhidden waituntilterminated; Tasks: interception
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{tmp}\vbcable.ps1"" -Zip ""{tmp}\vbcable.zip"""; StatusMsg: "{cm:RunVBCable}"; Flags: runhidden waituntilterminated; Tasks: vbcable; Check: VBCableDownloaded
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchApp}"; Flags: nowait postinstall skipifsilent runasoriginaluser
+; Al actualizar en silencio, la app se vuelve a abrir sola
+Filename: "{app}\{#AppExe}"; Flags: nowait runasoriginaluser; Check: IsUpdate
 
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/f /im {#AppExe}"; Flags: runhidden; RunOnceId: "CerrarApp"
@@ -109,6 +114,34 @@ begin
   Result := FileExists(ExpandConstant('{sys}\drivers\keyboard.sys'));
 end;
 
+function IsUpdate: Boolean;
+begin
+  Result := ExpandConstant('{param:ACTUALIZAR|0}') = '1';
+end;
+
+function VBCableInstalled: Boolean;
+var
+  FindRec: TFindRec;
+begin
+  { El driver de VB-Cable se copia como vbaudio_cable64_*.sys }
+  Result := FindFirst(ExpandConstant('{sys}\drivers\vbaudio_cable*.sys'), FindRec);
+  if Result then
+    FindClose(FindRec);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Code: Integer;
+begin
+  Result := '';
+  if IsUpdate then
+  begin
+    { La app se cierra sola antes de actualizar; por si sigue abierta: }
+    Sleep(1500);
+    Exec(ExpandConstant('{sys}\taskkill.exe'), '/f /im {#AppExe}', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  end;
+end;
+
 function VBCableDownloaded: Boolean;
 begin
   Result := VBDownloaded;
@@ -122,7 +155,7 @@ end;
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
-  if (CurPageID = wpReady) and WizardIsTaskSelected('vbcable') then
+  if (CurPageID = wpReady) and (not IsUpdate) and WizardIsTaskSelected('vbcable') then
   begin
     DownloadPage.Clear;
     DownloadPage.Add('{#VBCableUrl}', 'vbcable.zip', '');
@@ -145,5 +178,5 @@ end;
 function NeedRestart(): Boolean;
 begin
   { Los drivers de teclado y de audio funcionan después de reiniciar }
-  Result := WizardIsTaskSelected('interception') or VBDownloaded;
+  Result := (not IsUpdate) and (WizardIsTaskSelected('interception') or VBDownloaded);
 end;

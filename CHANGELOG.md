@@ -2,6 +2,24 @@
 
 Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
+## [Sin publicar]
+### Añadido
+- **Medidores de volumen en tiempo real** para tus audífonos y el micrófono virtual, con aviso cuando satura o cuando actúa el compresor.
+- **Igualar volumen**: mide cuánto «suena» cada sonido (LUFS) y los deja a todos al mismo nivel. Objetivo ajustable (−16 LUFS recomendado).
+- **Compresor / limitador** con presets Suave, Media, Fuerte y Personalizada: los picos ya no saturan ni se cortan en Discord.
+- **Actualizaciones con un clic**: la app avisa cuando hay una versión nueva, muestra sus novedades, la descarga, comprueba que sea la original y se instala sola.
+- **Ventana de novedades** de la versión instalada (botón «Novedades» abajo y en la pestaña Creador).
+- **Grabar combinaciones** pulsando las teclas, para los atajos y para el modo macros, con aviso si eliges una combinación que ya usan otros programas (Ctrl+C, Alt+F4…).
+- Pestaña **Audio**: si falta el micrófono virtual, botón para instalar VB-Cable (Windows) o descargar BlackHole (macOS).
+
+### Cambiado
+- El volumen de cada tecla y el volumen general se ven en % y en dB mientras los mueves.
+- La biblioteca muestra el volumen medido de cada sonido y cuánto se ajusta.
+- Linux: los sonidos pasan por el mismo mezclador que en Windows y macOS (mejor sincronía y medidores).
+
+### Corregido
+- Al actualizar, el instalador de Windows ya no vuelve a instalar VB-Cable ni Interception ni pide reiniciar.
+
 ## [3.2.1] - 2026-10-09
 ### Añadido
 - Publicación en GitHub con documentación completa, licencia LGPL-3.0 y compilación automática.
