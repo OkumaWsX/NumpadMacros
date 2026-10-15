@@ -385,10 +385,9 @@ def upload(pkg: Package, gh: GitHub, rv: Review, version, progress=lambda msg: N
 def start_robot(gh: GitHub, version, beta, important, discord, wait=lambda s: time.sleep(s)):
     """Inicia «Publicar versión». Devuelve la hora (UTC, ISO) del inicio."""
     started = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 5))
-    yes = lambda v: "true" if v else "false"      # noqa: E731  (GitHub recibe los sí/no como texto)
     body = {"ref": BRANCH, "inputs": {"tipo": "automatico", "version": vstr(version),
-                                      "beta": yes(beta), "importante": yes(important),
-                                      "discord": yes(discord)}}
+                                      "beta": bool(beta), "importante": bool(important),
+                                      "discord": bool(discord)}}
     for i in range(12):                # recién subido, GitHub tarda unos segundos en ver el robot
         try:
             gh.call("POST", gh.r(f"/actions/workflows/{WORKFLOW}/dispatches"), body)

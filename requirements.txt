@@ -8,5 +8,3 @@ soundfile>=0.12
 sounddevice>=0.4.6; sys_platform != "linux"
 # Captura del numpad y teclado virtual en Linux
 evdev>=1.6; sys_platform == "linux"
-# Certificados para conectarse a GitHub (actualizaciones) en cualquier sistema
-certifi

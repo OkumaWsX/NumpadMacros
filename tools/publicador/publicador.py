@@ -12,7 +12,7 @@ import threading
 import time
 import tkinter as tk
 import webbrowser
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, ttk
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import nucleo as core  # noqa: E402
@@ -29,39 +29,11 @@ C = {"bg": "#14161b", "panel": "#1c1f26", "panel2": "#232730", "line": "#2e333d"
      "muted": "#8b909b", "accent": "#f2a33a", "ok": "#4cc38a", "bad": "#e5534b", "warn": "#e2b340"}
 
 
-def _clean_env():
-    """Entorno sin las librerías internas del Publicador empaquetado: si el navegador
-    las hereda, en Linux falla sin mostrar nada."""
-    env = os.environ.copy()
-    if getattr(sys, "frozen", False):
-        orig = env.pop("LD_LIBRARY_PATH_ORIG", None)
-        if orig is not None:
-            env["LD_LIBRARY_PATH"] = orig
-        else:
-            env.pop("LD_LIBRARY_PATH", None)
-        for k in list(env):
-            if k.startswith(("_PYI", "_MEI")):
-                env.pop(k, None)
-    return env
-
-
-def open_url(url) -> bool:
-    """Abre un enlace en el navegador. Devuelve False si no se pudo."""
-    import shutil
-    import subprocess
-    if sys.platform.startswith("linux"):
-        for cmd in (["xdg-open", url], ["gio", "open", url], ["kde-open", url]):
-            if shutil.which(cmd[0]):
-                try:
-                    subprocess.Popen(cmd, env=_clean_env(), stdout=subprocess.DEVNULL,
-                                     stderr=subprocess.DEVNULL, start_new_session=True)
-                    return True
-                except OSError:
-                    continue
+def open_url(url):
     try:
-        return bool(webbrowser.open(url))
+        webbrowser.open(url)
     except Exception:
-        return False
+        pass
 
 
 class App:
@@ -183,10 +155,8 @@ class App:
         ]
         for i, s in enumerate(steps):
             self._label(p, f"{i + 1}.  {s}", row=2 + i, column=0, pady=2)
-        ttk.Button(p, text="Crear el token en GitHub ↗", command=self._open_token_page).grid(
-            row=8, column=0, sticky="w", pady=(12, 0))
-        self.token_hint = self._label(p, "", -1, color=C["muted"], row=11, column=0, pady=(10, 0))
-        tk.Frame(p, bg=C["panel"], height=14).grid(row=12, column=0)
+        ttk.Button(p, text="Crear el token en GitHub ↗", command=lambda: open_url(core.TOKEN_URL)).grid(
+            row=8, column=0, sticky="w", pady=(12, 14))
         row = tk.Frame(p, bg=C["panel"])
         row.grid(row=9, column=0, sticky="ew")
         row.columnconfigure(0, weight=1)
@@ -194,47 +164,13 @@ class App:
         e = ttk.Entry(row, textvariable=self.token_var, show="•", font=(FONT, BASE + 1))
         e.grid(row=0, column=0, sticky="ew", ipady=4)
         e.focus_set()
-        ttk.Button(row, text="Pegar", command=self._paste_token).grid(row=0, column=1, padx=(8, 0))
         self.btn_save = ttk.Button(row, text="Guardar y probar", style="Accent.TButton", command=self._save_token)
-        self.btn_save.grid(row=0, column=2, padx=(8, 0))
-        e.bind("<Return>", lambda ev: self._save_token())
+        self.btn_save.grid(row=0, column=1, padx=(10, 0))
         self.connect_msg = self._label(p, error, color=C["bad"], row=10, column=0, pady=(10, 0))
-
-    def _copy(self, text):
-        try:
-            self.root.clipboard_clear()
-            self.root.clipboard_append(text)
-            self.root.update()          # deja el texto en el portapapeles
-        except tk.TclError:
-            pass
-
-    def _paste_token(self):
-        try:
-            text = self.root.clipboard_get()
-        except tk.TclError:
-            text = ""
-        if text.strip():
-            self.token_var.set(text.strip())
-            self.connect_msg.configure(text="Token pegado. Pulsa «Guardar y probar».", fg=C["muted"])
-        else:
-            self.connect_msg.configure(text="El portapapeles está vacío: copia el token en GitHub primero.",
-                                       fg=C["bad"])
-
-    def _open_token_page(self):
-        self._copy(core.TOKEN_URL)
-        ok = open_url(core.TOKEN_URL)
-        self.token_hint.configure(
-            text=("Se abrió GitHub en tu navegador. " if ok else "No pude abrir el navegador. ")
-            + "Si no lo ves, pega el enlace en tu navegador: ya está copiado (Ctrl+V).")
 
     def _save_token(self):
         tok = self.token_var.get().strip()
         if not tok:
-            self.connect_msg.configure(text="Primero pega el token en el cuadro (Ctrl+V).", fg=C["bad"])
-            return
-        if not tok.startswith(("github_pat_", "ghp_")):
-            self.connect_msg.configure(text="Eso no parece un token de GitHub: debe empezar con «github_pat_».",
-                                       fg=C["bad"])
             return
         self.btn_save.state(["disabled"])
         self.connect_msg.configure(text="Probando…", fg=C["muted"])
@@ -328,56 +264,17 @@ class App:
                 lnk = tk.Label(self.hist, text="Ver en GitHub ↗", bg=C["panel2"], fg=C["accent"], padx=10, pady=6,
                                anchor="e", cursor="hand2")
                 lnk.grid(row=i, column=2, sticky="ew", pady=2)
-                lnk.bind("<Button-1>", lambda e, u=rel.get("html_url", ""): self._open(u))
+                lnk.bind("<Button-1>", lambda e, u=rel.get("html_url", ""): open_url(u))
         self._bg(job, done)
 
-    @staticmethod
-    def _start_dir():
-        for name in ("Descargas", "Downloads"):
-            d = os.path.join(os.path.expanduser("~"), name)
-            if os.path.isdir(d):
-                return d
-        return os.path.expanduser("~")
-
-    def _native_dialog(self, folder):
-        """En Linux usa la ventana de archivos del escritorio (KDE o GNOME) si existe.
-        Devuelve la ruta, "" si se canceló, o None si no hay ventana nativa."""
-        import shutil
-        import subprocess
-        if not sys.platform.startswith("linux"):
-            return None
-        start = self._start_dir()
-        if shutil.which("kdialog"):
-            cmd = (["kdialog", "--title", "Elige la carpeta del proyecto", "--getexistingdirectory", start]
-                   if folder else
-                   ["kdialog", "--title", "Elige la versión (.zip)", "--getopenfilename", start,
-                    "Código de Numpad Macros (*.zip)"])
-        elif shutil.which("zenity"):
-            cmd = ["zenity", "--file-selection", f"--filename={start}/"]
-            cmd += ["--directory", "--title=Elige la carpeta del proyecto"] if folder else \
-                ["--title=Elige la versión (.zip)", "--file-filter=Código de Numpad Macros | *.zip"]
-        else:
-            return None
-        try:
-            r = subprocess.run(cmd, env=_clean_env(), capture_output=True, text=True)
-        except OSError:
-            return None
-        return r.stdout.strip() if r.returncode == 0 else ""
-
     def _pick_file(self):
-        path = self._native_dialog(folder=False)
-        if path is None:
-            path = filedialog.askopenfilename(parent=self.root, title="Elige la versión (.zip)",
-                                              initialdir=self._start_dir(),
-                                              filetypes=[("Código de Numpad Macros", "*.zip"), ("Todos", "*")])
+        path = filedialog.askopenfilename(parent=self.root, title="Elige la versión (.zip)",
+                                          filetypes=[("Código de Numpad Macros", "*.zip"), ("Todos", "*")])
         if path:
             self.start_review(path)
 
     def _pick_dir(self):
-        path = self._native_dialog(folder=True)
-        if path is None:
-            path = filedialog.askdirectory(parent=self.root, title="Elige la carpeta del proyecto",
-                                           initialdir=self._start_dir())
+        path = filedialog.askdirectory(parent=self.root, title="Elige la carpeta del proyecto")
         if path:
             self.start_review(path)
 
@@ -678,7 +575,7 @@ class App:
         row = tk.Frame(box, bg="#3a1a1a")
         row.pack(anchor="w", padx=12, pady=10)
         if url:
-            ttk.Button(row, text="Ver el detalle en GitHub ↗", command=lambda: self._open(url)).pack(side="left")
+            ttk.Button(row, text="Ver el detalle en GitHub ↗", command=lambda: open_url(url)).pack(side="left")
         ttk.Button(row, text="Volver al inicio", command=self.show_home).pack(side="left", padx=8)
 
     def _done(self):
@@ -702,20 +599,14 @@ class App:
                     f = tk.Frame(p, bg=C["panel2"])
                     f.grid(row=3 + i, column=0, sticky="ew", pady=2)
                     tk.Label(f, text=name, bg=C["panel2"], fg=C["text"], padx=10, pady=6).pack(side="left")
-                    tk.Label(f, text=f"{size / 1e6:.1f} MB" if size > 1e5 else f"{max(1, round(size / 1e3))} KB",
+                    tk.Label(f, text=f"{size / 1e6:.1f} MB" if size > 1e5 else f"{size / 1e3:.0f} KB",
                              bg=C["panel2"], fg=C["muted"], padx=10).pack(side="right")
             btns = tk.Frame(p, bg=C["panel"])
             btns.grid(row=20, column=0, sticky="w", pady=(16, 0))
             if url:
-                ttk.Button(btns, text="Ver en GitHub ↗", command=lambda: self._open(url)).pack(side="left")
+                ttk.Button(btns, text="Ver en GitHub ↗", command=lambda: open_url(url)).pack(side="left")
             ttk.Button(btns, text="Listo", style="Accent.TButton", command=self.show_home).pack(side="left", padx=8)
         self._bg(job, done)
-
-    def _open(self, url):
-        if not open_url(url):
-            self._copy(url)
-            messagebox.showinfo("Publicador", "No pude abrir el navegador. El enlace quedó copiado: "
-                                "pégalo en tu navegador (Ctrl+V).\n\n" + url, parent=self.root)
 
     def _cleanup(self):
         if self.pkg is not None:

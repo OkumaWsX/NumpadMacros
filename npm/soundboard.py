@@ -99,12 +99,6 @@ class _Bus:
             out = np.zeros((frames, 2), dtype=np.float32)
         else:
             out.fill(0)
-        if not self.voices and self.mic_feed is None:     # silencio: casi sin gastar procesador
-            now = time.monotonic()
-            self.comp.gr_db = 0.0
-            self.comp.gain = 1.0
-            self.level = (-math.inf, -math.inf, 0.0, now < self._sat_until)
-            return out
         with self.lock:
             keep = []
             for v in self.voices:
@@ -291,7 +285,6 @@ class _BoardBase:
             self._err = f"Faltan dependencias de audio ({e})"
         self._lock = threading.Lock()
         self._cache: dict[str, tuple] = {}
-        self._cache_lock = threading.Lock()
         self._lufs: dict[str, tuple] = {}
         self.spk: _Bus | None = None
         self.mic: _Bus | None = None
@@ -300,16 +293,14 @@ class _BoardBase:
         return (self._err is None, self._err or "")
 
     # ---------------------------------------------------------------- archivos
-    CACHE_BYTES = 768 * 1024 * 1024      # memoria máxima para sonidos ya decodificados
-
-    def _decode(self, path, max_seconds=None):
-        """Lee el archivo como estéreo float32 a 48 kHz (sin guardarlo en caché)."""
+    def _load(self, path):
         np = self.np
+        mtime = os.path.getmtime(path)
+        hit = self._cache.get(path)
+        if hit and hit[0] == mtime:
+            return hit[1]
         try:
-            frames = -1
-            if max_seconds:
-                frames = int(self.sf.info(path).samplerate * max_seconds)
-            data, sr = self.sf.read(path, dtype="float32", always_2d=True, frames=frames)
+            data, sr = self.sf.read(path, dtype="float32", always_2d=True)
         except Exception as e:
             raise SoundboardError(f"No pude leer «{os.path.basename(path)}»: {e}")
         if data.shape[1] == 1:
@@ -322,22 +313,10 @@ class _BoardBase:
             x_new = np.linspace(0, len(data) - 1, n)
             data = np.stack([np.interp(x_new, x_old, data[:, c]) for c in range(2)],
                             axis=1).astype(np.float32)
-        return np.ascontiguousarray(data)
-
-    def _load(self, path):
-        mtime = os.path.getmtime(path)
-        with self._cache_lock:
-            hit = self._cache.pop(path, None)
-            if hit and hit[0] == mtime:
-                self._cache[path] = hit          # queda como el más reciente
-                return hit[1]
-        data = self._decode(path)
-        with self._cache_lock:
-            self._cache[path] = (mtime, data)
-            total = sum(d.nbytes for _m, d in self._cache.values())
-            while total > self.CACHE_BYTES and len(self._cache) > 1:
-                _m, old = self._cache.pop(next(iter(self._cache)))
-                total -= old.nbytes
+        data = np.ascontiguousarray(data)
+        if len(self._cache) > 64:
+            self._cache.pop(next(iter(self._cache)))
+        self._cache[path] = (mtime, data)
         return data
 
     def loudness(self, path):
@@ -348,12 +327,7 @@ class _BoardBase:
         hit = self._lufs.get(path)
         if hit and hit[0] == mtime:
             return hit[1]
-        cached = self._cache.get(path)
-        if cached and cached[0] == mtime:
-            data = cached[1]
-        else:                                    # medir no llena la memoria con la biblioteca
-            data = self._decode(path, ld.MAX_SECONDS)
-        value = ld.measure(self.np, data)
+        value = ld.measure(self.np, self._load(path))
         self._lufs[path] = (mtime, value)
         return value
 
