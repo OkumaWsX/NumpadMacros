@@ -22,6 +22,7 @@ import os
 import re
 import subprocess
 import sys
+import urllib.parse
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INIT = os.path.join(ROOT, "npm", "__init__.py")
@@ -29,6 +30,7 @@ CHANGELOG = os.path.join(ROOT, "CHANGELOG.md")
 REPO = "OkumaWsX/NumpadMacros"
 UNRELEASED = re.compile(r"^## \[Sin publicar\][^\n]*\n", re.M | re.I)
 IMPORTANT = "<!-- importante -->"
+CAPS_START, CAPS_END = "<!-- capturas -->", "<!-- /capturas -->"
 
 
 def fail(msg):
@@ -105,7 +107,8 @@ def prepare(args):
     src = re.sub(r'__version__\s*=\s*"[^"]+"', f'__version__ = "{ver}"', src)
     with open(INIT, "w", encoding="utf-8") as f:
         f.write(src)
-    notes = (IMPORTANT + "\n" if args.importante else "") + body + "\n\n" + DOWNLOADS
+    caps = captures_section(ver, f"v{ver}")          # enlaces fijos a la etiqueta de esta versión
+    notes = (IMPORTANT + "\n" if args.importante else "") + body + "\n\n" + (caps + "\n\n" if caps else "") + DOWNLOADS
     with open(os.path.join(ROOT, "notas.md"), "w", encoding="utf-8") as f:
         f.write(notes)
     summary = re.findall(r"^\s*[-*] (.+)$", body, re.M)
@@ -116,6 +119,59 @@ def prepare(args):
         with open(out, "a", encoding="utf-8") as f:
             f.write(f"version={ver}\n")
     print(f"✓ Versión {ver} preparada ({len(summary)} cambios anotados).")
+
+
+def captures_section(version, ref):
+    """Sección «Capturas» con las imágenes de docs/capturas/<versión>/, enlazadas a `ref`
+    (una etiqueta o un commit), para que la Release muestre siempre esa versión de la app."""
+    folder = os.path.join(ROOT, "docs", "capturas", version)
+    manifest = os.path.join(folder, "capturas.txt")
+    items = []
+    if os.path.isfile(manifest):
+        for line in open(manifest, encoding="utf-8"):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            name, _, caption = (p.strip() for p in line.partition("|"))
+            if os.path.isfile(os.path.join(folder, name)):
+                items.append((name, caption))
+    elif os.path.isdir(folder):
+        items = [(n, "") for n in sorted(os.listdir(folder)) if n.lower().endswith((".png", ".jpg", ".gif"))]
+    if not items:
+        return ""
+    base = f"https://github.com/{REPO}/raw/{ref}/docs/capturas/{version}"
+    out = [CAPS_START, f"### Capturas (versión {version})", ""]
+    for name, caption in items:
+        alt = caption or name
+        out.append(f"![{alt}]({base}/{urllib.parse.quote(name)})")
+        if caption:
+            out.append(f"<sub>{caption}</sub>")
+        out.append("")
+    out.append(CAPS_END)
+    return "\n".join(out).rstrip()
+
+
+def put_captures(body, section):
+    """Reemplaza (o agrega) la sección de capturas en las notas de una Release."""
+    body = body or ""
+    if CAPS_START in body and CAPS_END in body:
+        a, rest = body.split(CAPS_START, 1)
+        _, b = rest.split(CAPS_END, 1)
+        return (a.rstrip() + "\n\n" + section + "\n\n" + b.lstrip()).strip() + "\n"
+    marker = "### Descargas"
+    if marker in body:
+        a, b = body.split(marker, 1)
+        return a.rstrip() + "\n\n" + section + "\n\n" + marker + b
+    return body.rstrip() + "\n\n" + section + "\n"
+
+
+def captures_cmd(args):
+    version = args.version.lstrip("v")
+    section = captures_section(version, args.ref)
+    if not section:
+        fail(f"No hay capturas para la versión {version} (falta la carpeta docs/capturas/{version}/).")
+    body = open(args.notas, encoding="utf-8").read() if args.notas else ""
+    sys.stdout.write(put_captures(body, section))
 
 
 DOWNLOADS = """### Descargas
@@ -138,9 +194,15 @@ def main():
     p.add_argument("--tipo", choices=["automatico", "correccion", "mejora", "grande"], default="automatico")
     p.add_argument("--version", default="")
     p.add_argument("--importante", action="store_true")
+    c = sub.add_parser("capturas", help="notas de una Release con su sección de capturas")
+    c.add_argument("--version", required=True)
+    c.add_argument("--ref", required=True, help="etiqueta o commit donde están las imágenes")
+    c.add_argument("--notas", default="", help="archivo con las notas actuales")
     args = ap.parse_args()
     if args.cmd == "prepare":
         prepare(args)
+    elif args.cmd == "capturas":
+        captures_cmd(args)
 
 
 if __name__ == "__main__":

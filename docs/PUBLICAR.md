@@ -36,6 +36,12 @@ para Windows, Linux y macOS, y hace que la app de cada usuario muestre el aviso 
 > Para quien prepara las versiones (desarrollo): el robot guarda en `main` el número y el CHANGELOG ya
 > convertido. Antes de preparar la siguiente versión, actualiza tu copia con `git pull`.
 
+## Capturas de cada versión
+
+Las capturas de la versión X.Y.Z van en `docs/capturas/X.Y.Z/` (con `capturas.txt` para elegir cuáles y su
+descripción). Al publicar esa versión, el robot las agrega a las notas de su Release con enlaces fijos a
+esa versión. Para una versión ya publicada: *Actions → Capturas en una Release → Run workflow*.
+
 ## Opciones
 
 | Opción | Qué hace |

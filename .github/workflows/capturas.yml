@@ -1,0 +1,35 @@
+# Agrega (o actualiza) las capturas de una versión ya publicada en las notas de su Release.
+# Las imágenes salen de docs/capturas/<versión>/ y quedan enlazadas a este commit,
+# así la Release sigue mostrando esa versión aunque el README cambie después.
+# Actions → «Capturas en una Release» → Run workflow.
+name: Capturas en una Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Versión publicada (por ejemplo 3.3.0)"
+        type: string
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  capturas:
+    name: Capturas en la Release
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Actualizar las notas
+        run: |
+          ver="${{ inputs.version }}"; ver="${ver#v}"
+          gh release view "v$ver" --json body -q .body > notas-actuales.md
+          python tools/release.py capturas --version "$ver" --ref "${{ github.sha }}" --notas notas-actuales.md > notas-nuevas.md
+          gh release edit "v$ver" --notes-file notas-nuevas.md
+          echo "## ✓ Capturas agregadas a la versión $ver" >> "$GITHUB_STEP_SUMMARY"

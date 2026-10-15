@@ -12,7 +12,7 @@
 ![Windows · Linux · macOS](https://img.shields.io/badge/plataformas-Windows%20%C2%B7%20Linux%20%C2%B7%20macOS-lightgrey)
 [![Discord](https://img.shields.io/badge/Discord-soporte-5865f2?logo=discord&logoColor=white)](https://discord.gg/hcutJcBx9)
 
-<img src="docs/img/principal.png" width="820" alt="Ventana principal de Numpad Macros">
+<img src="docs/capturas/3.3.0/principal.png" width="820" alt="Ventana principal de Numpad Macros">
 
 </div>
 
@@ -26,15 +26,17 @@ Es independiente: trae su propia biblioteca y su propio reproductor de sonidos, 
 
 ## Novedades de la versión 3.3
 
+<sub>Capturas de la versión 3.3.0. Las de cada versión están en sus [Releases](https://github.com/OkumaWsX/NumpadMacros/releases).</sub>
+
 | Medidores en tiempo real | Igualar volumen y compresor |
 |---|---|
-| <img src="docs/img/principal.png" alt="Medidores de volumen y volumen de la tecla en % y dB"> | <img src="docs/img/audio.png" alt="Pestaña Audio con igualar volumen y compresor"> |
+| <img src="docs/capturas/3.3.0/principal.png" alt="Medidores de volumen y volumen de la tecla en % y dB"> | <img src="docs/capturas/3.3.0/audio.png" alt="Pestaña Audio con igualar volumen y compresor"> |
 | Arriba se ve lo que suena en tus audífonos y en el micrófono virtual. El volumen de cada tecla se muestra en **% y dB** mientras lo mueves. | **Igualar volumen** deja todos los sonidos al mismo nivel (LUFS) y el **compresor/limitador** evita que saturen en Discord. |
 | **Actualización con un clic** | **Novedades de tu versión** |
-| <img src="docs/img/actualizacion.png" alt="Aviso de versión nueva y ventana de actualización"> | <img src="docs/img/novedades.png" alt="Ventana de novedades de la versión instalada"> |
+| <img src="docs/capturas/3.3.0/actualizacion.png" alt="Aviso de versión nueva y ventana de actualización"> | <img src="docs/capturas/3.3.0/novedades.png" alt="Ventana de novedades de la versión instalada"> |
 | Cuando sale una versión nueva aparece un aviso: **Actualizar ahora** la descarga, comprueba que sea la original y se instala sola. | El botón **Novedades** de abajo muestra qué trae la versión instalada y las anteriores. |
 
-<p align="center"><img src="docs/img/atajo.png" width="560" alt="Grabar una combinación pulsando las teclas"><br><sub>Las combinaciones se pueden <b>grabar pulsando las teclas</b>, con aviso si chocan con otros programas.</sub></p>
+<p align="center"><img src="docs/capturas/3.3.0/atajo.png" width="560" alt="Grabar una combinación pulsando las teclas"><br><sub>Las combinaciones se pueden <b>grabar pulsando las teclas</b>, con aviso si chocan con otros programas.</sub></p>
 
 ## Características
 
@@ -122,9 +124,9 @@ La guía completa está en **[LEEME.md](LEEME.md)**.
 
 | Biblioteca de sonidos (con volumen medido) | Numpad y opciones |
 |---|---|
-| <img src="docs/img/sonidos.png" alt="Biblioteca de sonidos"> | <img src="docs/img/opciones.png" alt="Opciones"> |
+| <img src="docs/capturas/3.3.0/sonidos.png" alt="Biblioteca de sonidos"> | <img src="docs/capturas/3.3.0/opciones.png" alt="Opciones"> |
 | **Audio** | **Creador y soporte** |
-| <img src="docs/img/audio.png" alt="Audio"> | <img src="docs/img/creador.png" alt="Creador"> |
+| <img src="docs/capturas/3.3.0/audio.png" alt="Audio"> | <img src="docs/capturas/3.3.0/creador.png" alt="Creador"> |
 </details>
 
 ## Cómo funciona

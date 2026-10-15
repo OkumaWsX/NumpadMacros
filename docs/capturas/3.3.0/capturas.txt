@@ -1,0 +1,8 @@
+# Capturas tomadas con Numpad Macros 3.3.0 (archivo | descripción).
+# El robot las agrega a las notas de la Release de esta versión.
+principal.png | Medidores en tiempo real y volumen de cada tecla en % y dB
+audio.png | Igualar volumen (LUFS) y compresor / limitador
+actualizacion.png | Aviso de versión nueva y actualización con un clic (ejemplo)
+novedades.png | Ventana de novedades de la versión instalada
+atajo.png | Grabar una combinación pulsando las teclas
+sonidos.png | Biblioteca con el volumen medido de cada sonido
