@@ -3,6 +3,8 @@
 Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
+
+## [3.3.0] - 2026-10-15
 ### Añadido
 - **Medidores de volumen en tiempo real** para tus audífonos y el micrófono virtual, con aviso cuando satura o cuando actúa el compresor.
 - **Igualar volumen**: mide cuánto «suena» cada sonido (LUFS) y los deja a todos al mismo nivel. Objetivo ajustable (−16 LUFS recomendado).
@@ -59,4 +61,5 @@ Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https:
 ### Añadido
 - Primera versión para Windows: numpad como panel de sonidos de Soundpad y atajos, con bancos.
 
+[3.3.0]: https://github.com/OkumaWsX/NumpadMacros/releases/tag/v3.3.0
 [3.2.1]: https://github.com/OkumaWsX/NumpadMacros/releases/tag/v3.2.1
