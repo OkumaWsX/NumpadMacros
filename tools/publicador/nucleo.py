@@ -485,6 +485,13 @@ def run_status(gh: GitHub, run_id):
                 discord = d.get("conclusion")
     concl = run.get("conclusion")
     state = "running" if run.get("status") != "completed" else ("success" if concl == "success" else "failure")
+    # Si la Release se creó, la versión está publicada aunque haya fallado solo el anuncio
+    pub = next((j for j in jobs if "publicar" in j.get("name", "").lower()), None)
+    if state == "failure" and pub and any("release" in (s.get("name") or "").lower() and s.get("conclusion") == "success"
+                                          for s in pub.get("steps") or []):
+        state = "success"
+        stages["pub"] = (1.0, "done")
+        failed = None
     return {"state": state, "stages": stages, "url": run.get("html_url", ""), "failed": failed,
             "discord": discord}
 

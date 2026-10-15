@@ -200,6 +200,22 @@ class PublicadorTest(unittest.TestCase):
             core.check_not_stale(core.Package(old), self.gh)          # GitHub tiene cambios posteriores
         core.check_not_stale(core.Package(self.zip), self.gh)         # entrega más nueva: OK
 
+    def test_discord_failure_still_published(self):
+        orig = self.fake.handle
+
+        def handle(method, path, body):
+            if path.endswith("/actions/runs/7"):
+                return 200, {"status": "completed", "conclusion": "failure", "html_url": "run"}
+            if "/actions/runs/7/jobs" in path:
+                ok = {"status": "completed", "conclusion": "success"}
+                return 200, {"jobs": [dict(ok, name="Publicar", conclusion="failure", steps=[
+                    dict(ok, name="Crear la Release"), dict(ok, name="Anunciar en Discord", conclusion="failure")])]}
+            return orig(method, path, body)
+        self.fake.handle = handle
+        st = core.run_status(self.gh, 7)
+        self.assertEqual(st["state"], "success")
+        self.assertEqual(st["discord"], "failure")
+
     def test_rejects_other_app(self):
         other = os.path.join(self.tmp, "otra.zip")
         with zipfile.ZipFile(other, "w") as z:

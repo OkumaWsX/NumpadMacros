@@ -133,29 +133,15 @@ jobs:
 
       - name: Anunciar en Discord
         if: inputs.discord
+        # si el anuncio falla, la versión igual queda publicada
+        continue-on-error: true
         env:
           WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
         run: |
-          if [ -z "$WEBHOOK" ]; then
-            echo "::notice::No hay webhook de Discord configurado (secreto DISCORD_WEBHOOK): no se anuncia."
-            exit 0
-          fi
           extra=""
           [ "${{ inputs.beta }}" = "true" ] && extra=" (versión de prueba)"
           [ "${{ inputs.importante }}" = "true" ] && extra="$extra · actualización importante"
-          resumen="$(cat resumen.txt)"
-          url="https://github.com/${{ github.repository }}/releases/tag/v$VERSION"
-          python3 - "$WEBHOOK" "$VERSION" "$extra" "$resumen" "$url" <<'PY'
-          import json, sys, urllib.request
-          hook, ver, extra, resumen, url = sys.argv[1:]
-          msg = (f"🎉 **Numpad Macros {ver}**{extra} ya está disponible.\n"
-                 + (f"Novedades: {resumen}.\n" if resumen else "")
-                 + "Abre la app y pulsa «Actualizar», o descárgala aquí: " + url)
-          req = urllib.request.Request(hook, data=json.dumps({"content": msg[:1900]}).encode(),
-                                       headers={"Content-Type": "application/json", "User-Agent": "NumpadMacros"})
-          urllib.request.urlopen(req, timeout=15)
-          print("Anunciado en Discord.")
-          PY
+          python3 tools/discord.py "$VERSION" --extra "$extra" --resumen "$(cat resumen.txt)"
 
       - name: Resumen
         run: |

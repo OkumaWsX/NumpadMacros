@@ -1,0 +1,37 @@
+# Vuelve a anunciar una versión ya publicada en Discord (por ejemplo, si el
+# anuncio falló o si configuraste el webhook después de publicar).
+# Actions → «Anunciar en Discord» → Run workflow.
+name: Anunciar en Discord
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Versión a anunciar (vacío = la última publicada)"
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  anunciar:
+    name: Anunciar en Discord
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Anunciar
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          ver="${{ inputs.version }}"
+          if [ -z "$ver" ]; then ver="$(gh release view --json tagName -q .tagName)"; fi
+          ver="${ver#v}"
+          beta="$(gh release view "v$ver" --json isPrerelease -q .isPrerelease)"
+          extra=""; [ "$beta" = "true" ] && extra=" (versión de prueba)"
+          resumen="$(gh release view "v$ver" --json body -q .body | grep -E '^\s*[-*] ' | head -3 \
+                     | sed -E 's/^\s*[-*] //; s/[*`]//g; s/:.*//; s/\.$//' | paste -sd ';' | sed 's/;/; /g')"
+          python3 tools/discord.py "$ver" --extra "$extra" --resumen "$resumen"

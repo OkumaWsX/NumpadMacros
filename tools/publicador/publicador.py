@@ -577,6 +577,7 @@ class App:
         self.settings["discord"] = discord
         core.save_settings(self.settings)
         self.version = rv.version
+        self.discord_failed = False
         p = self._new_page()
         self.pub_title = self._label(p, f"Publicando {core.vstr(rv.version)}…", 5, True, row=0, column=0)
         self.pub_sub = self._label(p, "Primero se sube el código; después GitHub compila en sus servidores (unos "
@@ -661,7 +662,8 @@ class App:
             if st.get("discord") == "success":
                 self._stage("dc", "ok")
             elif st.get("discord") in ("failure",):
-                self._stage("dc", "bad", "revisa el webhook")
+                self._stage("dc", "bad", "falló: revisa el webhook")
+                self.discord_failed = True
             if st["state"] == "running":
                 self.root.after(5000, self._follow)
             elif st["state"] == "success":
@@ -694,6 +696,10 @@ class App:
         def done(res, err):
             p = self._new_page()
             self._label(p, f"✓  Numpad Macros {core.vstr(ver)} publicada", 6, True, color=C["ok"], row=0, column=0)
+            if getattr(self, "discord_failed", False):
+                self._label(p, "El anuncio en Discord no se pudo enviar (la versión sí quedó publicada). Revisa el "
+                               "webhook y vuelve a anunciar desde GitHub: Actions → «Anunciar en Discord» → Run "
+                               "workflow.", color=C["warn"], row=19, column=0, pady=(12, 0))
             beta = self.beta.get()
             self._label(p, ("Como beta: solo la reciben quienes activaron las versiones de prueba." if beta else
                             "Los usuarios verán el aviso la próxima vez que abran la app."), color="#b9bdc6",
