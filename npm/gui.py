@@ -1246,6 +1246,7 @@ class App:
                     self.uiq.put(("lufs", path, mtime, value))
                 except Exception:
                     pass
+                time.sleep(0.02)             # sin acaparar el procesador
             self.uiq.put(("lufs_done",))
         threading.Thread(target=job, daemon=True).start()
 
@@ -2017,14 +2018,15 @@ class App:
         seen = upd.get("last_seen", "")
         if seen == __version__:
             return
+        if self.root.state() == "withdrawn" and not self.first_run:
+            self.root.after(5000, self._startup_news)    # minimizada: mostrarlas al abrir la ventana
+            return
         with self.engine.lock:
             upd["last_seen"] = __version__
         self._save()
         if self.first_run or not upd.get("show_news", True):
             return
         if seen and not updater.newer(__version__, seen):
-            return
-        if self.root.state() == "withdrawn":
             return
         self._show_news()
 

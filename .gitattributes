@@ -5,3 +5,4 @@
 *.png binary
 *.ico binary
 *.exe binary
+ENTREGA.txt export-subst

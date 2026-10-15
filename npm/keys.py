@@ -6,6 +6,7 @@ Una tecla física se identifica por su *scancode* y la marca E0, con el formato
 "47" (Num 7) o "e0:1c" (Enter del numpad). El scancode no cambia con NumLock,
 así que Num 7 es siempre "47", esté NumLock encendido o apagado.
 """
+import sys
 
 def key_id(code: int, e0: bool) -> str:
     return ("e0:" if e0 else "") + f"{code & 0xFF:02x}"
@@ -203,9 +204,12 @@ _KEYSYM = {"space": "espacio", "return": "enter", "kp_enter": "enter", "tab": "t
 _KP = {"kp_insert": "0", "kp_end": "1", "kp_down": "2", "kp_next": "3", "kp_left": "4",
        "kp_begin": "5", "kp_right": "6", "kp_home": "7", "kp_up": "8", "kp_prior": "9"}
 MODIFIER_KEYSYMS = {"control_l": "ctrl", "control_r": "ctrl", "shift_l": "shift", "shift_r": "shift",
-                    "alt_l": "alt", "alt_r": "alt", "meta_l": "alt", "meta_r": "alt",
-                    "iso_level3_shift": "alt", "super_l": "win", "super_r": "win",
-                    "win_l": "win", "win_r": "win", "command": "win", "option": "alt"}
+                    "alt_l": "alt", "alt_r": "alt", "iso_level3_shift": "alt",
+                    "super_l": "win", "super_r": "win", "win_l": "win", "win_r": "win",
+                    # macOS: Cmd llega como Meta y Option como Option/Alt
+                    "meta_l": "win" if sys.platform == "darwin" else "alt",
+                    "meta_r": "win" if sys.platform == "darwin" else "alt",
+                    "command": "win", "option_l": "alt", "option_r": "alt"}
 
 
 def keysym_to_key(keysym: str) -> str | None:

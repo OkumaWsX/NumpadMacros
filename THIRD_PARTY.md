@@ -12,9 +12,23 @@ Numpad Macros usa o integra los siguientes componentes. Cada uno conserva su pro
 | [Inno Setup](https://jrsoftware.org/isinfo.php) | Instalador de Windows | Licencia de Inno Setup | Solo para compilar |
 | [pystray](https://github.com/moses-palmer/pystray) | Icono en la bandeja del sistema | LGPL-3.0 | Empaquetado (Windows y Linux) |
 | [Pillow](https://python-pillow.org/) | Imágenes del icono | MIT-CMU (HPND) | Empaquetado (Windows y Linux) |
-| [NumPy](https://numpy.org/) | Mezcla de audio | BSD-3-Clause | Empaquetado (Windows y macOS) |
+| [NumPy](https://numpy.org/) | Mezcla, medición de volumen y compresor | BSD-3-Clause | Empaquetado (todos los sistemas) |
 | [python-sounddevice](https://github.com/spatialaudio/python-sounddevice) / PortAudio | Salida y entrada de audio | MIT | Empaquetado (Windows y macOS) |
-| [python-soundfile](https://github.com/bastibe/python-soundfile) / libsndfile | Lectura de archivos de audio | BSD-3-Clause / LGPL-2.1 | Empaquetado (Windows y macOS) |
+| [python-soundfile](https://github.com/bastibe/python-soundfile) / libsndfile | Lectura de archivos de audio | BSD-3-Clause / LGPL-2.1 | Empaquetado (todos los sistemas) |
+| [certifi](https://github.com/certifi/python-certifi) | Certificados para conectarse a GitHub (actualizaciones) | MPL-2.0 | Empaquetado, sin modificar |
+| [PipeWire](https://pipewire.org/) / PulseAudio (`pactl`, `pw-cat`, `pacat`) | Salida de audio y micrófono virtual en Linux | MIT / LGPL-2.1 | **No se incluye**: se usa el que trae el sistema |
 | [python-evdev](https://github.com/gvalkov/python-evdev) | Captura de teclado en Linux | BSD-3-Clause | Empaquetado (Linux) |
+
+### Solo en el Publicador (herramienta del creador, no se entrega a los usuarios)
+
+| Componente | Uso | Licencia |
+|---|---|---|
+| [tkinterdnd2](https://github.com/Eliav2/tkinterdnd2) / [tkdnd](https://github.com/petasis/tkdnd) | Arrastrar y soltar archivos | MIT / BSD |
+| [certifi](https://github.com/certifi/python-certifi) | Conexión segura con GitHub | MPL-2.0 |
+
+### Normas y servicios
+
+- La medición de volumen sigue la norma pública **ITU-R BS.1770** (LUFS); el código que la implementa es propio.
+- Las actualizaciones y publicaciones usan la **API de GitHub** y **GitHub Actions** (servicios de GitHub).
 
 **Nota sobre Interception:** su licencia gratuita cubre el uso no comercial. Numpad Macros es gratuito (las donaciones son voluntarias). Una distribución comercial requeriría la licencia comercial de Interception.

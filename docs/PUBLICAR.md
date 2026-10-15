@@ -33,6 +33,9 @@ para Windows, Linux y macOS, y hace que la app de cada usuario muestre el aviso 
 *Actions → Publicar versión → Run workflow*. Elige el tipo (corrección, mejora o grande) o deja
 «automatico» para usar el número que ya trae el código. Las novedades deben estar en «Sin publicar».
 
+> Para quien prepara las versiones (desarrollo): el robot guarda en `main` el número y el CHANGELOG ya
+> convertido. Antes de preparar la siguiente versión, actualiza tu copia con `git pull`.
+
 ## Opciones
 
 | Opción | Qué hace |

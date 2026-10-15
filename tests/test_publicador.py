@@ -40,6 +40,7 @@ class FakeGitHub:
         self.commits["c0"] = "t0"
         self.head = "c0"
         self.n = 0
+        self.compare_status = {}
 
     def handle(self, method, path, body):
         p = path.split("/repos/OkumaWsX/NumpadMacros", 1)[-1]
@@ -81,6 +82,9 @@ class FakeGitHub:
         if p == "/git/refs/heads/main" and method == "PATCH":
             self.head = body["sha"]
             return 200, {}
+        m = re.match(r"/compare/(\w+)\.\.\.main$", p)
+        if m:
+            return 200, {"status": self.compare_status.get(m.group(1), "identical")}
         if p.endswith("/dispatches"):
             self.dispatches.append(body)
             return 204, None
@@ -108,11 +112,16 @@ class PublicadorTest(unittest.TestCase):
         # paquete: copia del proyecto real como zip, con versión 3.3.0 y novedades
         self.zip = os.path.join(self.tmp, "NumpadMacros-codigo_3.3.0.zip")
         with zipfile.ZipFile(self.zip, "w") as z:
-            for rel in ("npm/__init__.py", "npm/about.py", "installer/NumpadMacros.iss", "CHANGELOG.md",
+            for rel in ("npm/__init__.py", "npm/about.py", "installer/NumpadMacros.iss",
                         "README.md", "compilar.sh", ".gitignore"):
                 z.write(os.path.join(HERE, rel), "NumpadMacros/" + rel)
+            # CHANGELOG propio: el real puede tener «Sin publicar» vacío (justo después de publicar)
+            z.writestr("NumpadMacros/CHANGELOG.md", "# Historial\n\n## [Sin publicar]\n### Añadido\n"
+                       "- Algo nuevo\n\n## [3.2.1] - 2026-10-09\n### Añadido\n- Antes\n")
             z.writestr("NumpadMacros/npm/__pycache__/x.pyc", b"basura")
-        remote = {"README.md": b"viejo", "npm/about.py": open(os.path.join(HERE, "npm/about.py"), "rb").read(),
+        with open(os.path.join(HERE, "npm/about.py"), "rb") as f:
+            about = f.read()
+        remote = {"README.md": b"viejo", "npm/about.py": about,
                   "descargas/NumpadMacros-Windows-Setup.exe": b"exe"}
         self.fake = FakeGitHub(remote)
         fake = self.fake
@@ -166,13 +175,28 @@ class PublicadorTest(unittest.TestCase):
         since = core.start_robot(self.gh, (3, 3, 0), False, True, True, wait=lambda s: None)
         d = self.fake.dispatches[-1]
         self.assertEqual(d["inputs"]["version"], "3.3.0")
-        self.assertTrue(d["inputs"]["importante"])
+        self.assertEqual(d["inputs"]["importante"], "true")
+        self.assertEqual(d["inputs"]["beta"], "false")
         run = core.find_run(self.gh, since)
         st = core.run_status(self.gh, run["id"])
         self.assertEqual(st["state"], "success")
         self.assertTrue(all(v[1] == "done" for v in st["stages"].values()))
         self.assertEqual(st["discord"], "success")
         pkg.cleanup()
+
+    def test_rejects_stale_package(self):
+        old = os.path.join(self.tmp, "vieja.zip")
+        sha_old, sha_new = "a" * 40, "b" * 40
+        self.fake.compare_status = {sha_old: "ahead", sha_new: "behind"}
+        for path, sha in ((old, sha_old), (self.zip, sha_new)):
+            with zipfile.ZipFile(self.zip) as src, zipfile.ZipFile(path + ".tmp", "w") as z:
+                for item in src.infolist():
+                    z.writestr(item, src.read(item.filename))
+                z.writestr("NumpadMacros/ENTREGA.txt", f"commit={sha}\nfecha=x\n")
+            os.replace(path + ".tmp", path)
+        with self.assertRaises(core.PubError):
+            core.check_not_stale(core.Package(old), self.gh)          # GitHub tiene cambios posteriores
+        core.check_not_stale(core.Package(self.zip), self.gh)         # entrega más nueva: OK
 
     def test_rejects_other_app(self):
         other = os.path.join(self.tmp, "otra.zip")

@@ -32,7 +32,7 @@ TOKEN_URL = ("https://github.com/settings/personal-access-tokens/new?name=Public
 # Archivos que nunca se suben (además de lo que diga .gitignore)
 NEVER = [".git/*", "*/__pycache__/*", "__pycache__/*", "*.pyc", ".venv/*", "build/*", "dist/*",
          "dist-installer/*", "third_party/*", "interception.dll", "notas.md", "resumen.txt", ".DS_Store",
-         "*/.DS_Store", "Thumbs.db"]
+         "*/.DS_Store", "Thumbs.db", "ENTREGA.txt"]
 
 
 class PubError(RuntimeError):
@@ -154,6 +154,16 @@ class GitHub:
             pass
         return best
 
+    def compare(self, base, head=BRANCH):
+        """'ahead' si head tiene cambios que base no tiene, 'identical', 'behind' o 'diverged'.
+        None si GitHub no conoce base."""
+        try:
+            return self.call("GET", self.r(f"/compare/{base}...{head}")).get("status")
+        except HTTPFail as e:
+            if e.status in (404, 422):
+                return None
+            raise
+
     # ---- árbol del repositorio
     def head(self):
         ref = self.call("GET", self.r(f"/git/ref/heads/{BRANCH}"))
@@ -232,6 +242,14 @@ class Package:
             return f.read()
 
     # ---- comprobaciones
+    def base_commit(self):
+        """Commit del que salió la entrega (ENTREGA.txt), o None."""
+        try:
+            m = re.search(r"^commit=([0-9a-f]{40})\s*$", self.read("ENTREGA.txt"), re.M)
+        except OSError:
+            return None
+        return m.group(1) if m else None
+
     def app_id(self):
         m = re.search(r'APP_ID\s*=\s*"([^"]+)"', self.read("npm/about.py"))
         return m.group(1) if m else None
@@ -290,6 +308,7 @@ class Package:
                     patterns.append(line.lstrip("/"))
         except OSError:
             pass
+        self.patterns = patterns
         out = {}
         for dirpath, dirs, files in os.walk(self.root):
             dirs[:] = [d for d in dirs if d != ".git"]
@@ -330,6 +349,19 @@ def kind_of(new, old):
     return "Corrección de errores"
 
 
+def check_not_stale(pkg: Package, gh: GitHub):
+    """Evita subir una entrega más antigua que el código que ya está en GitHub
+    (se desharían cambios posteriores)."""
+    base = pkg.base_commit()
+    if not base:
+        return
+    status = gh.compare(base)
+    if status in ("ahead", "diverged"):
+        raise PubError("Este archivo es más antiguo que el código que ya está en GitHub: subirlo desharía "
+                       "cambios posteriores. Usa la entrega más reciente (borra las anteriores para no "
+                       "confundirlas).")
+
+
 def compare(pkg: Package, gh: GitHub, rv: Review):
     rv.local = pkg.files()
     rv.head, rv.tree = gh.head()
@@ -341,7 +373,9 @@ def compare(pkg: Package, gh: GitHub, rv: Review):
             rv.added.append(path)
         elif hit[0] != git_blob_sha(data) or hit[1] != mode:
             rv.changed.append(path)
-    rv.deleted = sorted(p for p in rv.remote if p not in rv.local)
+    # lo que nunca se sube (ENTREGA.txt, compilados…) tampoco se borra de GitHub
+    rv.deleted = sorted(p for p in rv.remote
+                        if p not in rv.local and not pkg._ignored(p, getattr(pkg, "patterns", [])))
     rv.added.sort()
     rv.changed.sort()
 
@@ -385,9 +419,10 @@ def upload(pkg: Package, gh: GitHub, rv: Review, version, progress=lambda msg: N
 def start_robot(gh: GitHub, version, beta, important, discord, wait=lambda s: time.sleep(s)):
     """Inicia «Publicar versión». Devuelve la hora (UTC, ISO) del inicio."""
     started = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 5))
+    yes = lambda v: "true" if v else "false"      # noqa: E731  (GitHub recibe los sí/no como texto)
     body = {"ref": BRANCH, "inputs": {"tipo": "automatico", "version": vstr(version),
-                                      "beta": bool(beta), "importante": bool(important),
-                                      "discord": bool(discord)}}
+                                      "beta": yes(beta), "importante": yes(important),
+                                      "discord": yes(discord)}}
     for i in range(12):                # recién subido, GitHub tarda unos segundos en ver el robot
         try:
             gh.call("POST", gh.r(f"/actions/workflows/{WORKFLOW}/dispatches"), body)

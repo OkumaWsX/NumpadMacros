@@ -1,0 +1,4 @@
+# Identifica de qué versión del código salió esta entrega (lo completa git al crear el zip).
+# El Publicador lo usa para no subir una entrega más antigua que lo que ya está en GitHub.
+commit=$Format:%H$
+fecha=$Format:%cI$
