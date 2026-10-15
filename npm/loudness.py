@@ -32,7 +32,7 @@ GAIN_MIN, GAIN_MAX = -24.0, 12.0
 def _response(np, n):
     """|H(f)| del filtro K para una FFT real de n muestras."""
     w = 2 * np.pi * np.fft.rfftfreq(n)        # radianes por muestra
-    z1 = np.exp(-1j * w)
+    z1 = np.cos(w) - 1j * np.sin(w)          # e^(-jw), sin usar exp complejo
     z2 = z1 * z1
     h = np.ones_like(z1)
     for b, a in (_PRE, _RLB):

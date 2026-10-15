@@ -108,11 +108,16 @@ class PublicadorTest(unittest.TestCase):
         # paquete: copia del proyecto real como zip, con versión 3.3.0 y novedades
         self.zip = os.path.join(self.tmp, "NumpadMacros-codigo_3.3.0.zip")
         with zipfile.ZipFile(self.zip, "w") as z:
-            for rel in ("npm/__init__.py", "npm/about.py", "installer/NumpadMacros.iss", "CHANGELOG.md",
+            for rel in ("npm/__init__.py", "npm/about.py", "installer/NumpadMacros.iss",
                         "README.md", "compilar.sh", ".gitignore"):
                 z.write(os.path.join(HERE, rel), "NumpadMacros/" + rel)
+            # CHANGELOG propio: el real puede tener «Sin publicar» vacío (justo después de publicar)
+            z.writestr("NumpadMacros/CHANGELOG.md", "# Historial\n\n## [Sin publicar]\n### Añadido\n"
+                       "- Algo nuevo\n\n## [3.2.1] - 2026-10-09\n### Añadido\n- Antes\n")
             z.writestr("NumpadMacros/npm/__pycache__/x.pyc", b"basura")
-        remote = {"README.md": b"viejo", "npm/about.py": open(os.path.join(HERE, "npm/about.py"), "rb").read(),
+        with open(os.path.join(HERE, "npm/about.py"), "rb") as f:
+            about = f.read()
+        remote = {"README.md": b"viejo", "npm/about.py": about,
                   "descargas/NumpadMacros-Windows-Setup.exe": b"exe"}
         self.fake = FakeGitHub(remote)
         fake = self.fake
@@ -166,7 +171,8 @@ class PublicadorTest(unittest.TestCase):
         since = core.start_robot(self.gh, (3, 3, 0), False, True, True, wait=lambda s: None)
         d = self.fake.dispatches[-1]
         self.assertEqual(d["inputs"]["version"], "3.3.0")
-        self.assertTrue(d["inputs"]["importante"])
+        self.assertEqual(d["inputs"]["importante"], "true")
+        self.assertEqual(d["inputs"]["beta"], "false")
         run = core.find_run(self.gh, since)
         st = core.run_status(self.gh, run["id"])
         self.assertEqual(st["state"], "success")
