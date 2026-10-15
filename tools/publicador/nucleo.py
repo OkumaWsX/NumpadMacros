@@ -356,6 +356,9 @@ def check_not_stale(pkg: Package, gh: GitHub):
     (se desharían cambios posteriores)."""
     base = pkg.base_commit()
     if not base:
+        if pkg.tmp:                     # un .zip sin ENTREGA.txt es de antes de esta protección
+            raise PubError("Este archivo es una entrega antigua (no dice de qué versión del código salió). "
+                           "Usa la entrega más reciente que te pasé.")
         return
     status = gh.compare(base)
     if status in ("ahead", "diverged"):
