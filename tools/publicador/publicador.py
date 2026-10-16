@@ -733,14 +733,41 @@ class App:
             self.pkg = None
 
 
+def _icon_path():
+    for base in (getattr(sys, "_MEIPASS", ""), os.path.dirname(os.path.abspath(__file__)),
+                 os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "assets")):
+        path = os.path.join(base, "icon.png")
+        if base and os.path.isfile(path):
+            return os.path.abspath(path)
+    return None
+
+
+def _integrate_linux(icon):
+    """Menú de aplicaciones + icono propio en la barra de tareas (solo el programa empaquetado)."""
+    if not (sys.platform.startswith("linux") and getattr(sys, "frozen", False) and icon):
+        return
+    def job():
+        try:
+            from npm import desktop_linux
+            desktop_linux.install("publicador-numpad-macros", "Publicador · Numpad Macros",
+                                  "Publicar versiones nuevas de Numpad Macros", sys.executable, icon,
+                                  "PublicadorNumpadMacros", categories="Development;Utility;", env=_clean_env())
+        except Exception:
+            pass
+    threading.Thread(target=job, daemon=True).start()
+
+
 def main():
-    root = TkinterDnD.Tk() if TkinterDnD else tk.Tk()
+    # clase de ventana propia: el escritorio la asocia a su acceso del menú y a su icono
+    root = TkinterDnD.Tk(className="PublicadorNumpadMacros") if TkinterDnD else tk.Tk(className="PublicadorNumpadMacros")
+    root.title("Publicador · Numpad Macros")
+    icon = _icon_path()
     try:
-        icon = os.path.join(getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))), "icon.png")
-        if os.path.isfile(icon):
+        if icon:
             root.iconphoto(True, tk.PhotoImage(file=icon))
     except tk.TclError:
         pass
+    _integrate_linux(icon)
     app = App(root)
     root.protocol("WM_DELETE_WINDOW", lambda: (app._cleanup(), root.destroy()))
     root.mainloop()

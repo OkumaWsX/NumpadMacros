@@ -132,3 +132,25 @@ class LoudnessTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DesktopLinuxTest(unittest.TestCase):
+    def test_menu_entry_and_icons(self):
+        from npm import desktop_linux
+        tmp = tempfile.mkdtemp()
+        here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with mock.patch.dict(os.environ, {"XDG_DATA_HOME": tmp}), mock.patch.object(desktop_linux, "refresh"):
+            icon = os.path.join(here, "assets", "icon.png")
+            self.assertTrue(desktop_linux.install("numpad-macros", "Numpad Macros", "x", "/opt/nm bin", icon,
+                                                  "NumpadMacros"))
+            with open(os.path.join(tmp, "applications", "numpad-macros.desktop"), encoding="utf-8") as f:
+                text = f.read()
+            self.assertIn("StartupWMClass=NumpadMacros", text)
+            self.assertIn('Exec="/opt/nm bin"', text)
+            self.assertIn("Icon=numpad-macros", text)
+            for s in desktop_linux.SIZES:
+                self.assertTrue(os.path.isfile(os.path.join(tmp, "icons", "hicolor", f"{s}x{s}", "apps",
+                                                            "numpad-macros.png")))
+            # sin cambios: no vuelve a escribir
+            self.assertFalse(desktop_linux.install("numpad-macros", "Numpad Macros", "x", "/opt/nm bin", icon,
+                                                   "NumpadMacros"))

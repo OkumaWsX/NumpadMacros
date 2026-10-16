@@ -3,21 +3,30 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 BIN="$HOME/.local/bin"
-ICONS="$HOME/.local/share/icons/hicolor/512x512/apps"
 APPS="$HOME/.local/share/applications"
-mkdir -p "$BIN" "$ICONS" "$APPS"
+mkdir -p "$BIN" "$APPS"
 install -m 755 NumpadMacros "$BIN/numpad-macros"
-install -m 644 icon.png "$ICONS/numpad-macros.png"
+for size in 48 64 128 256 512; do
+  dir="$HOME/.local/share/icons/hicolor/${size}x${size}/apps"
+  mkdir -p "$dir"
+  if command -v magick >/dev/null 2>&1; then magick icon.png -resize ${size}x${size} "$dir/numpad-macros.png"
+  else install -m 644 icon.png "$dir/numpad-macros.png"; fi
+done
 cat > "$APPS/numpad-macros.desktop" <<DESK
 [Desktop Entry]
 Type=Application
 Name=Numpad Macros
-Comment=Numpad como panel de sonidos y atajos
-Exec=$BIN/numpad-macros
+Comment=Numpad como botonera de sonidos y atajos
+Exec="$BIN/numpad-macros"
 Icon=numpad-macros
-Categories=AudioVideo;Utility;
+Terminal=false
+Categories=AudioVideo;Audio;Utility;
 StartupWMClass=NumpadMacros
+StartupNotify=true
 DESK
+chmod 755 "$APPS/numpad-macros.desktop"
 update-desktop-database "$APPS" 2>/dev/null || true
+gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
+command -v kbuildsycoca6 >/dev/null 2>&1 && kbuildsycoca6 >/dev/null 2>&1 || true
 echo "Listo: busca «Numpad Macros» en el menú de aplicaciones."
 echo "La primera vez, en la pestaña «Numpad y opciones», pulsa «Dar permisos…»."

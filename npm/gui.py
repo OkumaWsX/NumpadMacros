@@ -2227,6 +2227,17 @@ def main():
             ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("NumpadMacros")
         except Exception:
             pass
+    if IS_LINUX and getattr(sys, "frozen", False):
+        # menú de aplicaciones + icono propio en la barra de tareas (en segundo plano)
+        def integrate():
+            try:
+                from . import desktop_linux
+                desktop_linux.install("numpad-macros", "Numpad Macros",
+                                      "Numpad como botonera de sonidos y atajos", sys.executable,
+                                      sysutil.resource("assets", "icon.png"), "NumpadMacros", env=clean_env())
+            except Exception:
+                pass
+        threading.Thread(target=integrate, daemon=True).start()
     root = tk.Tk(className="NumpadMacros")
     app = App(root, start_minimized=minimized)
     root.mainloop()

@@ -12,8 +12,8 @@ try:
 except Exception:
     pass
 
-a = Analysis([os.path.join(HERE, "publicador.py")], pathex=[HERE], datas=datas,
-             hiddenimports=["tkinterdnd2", "nucleo"], excludes=["numpy", "unittest", "pydoc"])
+a = Analysis([os.path.join(HERE, "publicador.py")], pathex=[HERE, ROOT], datas=datas,
+             hiddenimports=["tkinterdnd2", "nucleo", "npm.desktop_linux"], excludes=["numpy", "unittest", "pydoc"])
 pyz = PYZ(a.pure)
 icon = os.path.join(ROOT, "assets", "icon.ico" if sys.platform == "win32" else "icon.png")
 exe = EXE(pyz, a.scripts, a.binaries, a.datas, [], name="Publicador-NumpadMacros",
