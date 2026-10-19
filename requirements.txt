@@ -10,3 +10,6 @@ sounddevice>=0.4.6; sys_platform != "linux"
 evdev>=1.6; sys_platform == "linux"
 # Certificados para conectarse a GitHub (actualizaciones) en cualquier sistema
 certifi
+# App del celular: código QR para vincular (todos) y Bluetooth en macOS
+segno>=1.5
+pyobjc-framework-IOBluetooth>=10; sys_platform == "darwin"

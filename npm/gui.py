@@ -14,6 +14,8 @@ from . import loudness as ld
 from .capture import PLATFORM, BackendError, describe_device
 from .engine import Engine
 from .dialogs import NewsDialog, UpdateDialog
+from .devices_tab import DevicesTab
+from .remote import RemoteServer
 from .keys import (FKEY_IDS, FKEY_LAYOUT, KEY_CHOICES, MODIFIER_KEYSYMS, MODIFIERS, NUMPAD_IDS, NUMPAD_LAYOUT, ROW_IDS,
                    ROW_LAYOUT, TOGGLE_CHOICES, busy_reason, combo_text, join_combo, key_label,
                    keysym_to_key, parse_combo, parse_toggle)
@@ -98,6 +100,11 @@ class App:
         self.sender, self.sender_err = make_sender()
         self.board = make_soundboard(self.cfg["audio"])
         self.engine = Engine(self.cfg, self.sender, on_save=self._write_cfg, soundboard=self.board)
+        # app del celular: los avisos llegan desde otros hilos y se atienden en _poll
+        self.remote = RemoteServer(self.cfg, self.engine, self.board,
+                                   notify=lambda *w: self.uiq.put(("remote",) + w),
+                                   save=lambda: self.uiq.put(("remote_save",)))
+        self._dev_refresh_job = None
         self.backend = None
         self.fallback = ""                            # por qué se usa el modo sin driver
         self.layer = self.cfg["active_bank"]          # capa que se edita: int o "global"
@@ -122,6 +129,11 @@ class App:
         self._set_icon()
         self._build()
         self._start_backend()
+        try:
+            self.remote.start()
+        except Exception as e:
+            self.remote.errors["wifi"] = str(e)
+        self.devtab.refresh()
         if IS_LINUX and self._needs_perms():
             self._set_status("Falta un paso: ve a «Numpad y opciones» → «Dar permisos…» "
                              "(se pide tu contraseña una sola vez).", bad=True)
@@ -334,16 +346,19 @@ class App:
         self.tab_cap = ttk.Frame(nb, style="Panel.TFrame", padding=18)
         self.tab_audio = ttk.Frame(nb, style="Panel.TFrame", padding=18)
         self.tab_about = ttk.Frame(nb, style="Panel.TFrame", padding=24)
+        self.tab_dev = ttk.Frame(nb, style="Panel.TFrame", padding=18)
         nb.add(self.tab_key, text="Tecla")
         nb.add(self.tab_lib, text="Sonidos")
         nb.add(self.tab_cap, text="Numpad y opciones")
         nb.add(self.tab_audio, text="Audio")
+        nb.add(self.tab_dev, text="Celular")
         nb.add(self.tab_about, text="Creador")
         nb.bind("<<NotebookTabChanged>>", lambda e: self._on_tab())
         self._build_editor()
         self._build_library_tab()
         self._build_capture_tab()
         self._build_audio_tab()
+        self.devtab = DevicesTab(self.tab_dev, self)
         self._build_about_tab()
 
         # ---------- barra de estado
@@ -1167,6 +1182,8 @@ class App:
 
     def _lib_changed(self, msg=None):
         self._save()
+        if getattr(self, "remote", None):
+            self.remote.library_changed()
         self._fill_library()
         self._queue_loudness()
         self._fill_pick()
@@ -1716,7 +1733,6 @@ class App:
         self._save()
         if self.selected in FKEY_IDS:
             self._kick_backend()          # escuchar (o soltar) el teclado principal
-        self._remote_state()
         if redraw:
             self._redraw()
 
@@ -1939,7 +1955,6 @@ class App:
         self._kick_backend()
         self._redraw()
         self._load_editor()
-        self._remote_state()
 
     # ================================================================ activo / pausa
     def _paint_tog_warn(self, combo):
@@ -2004,6 +2019,7 @@ class App:
         elif kind == "bank":
             _, idx, name = ev
             self._update_bank_label()
+            self._remote_state()
             if self.layer != "global":
                 self.layer = idx
                 self._refresh_layer_combo()
@@ -2058,6 +2074,10 @@ class App:
             self._after_vbcable(ev[1], ev[2])
         elif kind == "update":
             self._on_update_result(*ev[1:])
+        elif kind == "remote":
+            self._on_remote(ev[1:])
+        elif kind == "remote_save":
+            self._save()
         elif kind == "tray":
             cmd = ev[1]
             if cmd == "show":
@@ -2068,6 +2088,35 @@ class App:
                 self._toggle_active()
             elif cmd == "quit":
                 self._quit()
+
+    # ================================================================ celular
+    def _on_remote(self, what):
+        kind = what[0] if what else ""
+        if kind == "keys":                       # se editó una tecla desde el celular
+            self._redraw()
+            self._load_editor()
+            self._update_assign_label()
+        elif kind == "library":
+            self._fill_library()
+            self._queue_loudness()
+            self._fill_pick()
+        elif kind == "volume" and hasattr(self, "master_var"):
+            self.master_var.set(round(float(what[1]) * 100))
+            self.master_lbl.configure(text=self._vol_text(round(self.master_var.get())))
+            self._save_later()
+        if self._dev_refresh_job is None:        # agrupar varios avisos seguidos
+            self._dev_refresh_job = self.root.after(150, self._refresh_devices)
+
+    def _refresh_devices(self):
+        self._dev_refresh_job = None
+        try:
+            self.devtab.refresh()
+        except Exception:
+            pass
+
+    def _remote_state(self):
+        if getattr(self, "remote", None):
+            self.remote.state_changed()
 
     # ================================================================ medidores
     def _tick_meters(self):
@@ -2252,6 +2301,7 @@ class App:
                 config.save(self.cfg)
         except OSError as e:
             self._set_status(f"No pude guardar la configuración: {e}", bad=True)
+        self._remote_state()          # los celulares ven el cambio al instante
 
     def _setup_tray(self):
         if IS_MAC:          # en macOS el icono de bandeja necesita el hilo principal (lo usa tkinter)
@@ -2289,6 +2339,10 @@ class App:
 
     def _quit(self):
         try:
+            try:
+                self.remote.stop()
+            except Exception:
+                pass
             if self.backend:
                 self.backend.stop()
             self.engine.stop()

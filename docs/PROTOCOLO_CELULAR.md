@@ -71,7 +71,7 @@ usuario.
 | `volumen`     | `v` (0.0–2.0)                                   | Volumen general |
 | `escuchar`    | `lib` (id de la biblioteca)                     | Escucha previa en los audífonos del PC |
 | `asignar`     | `layer` (índice de banco o `"global"`), `key`, `act` (acción o `null` para quitar) | Cambia la tecla |
-| `subir_ini`   | `name` (nombre de archivo), `size` (bytes), `title` | Empieza a subir un sonido (máx. 50 MB, extensiones de audio) |
+| `subir_ini`   | `name` (nombre de archivo), `size` (bytes), `title` | Empieza a subir un sonido (máx. 50 MB). El PC solo lee **.mp3 .wav .ogg .opus .flac .aiff**: el celular convierte lo demás (m4a, aac, 3gp, amr…) a WAV antes de subirlo, y graba directo en WAV |
 | `subir_parte` | `seq`, `data` (base64, ≤ 192 KB decodificados)  | Trozo del archivo |
 | `subir_fin`   | `sha256` (hex), opcional `assign` = {`layer`,`key`,`act`} | Termina; el PC lo guarda y lo agrega a la biblioteca |
 | `pedir`       | `what`: `"estado"` o `"biblioteca"`             | Pide que se reenvíe |

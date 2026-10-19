@@ -18,6 +18,16 @@ Numpad Macros usa o integra los siguientes componentes. Cada uno conserva su pro
 | [certifi](https://github.com/certifi/python-certifi) | Certificados para conectarse a GitHub (actualizaciones) | MPL-2.0 | Empaquetado, sin modificar |
 | [PipeWire](https://pipewire.org/) / PulseAudio (`pactl`, `pw-cat`, `pacat`) | Salida de audio y micrófono virtual en Linux | MIT / LGPL-2.1 | **No se incluye**: se usa el que trae el sistema |
 | [python-evdev](https://github.com/gvalkov/python-evdev) | Captura de teclado en Linux | BSD-3-Clause | Empaquetado (Linux) |
+| [segno](https://github.com/heuer/segno) | Código QR para vincular el celular | BSD-3-Clause | Empaquetado (todos los sistemas) |
+| [PyObjC](https://github.com/ronaldoussoren/pyobjc) (IOBluetooth) | Bluetooth con el celular en macOS | MIT | Empaquetado (macOS) |
+
+### App Android (carpeta `android/`)
+
+| Componente | Uso | Licencia |
+|---|---|---|
+| [Kotlin](https://kotlinlang.org/) y [Jetpack Compose / AndroidX](https://developer.android.com/jetpack) | Lenguaje e interfaz | Apache-2.0 |
+| [ZXing Android Embedded](https://github.com/journeyapps/zxing-android-embedded) / [ZXing](https://github.com/zxing/zxing) | Escanear el código QR | Apache-2.0 |
+| [Gradle](https://gradle.org/) y Android Gradle Plugin | Compilar el APK | Apache-2.0 (solo para compilar) |
 
 ### Solo en el Publicador (herramienta del creador, no se entrega a los usuarios)
 

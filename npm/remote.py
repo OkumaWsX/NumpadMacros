@@ -25,6 +25,7 @@ import threading
 import time
 
 from . import __version__
+from .soundboard import AUDIO_EXT
 from .keys import FKEY_LAYOUT, NUMPAD_LAYOUT, ROW_LAYOUT
 
 TCP_PORT = 47800
@@ -33,7 +34,6 @@ PROTO = 1
 MAX_LINE = 1 << 20
 MAX_UPLOAD = 50 * 1024 * 1024
 MAX_PIN_TRIES = 5
-AUDIO_EXT = (".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac", ".opus", ".wma", ".aiff", ".aif")
 ACT_TYPES = ("file", "keys", "sound_stop", "bank_next", "bank_prev", "bank_go")
 MODES = ("overlap", "restart", "toggle", "hold")
 DEFAULT = {"enabled": True, "name": "", "pc_id": "", "devices": [],
@@ -308,7 +308,8 @@ class Session:
         size = int(msg.get("size", 0))
         name = clean_name(msg.get("name", "sonido"))
         if not name.lower().endswith(AUDIO_EXT):
-            self.send({"t": "subida", "ok": False, "why": "Ese archivo no es de audio"})
+            self.send({"t": "subida", "ok": False,
+                       "why": "Formato no compatible (usa MP3, WAV, OGG, OPUS o FLAC)"})
             return
         if size <= 0 or size > MAX_UPLOAD:
             self.send({"t": "subida", "ok": False, "why": "El archivo pesa más de 50 MB"})
