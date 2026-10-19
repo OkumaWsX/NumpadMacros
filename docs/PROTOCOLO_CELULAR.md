@@ -1,4 +1,4 @@
-# Protocolo PC ↔ celular (Numpad Macros 3.4)
+# Protocolo PC ↔ celular (Numpad Macros 3.3.1)
 
 La app Android habla con Numpad Macros del PC usando **un único protocolo**,
 igual por los tres caminos:
@@ -20,7 +20,7 @@ Siempre tiene `"t"` (tipo). Máximo 1 MB por línea. Campos desconocidos se igno
    cada interfaz de red (wlan, rndis/usb/ncm) y a `255.255.255.255`:
    `{"t":"descubrir","v":1}`
 2. El PC (si «Permitir conexiones» está activo) responde por UDP a quien preguntó:
-   `{"t":"pc","v":1,"id":"<id del PC>","name":"PC-Jona","port":47800,"app":"3.4.0","os":"linux"}`
+   `{"t":"pc","v":1,"id":"<id del PC>","name":"PC-Jona","port":47800,"app":"3.3.1","os":"linux"}`
 
 El celular usa la IP de origen del paquete como dirección del PC. Si la interfaz
 por la que llegó se llama `rndis*`, `usb*` o `ncm*` lo muestra como «Cable USB»;
@@ -41,7 +41,7 @@ vincula con ese código sin que el usuario escriba nada.
 
 ```
 celular → {"t":"hola","v":1,"dev":"<id del celular>","name":"Pixel 7 de Jona","app":"1.0.0"}
-PC      → {"t":"reto","nonce":"<hex 32>","pc":"<id del PC>","name":"PC-Jona","app":"3.4.0","known":true|false}
+PC      → {"t":"reto","nonce":"<hex 32>","pc":"<id del PC>","name":"PC-Jona","app":"3.3.1","known":true|false}
 ```
 
 - Si `known` es **true** (el celular ya tiene un token de este PC):
@@ -74,6 +74,7 @@ usuario.
 | `subir_ini`   | `name` (nombre de archivo), `size` (bytes), `title` | Empieza a subir un sonido (máx. 50 MB). El PC solo lee **.mp3 .wav .ogg .opus .flac .aiff**: el celular convierte lo demás (m4a, aac, 3gp, amr…) a WAV antes de subirlo, y graba directo en WAV |
 | `subir_parte` | `seq`, `data` (base64, ≤ 192 KB decodificados)  | Trozo del archivo |
 | `subir_fin`   | `sha256` (hex), opcional `assign` = {`layer`,`key`,`act`} | Termina; el PC lo guarda y lo agrega a la biblioteca |
+| `botones`     | `n` (12, 24, 36 o 48)                            | Cuántos botones propios tiene el celular |
 | `pedir`       | `what`: `"estado"` o `"biblioteca"`             | Pide que se reenvíe |
 | `ping`        | `n`                                             | El PC responde `{"t":"pong","n":…}` (para medir la demora) |
 
@@ -105,6 +106,11 @@ usuario.
 (la fila de números y F13–F24 solo aparecen si están activadas en el PC). Una
 tecla de cualquier grupo se usa igual en `tecla` y `asignar`. Las teclas
 F13–F24 tienen id `"f13"` … `"f24"`.
+
+El grupo `"celular"` (ids `"m1"` … `"m48"`, 4 columnas) son botones que no
+corresponden a ninguna tecla física. `estado` trae además
+`"phone":{"count":24,"only":false,"counts":[12,24,36,48]}`. Con `only` = true
+(modo «Solo celular» del PC, sin teclado) `groups` trae **solo** el grupo `celular`.
 
 **biblioteca**: `{"t":"biblioteca","items":[{"lib":"a1b2c3d4e5","title":"Aplausos","lufs":-12.3}, …]}`
 (`lib` = primeros 10 hex de SHA-1 de la ruta normalizada; no cambia mientras el archivo siga ahí.)

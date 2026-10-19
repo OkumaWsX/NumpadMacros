@@ -26,7 +26,8 @@ import time
 
 from . import __version__
 from .soundboard import AUDIO_EXT
-from .keys import FKEY_LAYOUT, NUMPAD_LAYOUT, ROW_LAYOUT
+from .keys import (FKEY_LAYOUT, NUMPAD_LAYOUT, PHONE_COUNTS, PHONE_IDS, ROW_LAYOUT, phone_count,
+                   phone_layout)
 
 TCP_PORT = 47800
 UDP_PORT = 47801
@@ -296,6 +297,17 @@ class Session:
         if path:
             self.server.engine.preview(path)
 
+    def _m_botones(self, msg):
+        """Cuántos botones propios tiene el celular (12, 24, 36 o 48)."""
+        n = int(msg.get("n", 24))
+        if n not in PHONE_COUNTS:
+            return
+        with self.server.engine.lock:
+            self.server.cfg.setdefault("phone", {})["count"] = n
+        self.server.save()
+        self.server._changed("phone")
+        self.server.broadcast(self.server.state())
+
     def _m_asignar(self, msg):
         err = self.server.assign(msg.get("layer"), str(msg.get("key", "")), msg.get("act"))
         if err:
@@ -482,10 +494,18 @@ class RemoteServer:
                     "global": self._layer_out(cfg["global"]),
                     "keys": [[k, v[0], v[1], v[2], v[3], v[4]] for k, v in NUMPAD_LAYOUT.items()],
                     "groups": self._groups(),
+                    "phone": {"count": phone_count(cfg), "only": bool(cfg.get("phone", {}).get("only")),
+                              "counts": list(PHONE_COUNTS)},
                     "paused": not self.engine.active}
 
     def _groups(self):
-        """Grupos de teclas que el celular puede mostrar: numpad, fila y F13–F24."""
+        """Grupos de teclas que el celular puede mostrar: numpad, fila, F13–F24 y los
+        botones propios del celular (primero, en el modo «solo celular»)."""
+        n = phone_count(self.cfg)
+        cel = {"id": "celular", "name": "Celular", "cols": 4, "rows": -(-n // 4),
+               "keys": [[k, v[0], v[1], v[2], 1, 1] for k, v in phone_layout(n, 4).items()]}
+        if self.cfg.get("phone", {}).get("only"):
+            return [cel]
         g = [{"id": "numpad", "name": "Numpad", "cols": 4, "rows": 5,
               "keys": [[k, v[0], v[1], v[2], v[3], v[4]] for k, v in NUMPAD_LAYOUT.items()]}]
         if self.cfg.get("row_mode", {}).get("enabled", True):
@@ -494,6 +514,7 @@ class RemoteServer:
         if self.cfg.get("fkeys", {}).get("enabled", True):
             g.append({"id": "f", "name": "F13–F24", "cols": 6, "rows": 2,
                       "keys": [[k, v[0], v[1], v[2], 1, 1] for k, v in FKEY_LAYOUT.items()]})
+        g.append(cel)
         return g
 
     def library(self) -> dict:
@@ -521,7 +542,7 @@ class RemoteServer:
     def assign(self, layer, kid, act):
         """Cambia una tecla desde el celular. Devuelve un mensaje de error o None."""
         if kid not in NUMPAD_LAYOUT and kid not in ROW_LAYOUT and kid not in FKEY_LAYOUT \
-                and kid not in self.cfg.get("extra_keys", []):
+                and kid not in PHONE_IDS and kid not in self.cfg.get("extra_keys", []):
             return "Esa tecla no existe"
         with self.engine.lock:
             if layer == "global":
@@ -708,7 +729,7 @@ class RemoteServer:
             for tag, p in prog.items():
                 kid = str(tag).split("|", 1)[0]
                 if kid in NUMPAD_LAYOUT or kid in ROW_LAYOUT or kid in FKEY_LAYOUT \
-                        or kid in self.cfg.get("extra_keys", []):
+                        or kid in PHONE_IDS or kid in self.cfg.get("extra_keys", []):
                     keys[kid] = round(max(keys.get(kid, 0.0), p), 3)
             if not keys and idle_sent:
                 continue

@@ -110,7 +110,7 @@ fun WelcomeScreen(vm: AppVm) {
         }
         Spacer(Modifier.weight(1f))
         NButton("Empezar", { vm.finishWelcome() }, Modifier.fillMaxWidth())
-        T("Necesitas Numpad Macros 3.4 o posterior en tu PC", 12.5.sp, C.muted, align = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+        T("Necesitas Numpad Macros 3.3.1 o posterior en tu PC", 12.5.sp, C.muted, align = TextAlign.Center, modifier = Modifier.fillMaxWidth())
     }
 }
 

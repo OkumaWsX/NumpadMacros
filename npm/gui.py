@@ -16,7 +16,7 @@ from .engine import Engine
 from .dialogs import NewsDialog, UpdateDialog
 from .devices_tab import DevicesTab
 from .remote import RemoteServer
-from .keys import (FKEY_IDS, FKEY_LAYOUT, KEY_CHOICES, MODIFIER_KEYSYMS, MODIFIERS, NUMPAD_IDS, NUMPAD_LAYOUT, ROW_IDS,
+from .keys import (FKEY_IDS, FKEY_LAYOUT, PHONE_COUNTS, PHONE_IDS, phone_count, phone_layout, KEY_CHOICES, MODIFIER_KEYSYMS, MODIFIERS, NUMPAD_IDS, NUMPAD_LAYOUT, ROW_IDS,
                    ROW_LAYOUT, TOGGLE_CHOICES, busy_reason, combo_text, join_combo, key_label,
                    keysym_to_key, parse_combo, parse_toggle)
 from .senders import make_sender
@@ -88,6 +88,50 @@ def make_listbox(parent, height):
     return box, lb
 
 
+def scroll_frame(parent):
+    """Marco con barra de desplazamiento vertical (para pestañas con muchas opciones)."""
+    parent.columnconfigure(0, weight=1)
+    parent.rowconfigure(0, weight=1)
+    cv = tk.Canvas(parent, bg=C["panel"], highlightthickness=0, bd=0)
+    sb = ttk.Scrollbar(parent, orient="vertical", command=cv.yview)
+    inner = ttk.Frame(cv, style="Panel.TFrame")
+    win = cv.create_window(0, 0, window=inner, anchor="nw")
+    cv.configure(yscrollcommand=sb.set)
+    cv.grid(row=0, column=0, sticky="nsew")
+
+    def resize(_e=None):
+        cv.configure(scrollregion=(0, 0, inner.winfo_reqwidth(), inner.winfo_reqheight()))
+        cv.itemconfigure(win, width=cv.winfo_width())
+        if inner.winfo_reqheight() > cv.winfo_height() > 1:
+            sb.grid(row=0, column=1, sticky="ns")
+        else:
+            sb.grid_remove()
+            cv.yview_moveto(0)
+
+    inner.bind("<Configure>", resize)
+    cv.bind("<Configure>", resize)
+
+    def wheel(e):
+        if not sb.winfo_ismapped():
+            return
+        if getattr(e, "num", 0) in (4, 5):
+            cv.yview_scroll(-3 if e.num == 4 else 3, "units")
+        else:
+            cv.yview_scroll(int(-e.delta / (120 if IS_WIN else 1)) or (-1 if e.delta > 0 else 1), "units")
+
+    def bind_all(_e):
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            cv.bind_all(seq, wheel)
+
+    def unbind_all(_e):
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            cv.unbind_all(seq)
+
+    cv.bind("<Enter>", bind_all)
+    cv.bind("<Leave>", unbind_all)
+    return inner
+
+
 class App:
     UNIT, GAP = 60, 7
     RUNIT, RGAP = 40, 6         # teclas de la fila de números
@@ -128,6 +172,7 @@ class App:
         self._style()
         self._set_icon()
         self._build()
+        self._apply_phone_only()
         self._start_backend()
         try:
             self.remote.start()
@@ -315,15 +360,22 @@ class App:
         self.canvas.bind("<Button-1>", self._on_canvas_click)
 
         # fila de números y F13–F24 comparten el mismo espacio (se elige con los botones)
-        self.small_group = "row"
+        self.small_group = "cel" if self._phone_only() else "row"
+        self.cel_page = 0
         sg = ttk.Frame(left, style="Panel.TFrame")
         sg.pack(fill="x")
+        self.sg_frame = sg
         self.sg_btns = {}
-        for gid, text in (("row", "Fila 1–0"), ("f", "F13–F24")):
+        for gid, text in (("row", "1–0"), ("f", "F13–F24"), ("cel", "Celular")):
             b = FlatButton(sg, text=text, command=lambda g=gid: self._set_group(g),
-                           font=(FONT, BASE - 1, "bold"), padx=10, pady=2)
-            b.pack(side="left", padx=(0, 6))
+                           font=(FONT, BASE - 1, "bold"), padx=8, pady=2)
+            b.pack(side="left", padx=(0, 5))
             self.sg_btns[gid] = b
+        self.pg_next = FlatButton(sg, text="▶", command=lambda: self._cel_page_step(1), bg=C["panel2"],
+                                  fg=C["text"], font=(FONT, BASE - 1, "bold"), padx=6, pady=2)
+        self.pg_lbl = tk.Label(sg, bg=C["panel"], fg=C["muted"], font=(FONT, BASE - 2))
+        self.pg_prev = FlatButton(sg, text="◀", command=lambda: self._cel_page_step(-1), bg=C["panel2"],
+                                  fg=C["text"], font=(FONT, BASE - 1, "bold"), padx=6, pady=2)
         self.row_title = ttk.Label(left, style="Muted.TLabel", wraplength=4 * self.UNIT + 3 * self.GAP)
         self.row_title.pack(anchor="w", pady=(4, 0))
         rw = 6 * self.RUNIT + 5 * self.RGAP
@@ -671,7 +723,7 @@ class App:
 
     # ---------------------------------------------------------------- pestaña numpad
     def _build_capture_tab(self):
-        t = self.tab_cap
+        t = scroll_frame(self.tab_cap)
         t.columnconfigure(0, weight=1)
         r = 0
         ttk.Label(t, text="Cómo se captura el numpad", style="H.TLabel").grid(row=r, column=0, sticky="w")
@@ -742,6 +794,29 @@ class App:
             "Con el modo macros apagado la fila de números escribe normal. Al activarlo, 1–0, - y = "
             "lanzan lo que asignes en la fila de números del dibujo (cada banco tiene las suyas); "
             "todas las demás teclas siguen escribiendo.")).grid(row=r, column=0, sticky="w", pady=(4, 0))
+
+        r += 1
+        ttk.Label(t, text="Solo celular (sin teclado)", style="H.TLabel").grid(
+            row=r, column=0, sticky="w", pady=(20, 0))
+        r += 1
+        ph = ttk.Frame(t, style="Panel.TFrame")
+        ph.grid(row=r, column=0, sticky="w", pady=(8, 0))
+        self.only_var = tk.BooleanVar(value=self._phone_only())
+        ttk.Checkbutton(ph, text="Usar solo la app del celular (no buscar numpad ni teclados)",
+                        variable=self.only_var, command=self._on_phone_opts).pack(side="left")
+        r += 1
+        pc = ttk.Frame(t, style="Panel.TFrame")
+        pc.grid(row=r, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(pc, text="Botones del celular por banco", style="Panel.TLabel").pack(side="left", padx=(0, 10))
+        self.phone_count_cb = ttk.Combobox(pc, state="readonly", width=5, values=[str(n) for n in PHONE_COUNTS])
+        self.phone_count_cb.set(str(phone_count(self.cfg)))
+        self.phone_count_cb.pack(side="left")
+        self.phone_count_cb.bind("<<ComboboxSelected>>", lambda e: self._on_phone_opts())
+        r += 1
+        ttk.Label(t, style="Muted.TLabel", wraplength=520, justify="left", text=(
+            "Los botones del celular no corresponden a ninguna tecla: solo se tocan en la app. Con "
+            "«solo celular» el programa no necesita ningún teclado conectado y en vez del numpad "
+            "dibuja esos botones para editarlos aquí también.")).grid(row=r, column=0, sticky="w", pady=(4, 0))
 
         r += 1
         ttk.Label(t, text="Teclas F13–F24", style="H.TLabel").grid(row=r, column=0, sticky="w", pady=(20, 0))
@@ -1027,6 +1102,10 @@ class App:
             self.backend.stop()
             self.backend = None
         self.fallback = ""
+        if self._phone_only():
+            self._set_status("Modo solo celular: conecta la app en la pestaña «Celular».")
+            self._update_device_ui()
+            return
         try:
             self.backend = capture.create(self.cfg["mode"], self.engine, self.cfg.get("device", ""))
             self.backend.start()
@@ -1059,7 +1138,9 @@ class App:
     def _update_device_ui(self):
         b = self.backend
         dev = self.cfg.get("device", "")
-        if b is None:
+        if self._phone_only():
+            txt, col = "● Solo celular (sin teclado)", C["ok"]
+        elif b is None:
             txt, col = "● Captura detenida", C["bad"]
         elif not b.learns_device:
             txt = "● Sin driver (Interception no instalado)" if self.fallback else \
@@ -1491,8 +1572,35 @@ class App:
                x1 - r, y1, x0 + r, y1, x0, y1, x0, y1 - r, x0, y0 + r, x0, y0]
         return (canvas or self.canvas).create_polygon(pts, smooth=True, **kw)
 
+    def _phone_only(self):
+        return bool(self.cfg.get("phone", {}).get("only"))
+
+    def _cel_rows(self):
+        """Filas visibles de botones del celular (más si no se dibuja el numpad)."""
+        return 8 if self._phone_only() else 2
+
+    def _cel_pages(self):
+        per = 6 * self._cel_rows()
+        return max(1, -(-phone_count(self.cfg) // per))
+
+    def _cel_page_step(self, d):
+        self.cel_page = (self.cel_page + d) % self._cel_pages()
+        self._redraw()
+
     def _small_layout(self):
-        return FKEY_LAYOUT if self.small_group == "f" else ROW_LAYOUT
+        if self.small_group == "f":
+            return FKEY_LAYOUT
+        if self.small_group == "cel":
+            per = 6 * self._cel_rows()
+            self.cel_page = min(self.cel_page, self._cel_pages() - 1)
+            first = self.cel_page * per
+            out = {}
+            for kid, (label, c, r) in phone_layout(phone_count(self.cfg), 6).items():
+                i = int(kid[1:]) - 1
+                if first <= i < first + per:
+                    out[kid] = (label, c, r - first // 6)
+            return out
+        return ROW_LAYOUT
 
     def _set_group(self, gid):
         self.small_group = gid
@@ -1510,7 +1618,23 @@ class App:
         for gid, b in self.sg_btns.items():
             on = gid == self.small_group
             b.configure(bg=C["accent"] if on else C["panel2"], fg="#1a1306" if on else C["muted"])
-        if self.small_group == "f":
+        lay = self._small_layout()
+        rows = max((v[2] for v in lay.values()), default=0) + 1
+        cv.configure(height=rows * (self.RUNIT + self.RGAP) - self.RGAP)
+        multi = self.small_group == "cel" and self._cel_pages() > 1
+        for w in (self.pg_next, self.pg_lbl, self.pg_prev):
+            if multi:
+                w.pack(side="right", padx=(2, 0))
+            else:
+                w.pack_forget()
+        if multi:
+            self.pg_lbl.configure(text=f"{self.cel_page + 1}/{self._cel_pages()}")
+        if self.small_group == "cel":
+            enabled = True
+            self.row_title.configure(text=(
+                f"Botones del celular ({phone_count(self.cfg)}) · no necesitan teclado: "
+                "se tocan en la app"))
+        elif self.small_group == "f":
             enabled = self.cfg["fkeys"].get("enabled", True)
             self.row_title.configure(text=(
                 "Teclas F13–F24 · las envían teclados/mouse gamer, Stream Deck o AutoHotkey"
@@ -1525,7 +1649,7 @@ class App:
                 text=(f"Fila de números · modo macros ({toggle})" if enabled
                       else "Fila de números · desactivada (ver «Numpad y opciones»)"))
         layer = self._layer_dict()
-        for kid, (label, *_r) in self._small_layout().items():
+        for kid, (label, *_r) in lay.items():
             x0, y0, x1, y1 = self._row_rect(kid)
             act = layer.get(kid)
             gact = self.cfg["global"].get(kid) if self.layer != "global" else None
@@ -1561,7 +1685,9 @@ class App:
         for wdg in self.extra_frame.winfo_children():
             wdg.destroy()
         extras = [k for k in self.cfg.get("extra_keys", [])
-                  if k not in NUMPAD_IDS and k not in ROW_IDS and k not in FKEY_IDS]
+                  if k not in NUMPAD_IDS and k not in ROW_IDS and k not in FKEY_IDS and k not in PHONE_IDS]
+        if self._phone_only():
+            extras = []
         if not extras:
             return
         ttk.Label(self.extra_frame, text="Teclas extra de tu numpad",
@@ -1591,6 +1717,9 @@ class App:
             self.small_group = "f"
         elif kid in ROW_IDS:
             self.small_group = "row"
+        elif kid in PHONE_IDS:
+            self.small_group = "cel"
+            self.cel_page = (int(kid[1:]) - 1) // (6 * self._cel_rows())
         self._redraw()
         self._load_editor()
         self._update_assign_label()
@@ -1687,6 +1816,9 @@ class App:
             if not self.cfg["row_mode"].get("enabled", True):
                 row_note = "La fila de números está desactivada: actívala en «Numpad y opciones»."
             note = (row_note + " " + note).strip()
+        elif kid in PHONE_IDS:
+            note = (f"{key_label(kid)}: no corresponde a ninguna tecla, solo se toca en la app del "
+                    "celular (pestaña «Celular» para conectarlo). " + note).strip()
         elif kid in FKEY_IDS:
             f_note = (f"{FKEY_LAYOUT[kid][0]}: llega si la envía el software de tu teclado o mouse, "
                       "un Stream Deck o AutoHotkey. Si no le asignas nada, pasa normal a los demás programas.")
@@ -1948,6 +2080,35 @@ class App:
         if self.backend and hasattr(self.backend, "_next_scan"):
             self.backend._next_scan = 0
 
+    def _on_phone_opts(self):
+        only = self.only_var.get()
+        with self.engine.lock:
+            ph = self.cfg.setdefault("phone", {})
+            changed = bool(ph.get("only")) != only
+            ph["only"] = only
+            ph["count"] = int(self.phone_count_cb.get())
+        self._save()
+        if changed:
+            self.small_group = "cel" if only else "row"
+            self._apply_phone_only()
+            self._start_backend()
+        self.cel_page = 0
+        self._redraw()
+        self._load_editor()
+
+    def _apply_phone_only(self):
+        """En «solo celular» no se dibuja el numpad (los botones del celular ocupan su lugar)."""
+        if self._phone_only():
+            self.canvas.pack_forget()
+            self.btn_capture.pack_forget()
+        else:
+            if not self.canvas.winfo_ismapped():
+                self.canvas.pack(pady=(4, 8), before=self.sg_frame)
+            if not self.btn_capture.winfo_ismapped():
+                self.btn_capture.pack(fill="x", pady=(6, 0))
+        if self._phone_only() and self.selected not in PHONE_IDS:
+            self.selected = "m1"
+
     def _on_fkeys_opt(self):
         with self.engine.lock:
             self.cfg["fkeys"]["enabled"] = self.fkeys_var.get()
@@ -2008,7 +2169,7 @@ class App:
                 self._redraw()
         elif kind == "captured":
             kid = ev[1]
-            if kid not in NUMPAD_IDS and kid not in ROW_IDS and kid not in FKEY_IDS \
+            if kid not in NUMPAD_IDS and kid not in ROW_IDS and kid not in FKEY_IDS and kid not in PHONE_IDS \
                     and kid not in self.cfg["extra_keys"]:
                 with self.engine.lock:
                     self.cfg["extra_keys"].append(kid)

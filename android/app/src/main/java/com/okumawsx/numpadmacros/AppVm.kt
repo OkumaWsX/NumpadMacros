@@ -26,7 +26,7 @@ import java.io.File
 import java.io.InputStream
 import java.util.concurrent.ConcurrentHashMap
 
-const val APP_VERSION = "1.0.0"
+const val APP_VERSION = BuildConfig.VERSION_NAME
 const val MAX_UPLOAD = 50L * 1024 * 1024
 val AUDIO_EXT = listOf("mp3", "wav", "ogg", "flac", "opus", "aiff", "aif")
 
@@ -91,7 +91,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     var meter by mutableStateOf(store.meter)
 
     // ---------------------------------------------------------------- edición
-    var group by mutableStateOf("numpad")
+    var group by mutableStateOf("")          // "" = el primer grupo que mande el PC
     var editMode by mutableStateOf(false)
     var fullscreen by mutableStateOf(false)
     var editing by mutableStateOf<EditTarget?>(null)
@@ -560,6 +560,9 @@ class AppVm(app: Application) : AndroidViewModel(app) {
 
     // ================================================================ ajustes
     fun setLayoutPref(v: String) { layout = v; store.layout = v }
+
+    /** Cuántos botones propios tiene el celular (se guarda en el PC). */
+    fun setPhoneCount(n: Int) = sendNow(JSONObject().put("t", "botones").put("n", n))
     fun setVibratePref(v: Boolean) { vibrate = v; store.vibrate = v }
     fun setKeepOnPref(v: Boolean) { keepOn = v; store.keepOn = v }
     fun setAutoPref(v: Boolean) { autoReconnect = v; store.autoReconnect = v }

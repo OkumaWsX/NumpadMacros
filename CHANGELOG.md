@@ -3,6 +3,12 @@
 Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
+### Añadido
+- **Modo «Solo celular»**: Numpad Macros funciona sin ningún teclado ni numpad conectado, solo con la app del celular. Se activa en «Numpad y opciones»; no muestra avisos de captura y en vez del numpad dibuja los botones del celular.
+- **Botones del celular**: un grupo propio de 12, 24, 36 o 48 botones por banco que no corresponden a ninguna tecla (se eligen en el PC o en Ajustes de la app). Se editan desde el PC (botón «Celular» bajo el dibujo) o desde el celular.
+
+### Cambiado
+- La pestaña «Numpad y opciones» ahora se puede desplazar (ya no se cortan las últimas opciones).
 
 ## [3.3.1] - 2026-10-19
 ### Añadido

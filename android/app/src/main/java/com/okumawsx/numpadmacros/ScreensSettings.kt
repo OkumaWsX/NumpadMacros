@@ -47,6 +47,12 @@ fun SettingsTab(vm: AppVm) {
                     Chip(n, vm.layout == id, { vm.setLayoutPref(id) }, Modifier.weight(1f))
                 }
             }
+            T("Botones del celular (no necesitan teclado)", 13.sp, C.muted)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                for (n in vm.state.phoneCounts) {
+                    Chip("$n", vm.state.phoneCount == n, { vm.setPhoneCount(n) }, Modifier.weight(1f))
+                }
+            }
         }
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(C.panel).padding(horizontal = 12.dp, vertical = 2.dp)) {
             SetRow("Vibrar al tocar", "Confirma cada pulsación", vm.vibrate) { vm.setVibratePref(!vm.vibrate) }

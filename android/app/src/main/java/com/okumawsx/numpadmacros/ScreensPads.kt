@@ -72,7 +72,8 @@ fun PadsTab(vm: AppVm) {
         Box(Modifier.weight(1f).fillMaxWidth().alpha(if (online) 1f else 0.35f)) {
             val g = vm.state.group(vm.group)
             when {
-                vm.layout == "numpad" -> ShapeGrid(vm, g)
+                vm.layout == "numpad" && g.rows <= 6 -> ShapeGrid(vm, g)
+                vm.layout == "numpad" -> ListGrid(vm, g, 4, 78.dp, onlyAssigned = false)
                 vm.layout == "grandes" -> ListGrid(vm, g, 2, 150.dp, onlyAssigned = true)
                 else -> ListGrid(vm, g, 4, 78.dp, onlyAssigned = false)
             }

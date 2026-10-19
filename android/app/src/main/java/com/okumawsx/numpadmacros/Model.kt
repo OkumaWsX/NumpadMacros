@@ -94,6 +94,10 @@ data class PcState(
     val keys: List<KeyPos> = DEFAULT_KEYS,
     val groups: List<KeyGroup> = listOf(KeyGroup("numpad", "Numpad", 4, 5, DEFAULT_KEYS)),
     val paused: Boolean = false,
+    /** Botones propios del celular: cuántos hay, si el PC está en «solo celular» y las cantidades posibles. */
+    val phoneCount: Int = 24,
+    val phoneOnly: Boolean = false,
+    val phoneCounts: List<Int> = listOf(12, 24, 36, 48),
 ) {
     fun group(id: String): KeyGroup = groups.firstOrNull { it.id == id } ?: groups.first()
 
@@ -155,7 +159,11 @@ data class PcState(
                     groups.add(KeyGroup(g.optString("id", "g$i"), g.optString("name", "Teclas"), cols, rows, gk))
                 }
             }
-            if (groups.none { it.id == "numpad" }) groups.add(0, KeyGroup("numpad", "Numpad", 4, 5, keys))
+            // un PC viejo sin "groups": se muestra el numpad (en «solo celular» el PC no manda el numpad)
+            if (groups.isEmpty()) groups.add(KeyGroup("numpad", "Numpad", 4, 5, keys))
+            val ph = o.optJSONObject("phone")
+            val counts = mutableListOf<Int>()
+            ph?.optJSONArray("counts")?.let { a -> for (i in 0 until a.length()) counts.add(a.optInt(i)) }
             return PcState(
                 active = o.optInt("active", 0),
                 volume = o.optDouble("volume", 1.0).let { if (it.isNaN()) 1.0 else it },
@@ -164,6 +172,9 @@ data class PcState(
                 keys = keys,
                 groups = groups,
                 paused = o.optBoolean("paused", false),
+                phoneCount = ph?.optInt("count", 24) ?: 24,
+                phoneOnly = ph?.optBoolean("only", false) ?: false,
+                phoneCounts = counts.ifEmpty { listOf(12, 24, 36, 48) },
             )
         }
     }

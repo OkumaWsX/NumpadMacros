@@ -116,7 +116,7 @@ class RemoteTest(unittest.TestCase):
         self.assertEqual(st["banks"][0]["name"], "Stream")
         k = st["banks"][0]["keys"]["47"]
         self.assertEqual((k["title"], k["mode"]), ("Aplausos", "restart"))
-        self.assertEqual([g["id"] for g in st["groups"]], ["numpad", "fila", "f"])
+        self.assertEqual([g["id"] for g in st["groups"]], ["numpad", "fila", "f", "celular"])
         lib = ph.recv("biblioteca")
         self.assertEqual(lib["items"][0]["lib"], remote.lib_id(self.wav))
         ph.send(t="tecla", key="47", down=True)
@@ -220,6 +220,30 @@ class RemoteTest(unittest.TestCase):
         # no es audio
         ph.send(t="subir_ini", name="virus.exe", size=10)
         self.assertFalse(ph.recv("subida")["ok"])
+        ph.close()
+
+    def test_phone_buttons_and_only_mode(self):
+        ph, _ = self.pair()
+        st = ph.recv("estado")
+        cel = st["groups"][-1]
+        self.assertEqual((cel["id"], cel["cols"], cel["rows"], len(cel["keys"])), ("celular", 4, 6, 24))
+        self.assertEqual(st["phone"]["count"], 24)
+        ph.send(t="botones", n=48)
+        st = ph.recv("estado")
+        self.assertEqual((st["phone"]["count"], len(st["groups"][-1]["keys"])), (48, 48))
+        ph.send(t="botones", n=7)                         # no válido: no cambia
+        ph.send(t="asignar", layer=0, key="m40", act={"type": "sound_stop"})
+        st = ph.recv("estado")
+        self.assertEqual(st["banks"][0]["keys"]["m40"], {"type": "sound_stop"})
+        ph.send(t="tecla", key="m40", down=True)
+        ph.send(t="tecla", key="m40", down=False)
+        time.sleep(0.2)
+        self.assertIn("STOP", self.board.played)
+        self.cfg["phone"] = {"count": 12, "only": True}
+        st = self.srv.state()
+        self.assertEqual([g["id"] for g in st["groups"]], ["celular"])
+        self.assertEqual(st["groups"][0]["rows"], 3)
+        self.assertTrue(st["phone"]["only"])
         ph.close()
 
     def test_discovery(self):
