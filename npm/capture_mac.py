@@ -300,7 +300,7 @@ class IOKitBackend:
         return event
 
     def _sync_tap(self):
-        want = self.engine.row_enabled()
+        want = self.engine.main_wanted()
         if want == (self._tap is not None):
             return
         cg = _cg_lib()
@@ -312,7 +312,7 @@ class IOKitBackend:
             if not tap:
                 if not self._tap_warned:
                     self._tap_warned = True
-                    self.engine.events.put(("error", "Para usar la fila de números, activa Numpad Macros "
+                    self.engine.events.put(("error", "Para usar la fila de números o F13–F24, activa Numpad Macros "
                                             "en Ajustes del Sistema → Privacidad y seguridad → Accesibilidad"))
                 return
             self._tap = tap

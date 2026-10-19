@@ -107,7 +107,7 @@ class EvdevBackend:
                 continue
             try:
                 if self._is_keyboard(dev) and (learning or self._matches(dev)
-                                               or self.engine.row_enabled()):
+                                               or self.engine.main_wanted()):
                     self.devs[path] = dev
                     continue
             except OSError:
@@ -115,7 +115,7 @@ class EvdevBackend:
             dev.close()
         # Fuera del modo aprendizaje solo quedan abiertos el numpad elegido y,
         # si se usa la fila de números, los demás teclados
-        if not learning and not self.engine.row_enabled():
+        if not learning and not self.engine.main_wanted():
             for path, dev in list(self.devs.items()):
                 if not self._matches(dev):
                     self._close(path)
@@ -151,11 +151,11 @@ class EvdevBackend:
             if want and not getattr(self, "_warned_main", False):
                 self._warned_main = True
                 self.engine.events.put(("error", "No se pudo tomar el teclado principal "
-                                        f"({ex}); la fila de números también escribirá números"))
+                                        f"({ex}); la fila de números y F13–F24 también llegarán a los demás programas"))
 
     def _sync_grab(self, learning: bool):
         want = self.engine.active and not learning
-        want_main = want and self.engine.row_mode
+        want_main = want and (self.engine.row_mode or self.engine.fkeys_wanted())
         for path, dev in self.devs.items():
             if not self._matches(dev):
                 self._sync_main(path, dev, want_main)

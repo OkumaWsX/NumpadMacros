@@ -56,8 +56,10 @@ Respuestas:
 - `{"t":"rechazado","why":"codigo"|"desactivado"|"olvidado"|"prueba"}` y el PC cierra.
 
 El token nunca viaja otra vez después de la vinculación: en las siguientes
-conexiones solo se manda la prueba HMAC del reto. El PC guarda solo
-SHA-256(token).
+conexiones solo se manda la prueba HMAC del reto (clave = el token como texto
+hex en UTF-8, mensaje = el nonce como texto hex en UTF-8, resultado en hex
+minúsculas). El PC guarda el token en su configuración, en la carpeta del
+usuario.
 
 ## Mensajes del celular (después de entrar)
 
@@ -93,9 +95,16 @@ SHA-256(token).
  "banks":[{"name":"Stream","keys":{"47":{"type":"file","title":"Aplausos","mode":"restart","volume":1.0,"lib":"a1b2c3d4e5","color":0}}}],
  "global":{"45":{"type":"bank_next"}},
  "keys":[["45","NumLk",0,0,1,1],["e0:35","/",1,0,1,1], …],
+ "groups":[{"id":"numpad","name":"Numpad","cols":4,"rows":5,"keys":[…]},
+           {"id":"fila","name":"Fila 1–0","cols":6,"rows":2,"keys":[["02","1",0,0,1,1], …]},
+           {"id":"f","name":"F13–F24","cols":6,"rows":2,"keys":[["f13","F13",0,0,1,1], …]}],
  "paused":false}
 ```
 `keys` = las teclas del numpad con su posición `[id, etiqueta, col, fila, ancho, alto]`.
+`groups` = todos los grupos de teclas que se pueden lanzar y editar desde el celular
+(la fila de números y F13–F24 solo aparecen si están activadas en el PC). Una
+tecla de cualquier grupo se usa igual en `tecla` y `asignar`. Las teclas
+F13–F24 tienen id `"f13"` … `"f24"`.
 
 **biblioteca**: `{"t":"biblioteca","items":[{"lib":"a1b2c3d4e5","title":"Aplausos","lufs":-12.3}, …]}`
 (`lib` = primeros 10 hex de SHA-1 de la ruta normalizada; no cambia mientras el archivo siga ahí.)

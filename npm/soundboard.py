@@ -167,6 +167,11 @@ class _Bus:
         with self.lock:
             self.voices = [v for v in self.voices if v.tag != tag]
 
+    def progress(self) -> dict:
+        """{etiqueta: avance 0–1} de lo que está sonando."""
+        with self.lock:
+            return {v.tag: v.pos / max(1, len(v.data)) for v in self.voices if v.tag}
+
     def clear(self):
         with self.lock:
             self.voices = []
@@ -413,6 +418,13 @@ class _BoardBase:
     def stop_tag(self, tag):
         for b in self._buses():
             b.stop_tag(tag)
+
+    def progress(self) -> dict:
+        out = {}
+        for b in self._buses():
+            for tag, p in b.progress().items():
+                out[tag] = max(out.get(tag, 0.0), p)
+        return out
 
     def stop_all(self):
         for b in self._buses():

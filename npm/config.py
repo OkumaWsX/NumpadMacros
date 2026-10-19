@@ -56,6 +56,7 @@ DEFAULT = {
     },
     "last_dir": "",
     "library": [],                   # biblioteca de sonidos: [{"path", "title"}]
+    "fkeys": {"enabled": True},      # teclas F13–F24 como botones (si llegan desde el teclado)
     "row_mode": {                    # fila de números del teclado principal
         "enabled": True,
         "toggle": "ctrl+alt+m",      # combinación que activa/desactiva el modo macros
@@ -92,6 +93,9 @@ def load(path: str | None = None) -> dict:
     comp.update(audio.get("compressor") or {})
     audio["compressor"] = comp
     cfg["audio"] = audio
+    fk = copy.deepcopy(DEFAULT["fkeys"])
+    fk.update(cfg.get("fkeys") or {})
+    cfg["fkeys"] = fk
     upd = copy.deepcopy(DEFAULT["updates"])
     upd.update(cfg.get("updates") or {})
     cfg["updates"] = upd

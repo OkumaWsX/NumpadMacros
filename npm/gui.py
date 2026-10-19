@@ -14,7 +14,7 @@ from . import loudness as ld
 from .capture import PLATFORM, BackendError, describe_device
 from .engine import Engine
 from .dialogs import NewsDialog, UpdateDialog
-from .keys import (KEY_CHOICES, MODIFIER_KEYSYMS, MODIFIERS, NUMPAD_IDS, NUMPAD_LAYOUT, ROW_IDS,
+from .keys import (FKEY_IDS, FKEY_LAYOUT, KEY_CHOICES, MODIFIER_KEYSYMS, MODIFIERS, NUMPAD_IDS, NUMPAD_LAYOUT, ROW_IDS,
                    ROW_LAYOUT, TOGGLE_CHOICES, busy_reason, combo_text, join_combo, key_label,
                    keysym_to_key, parse_combo, parse_toggle)
 from .senders import make_sender
@@ -302,8 +302,18 @@ class App:
         self.canvas.pack(pady=(4, 8))
         self.canvas.bind("<Button-1>", self._on_canvas_click)
 
-        self.row_title = ttk.Label(left, style="Muted.TLabel")
-        self.row_title.pack(anchor="w")
+        # fila de números y F13–F24 comparten el mismo espacio (se elige con los botones)
+        self.small_group = "row"
+        sg = ttk.Frame(left, style="Panel.TFrame")
+        sg.pack(fill="x")
+        self.sg_btns = {}
+        for gid, text in (("row", "Fila 1–0"), ("f", "F13–F24")):
+            b = FlatButton(sg, text=text, command=lambda g=gid: self._set_group(g),
+                           font=(FONT, BASE - 1, "bold"), padx=10, pady=2)
+            b.pack(side="left", padx=(0, 6))
+            self.sg_btns[gid] = b
+        self.row_title = ttk.Label(left, style="Muted.TLabel", wraplength=4 * self.UNIT + 3 * self.GAP)
+        self.row_title.pack(anchor="w", pady=(4, 0))
         rw = 6 * self.RUNIT + 5 * self.RGAP
         rh = 2 * self.RUNIT + self.RGAP
         self.row_canvas = tk.Canvas(left, width=rw, height=rh, bg=C["panel"], highlightthickness=0)
@@ -717,6 +727,20 @@ class App:
             "Con el modo macros apagado la fila de números escribe normal. Al activarlo, 1–0, - y = "
             "lanzan lo que asignes en la fila de números del dibujo (cada banco tiene las suyas); "
             "todas las demás teclas siguen escribiendo.")).grid(row=r, column=0, sticky="w", pady=(4, 0))
+
+        r += 1
+        ttk.Label(t, text="Teclas F13–F24", style="H.TLabel").grid(row=r, column=0, sticky="w", pady=(20, 0))
+        r += 1
+        self.fkeys_var = tk.BooleanVar(value=self.cfg["fkeys"].get("enabled", True))
+        ttk.Checkbutton(t, text="Usar F13–F24 como botones", variable=self.fkeys_var,
+                        command=self._on_fkeys_opt).grid(row=r, column=0, sticky="w", pady=(8, 0))
+        r += 1
+        ttk.Label(t, style="Muted.TLabel", wraplength=520, justify="left", text=(
+            "Casi ningún teclado trae estas teclas, pero las pueden enviar el software de teclados y "
+            "mouse gamer (teclas G, QMK/VIA), un Stream Deck o AutoHotkey. Ningún programa común las usa, "
+            "así que sirven para tener más botones con un solo teclado. Las que no tengan acción pasan "
+            "normal a los demás programas. Asígnalas con el botón «F13–F24» bajo el dibujo del numpad.")
+        ).grid(row=r, column=0, sticky="w", pady=(4, 0))
 
         r += 1
         ttk.Label(t, text="Comportamiento", style="H.TLabel").grid(row=r, column=0, sticky="w", pady=(20, 0))
@@ -1450,8 +1474,15 @@ class App:
                x1 - r, y1, x0 + r, y1, x0, y1, x0, y1 - r, x0, y0 + r, x0, y0]
         return (canvas or self.canvas).create_polygon(pts, smooth=True, **kw)
 
+    def _small_layout(self):
+        return FKEY_LAYOUT if self.small_group == "f" else ROW_LAYOUT
+
+    def _set_group(self, gid):
+        self.small_group = gid
+        self._redraw()
+
     def _row_rect(self, kid):
-        _, c, r = ROW_LAYOUT[kid]
+        _, c, r = self._small_layout()[kid]
         u, g = self.RUNIT, self.RGAP
         x0, y0 = c * (u + g), r * (u + g)
         return x0, y0, x0 + u, y0 + u
@@ -1459,16 +1490,25 @@ class App:
     def _draw_row(self):
         cv = self.row_canvas
         cv.delete("all")
-        enabled = self.cfg["row_mode"].get("enabled", True)
-        try:
-            toggle = self._combo_text(self.cfg["row_mode"]["toggle"])
-        except Exception:
-            toggle = "?"
-        self.row_title.configure(
-            text=(f"Fila de números · modo macros ({toggle})" if enabled
-                  else "Fila de números · desactivada (ver «Numpad y opciones»)"))
+        for gid, b in self.sg_btns.items():
+            on = gid == self.small_group
+            b.configure(bg=C["accent"] if on else C["panel2"], fg="#1a1306" if on else C["muted"])
+        if self.small_group == "f":
+            enabled = self.cfg["fkeys"].get("enabled", True)
+            self.row_title.configure(text=(
+                "Teclas F13–F24 · las envían teclados/mouse gamer, Stream Deck o AutoHotkey"
+                if enabled else "Teclas F13–F24 · desactivadas (ver «Numpad y opciones»)"))
+        else:
+            enabled = self.cfg["row_mode"].get("enabled", True)
+            try:
+                toggle = self._combo_text(self.cfg["row_mode"]["toggle"])
+            except Exception:
+                toggle = "?"
+            self.row_title.configure(
+                text=(f"Fila de números · modo macros ({toggle})" if enabled
+                      else "Fila de números · desactivada (ver «Numpad y opciones»)"))
         layer = self._layer_dict()
-        for kid, (label, *_r) in ROW_LAYOUT.items():
+        for kid, (label, *_r) in self._small_layout().items():
             x0, y0, x1, y1 = self._row_rect(kid)
             act = layer.get(kid)
             gact = self.cfg["global"].get(kid) if self.layer != "global" else None
@@ -1485,7 +1525,8 @@ class App:
             self._round_rect(x0 + 1, y0 + 1, x1 - 1, y1 - 1, 7, canvas=cv, fill=fill,
                              outline=line, width=width)
             fg = C["text"] if enabled else C["muted"]
-            cv.create_text(x0 + 7, y0 + 4, text=label, anchor="nw", fill=fg, font=(FONT, BASE + 1, "bold"))
+            cv.create_text(x0 + 7, y0 + 4, text=label, anchor="nw", fill=fg,
+                           font=(FONT, BASE + 1 if len(label) < 3 else BASE - 1, "bold"))
             a = gact or act
             if a:
                 icon = {"file": "🔊", "keys": "⌨", "sound_stop": "■"}.get(a.get("type"), "→")
@@ -1493,7 +1534,7 @@ class App:
                                font=(FONT, BASE - 2))
 
     def _on_row_click(self, ev):
-        for kid in ROW_LAYOUT:
+        for kid in self._small_layout():
             x0, y0, x1, y1 = self._row_rect(kid)
             if x0 <= ev.x <= x1 and y0 <= ev.y <= y1:
                 self._select(kid)
@@ -1502,7 +1543,8 @@ class App:
     def _draw_extras(self):
         for wdg in self.extra_frame.winfo_children():
             wdg.destroy()
-        extras = [k for k in self.cfg.get("extra_keys", []) if k not in NUMPAD_IDS and k not in ROW_IDS]
+        extras = [k for k in self.cfg.get("extra_keys", [])
+                  if k not in NUMPAD_IDS and k not in ROW_IDS and k not in FKEY_IDS]
         if not extras:
             return
         ttk.Label(self.extra_frame, text="Teclas extra de tu numpad",
@@ -1528,6 +1570,10 @@ class App:
 
     def _select(self, kid):
         self.selected = kid
+        if kid in FKEY_IDS:
+            self.small_group = "f"
+        elif kid in ROW_IDS:
+            self.small_group = "row"
         self._redraw()
         self._load_editor()
         self._update_assign_label()
@@ -1624,6 +1670,12 @@ class App:
             if not self.cfg["row_mode"].get("enabled", True):
                 row_note = "La fila de números está desactivada: actívala en «Numpad y opciones»."
             note = (row_note + " " + note).strip()
+        elif kid in FKEY_IDS:
+            f_note = (f"{FKEY_LAYOUT[kid][0]}: llega si la envía el software de tu teclado o mouse, "
+                      "un Stream Deck o AutoHotkey. Si no le asignas nada, pasa normal a los demás programas.")
+            if not self.cfg["fkeys"].get("enabled", True):
+                f_note = "Las teclas F13–F24 están desactivadas: actívalas en «Numpad y opciones»."
+            note = (f_note + " " + note).strip()
         self.ed_note.configure(text=note)
         self._editor_lock = True
         self.type_cb.set(TYPE_LABEL.get(act.get("type", "none"), TYPE_LABEL["none"]))
@@ -1662,8 +1714,17 @@ class App:
             else:
                 d[self.selected] = act
         self._save()
+        if self.selected in FKEY_IDS:
+            self._kick_backend()          # escuchar (o soltar) el teclado principal
+        self._remote_state()
         if redraw:
             self._redraw()
+
+    def _kick_backend(self):
+        if self.backend and hasattr(self.backend, "_force_scan"):
+            self.backend._force_scan = True
+        if self.backend and hasattr(self.backend, "_next_scan"):
+            self.backend._next_scan = 0
 
     def _free_fkey(self):
         used = set()
@@ -1871,6 +1932,15 @@ class App:
         if self.backend and hasattr(self.backend, "_next_scan"):
             self.backend._next_scan = 0
 
+    def _on_fkeys_opt(self):
+        with self.engine.lock:
+            self.cfg["fkeys"]["enabled"] = self.fkeys_var.get()
+        self._save()
+        self._kick_backend()
+        self._redraw()
+        self._load_editor()
+        self._remote_state()
+
     # ================================================================ activo / pausa
     def _paint_tog_warn(self, combo):
         try:
@@ -1923,7 +1993,8 @@ class App:
                 self._redraw()
         elif kind == "captured":
             kid = ev[1]
-            if kid not in NUMPAD_IDS and kid not in ROW_IDS and kid not in self.cfg["extra_keys"]:
+            if kid not in NUMPAD_IDS and kid not in ROW_IDS and kid not in FKEY_IDS \
+                    and kid not in self.cfg["extra_keys"]:
                 with self.engine.lock:
                     self.cfg["extra_keys"].append(kid)
                 self._save()

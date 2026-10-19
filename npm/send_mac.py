@@ -105,6 +105,11 @@ MAC_TO_KID = {18: "02", 19: "03", 20: "04", 21: "05", 23: "06", 22: "07",
               26: "08", 28: "09", 25: "0a", 29: "0b", 27: "0c", 24: "0d"}
 
 
+# F13–F20 del teclado Apple (macOS no tiene F21–F24)
+MAC_TO_KID.update({105: "f13", 107: "f14", 113: "f15", 106: "f16", 64: "f17",
+                   79: "f18", 80: "f19", 90: "f20"})
+
+
 def _build_mac_table():
     from .keys import TOGGLE_KEYS
     for name, kid in TOGGLE_KEYS.items():
