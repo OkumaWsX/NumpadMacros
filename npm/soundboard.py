@@ -92,6 +92,8 @@ class _Bus:
         self.comp = ld.Compressor(np)
         self.level = (-math.inf, -math.inf, 0.0, False)   # rms dB, pico dB, compresión dB, saturó
         self._sat_until = 0.0
+        self.closed = False          # la salida se detuvo (por inactividad): no acepta voces
+        self.idle_since = time.monotonic()
 
     def render(self, frames, out=None):
         np = self.np
@@ -135,11 +137,27 @@ class _Bus:
             self.level = (-math.inf, -math.inf, 0.0, now < self._sat_until)
         return out
 
-    def add(self, data, gain, tag=None):
+    def add(self, data, gain, tag=None) -> bool:
+        """False si la salida ya se cerró (hay que abrir otra)."""
         with self.lock:
+            if self.closed:
+                return False
             if len(self.voices) >= MAX_VOICES:
                 self.voices.pop(0)
             self.voices.append(_Voice(data, gain, tag))
+            self.idle_since = time.monotonic()
+            return True
+
+    def close_if_idle(self, seconds) -> bool:
+        """Cierra la salida si lleva `seconds` en silencio. True si se cerró."""
+        with self.lock:
+            if self.voices or self.mic_feed is not None:
+                self.idle_since = time.monotonic()
+                return False
+            if time.monotonic() - self.idle_since < seconds:
+                return False
+            self.closed = True
+            return True
 
     def has(self, tag) -> bool:
         with self.lock:
@@ -232,7 +250,10 @@ class _SDSink:
 
 class _PipeSink:
     """Salida por tubería a pw-cat o pacat (Linux): el programa mezcla y le
-    entrega audio crudo continuamente, en bloques de 10 ms."""
+    entrega audio crudo en bloques de 10 ms mientras suena algo. Tras unos
+    segundos de silencio se cierra sola (no queda un flujo abierto todo el rato)
+    y se vuelve a abrir con el siguiente sonido."""
+    IDLE_CLOSE = 4.0
 
     def __init__(self, cmd, bus):
         self.bus = bus
@@ -241,7 +262,7 @@ class _PipeSink:
                                      stderr=subprocess.DEVNULL, env=clean_env(), bufsize=0)
         try:                         # tubería chica = poca latencia
             import fcntl
-            fcntl.fcntl(self.proc.stdin.fileno(), 1031, 8192)   # F_SETPIPE_SZ
+            fcntl.fcntl(self.proc.stdin.fileno(), 1031, 16384)   # F_SETPIPE_SZ (~40 ms)
         except Exception:
             pass
         self.thread = threading.Thread(target=self._loop, daemon=True)
@@ -251,9 +272,17 @@ class _PipeSink:
         buf = None
         try:
             while not self.stop:
+                if self.bus.close_if_idle(self.IDLE_CLOSE):
+                    break
                 buf = self.bus.render(BLOCK, buf)
                 self.proc.stdin.write(buf.tobytes())
         except (BrokenPipeError, OSError, ValueError):
+            pass
+        self.stop = True
+        self.bus.closed = True
+        try:
+            self.proc.stdin.close()
+        except Exception:
             pass
 
     def alive(self):
@@ -414,15 +443,33 @@ class _BoardBase:
                 raise SoundboardError(f"No pude abrir el audio: {e}")
             if tag and mode in ("restart", "hold"):
                 self.stop_tag(tag)
-            if speakers and self.spk:
-                self.spk.add(data, gain, tag)
-            if mic:
-                if not self.mic:
-                    if not speakers:
-                        raise SoundboardError("Elige el micrófono virtual en la pestaña Audio")
-                else:
-                    self.mic.add(data, gain, tag)
+            for _attempt in range(2):
+                ok = True
+                if speakers and self.spk:
+                    ok = self.spk.add(data, gain, tag) and ok
+                if mic and self.mic:
+                    ok = self.mic.add(data, gain, tag) and ok
+                if ok:
+                    break
+                self._ensure()                   # la salida se cerró por silencio: abrir otra
+            if mic and not self.mic and not speakers:
+                raise SoundboardError("Elige el micrófono virtual en la pestaña Audio")
         return title_of(path)
+
+    def test_tone(self):
+        """Pitido corto solo por los audífonos, para comprobar la salida elegida."""
+        if self._err:
+            raise SoundboardError(self._err)
+        np = self.np
+        t = np.arange(int(SR * 0.35)) / SR
+        tone = (0.25 * np.sin(2 * np.pi * 880 * t) * np.minimum(1, np.minimum(t, t[::-1]) / 0.02))
+        data = np.ascontiguousarray(np.stack([tone, tone], 1).astype(np.float32))
+        with self._lock:
+            self._ensure()
+            if not (self.spk and self.spk.add(data, 1.0, "prueba")):
+                self._ensure()
+                if self.spk:
+                    self.spk.add(data, 1.0, "prueba")
 
     def _close_streams(self):
         raise NotImplementedError
@@ -574,7 +621,26 @@ class PipeWireBoard(_BoardBase):
         return mods
 
     def outputs(self):
-        return []
+        """Salidas de audio (audífonos/parlantes) como «descripción [nombre]»."""
+        if self._err:
+            return []
+        out = []
+        try:
+            data = json.loads(self._run("-f", "json", "list", "sinks"))
+            for s in data:
+                name = s.get("name", "")
+                if not name or name == self.SINK:
+                    continue
+                out.append(f"{s['description']} [{name}]" if s.get("description") else name)
+        except (SoundboardError, ValueError, subprocess.TimeoutExpired):
+            try:
+                for line in self._run("list", "short", "sinks").splitlines():
+                    parts = line.split("\t")
+                    if len(parts) > 1 and parts[1] != self.SINK:
+                        out.append(parts[1])
+            except SoundboardError:
+                pass
+        return out
 
     def inputs(self):
         """Micrófonos reales (nombre interno, descripción)."""
@@ -639,10 +705,26 @@ class PipeWireBoard(_BoardBase):
                           f"sink={self.SINK}", "latency_msec=20")
         self._ready = True
 
+    _raw_flag = None
+
+    @classmethod
+    def _pwcat_raw(cls):
+        """Las versiones nuevas de pw-cat (PipeWire 1.2+) necesitan --raw para leer audio crudo
+        desde la tubería; sin él intentan adivinar el formato y suena estática."""
+        if cls._raw_flag is None:
+            try:
+                r = subprocess.run(["pw-cat", "--help"], capture_output=True, text=True, timeout=5,
+                                   env=clean_env())
+                cls._raw_flag = "--raw" in (r.stdout + r.stderr)
+            except Exception:
+                cls._raw_flag = False
+        return cls._raw_flag
+
     def _cmd(self, target, name):
         if self.player == "pw-cat":
-            cmd = ["pw-cat", "--playback", "--format", "f32", "--rate", str(SR), "--channels", "2",
-                   "--latency", "20ms", "-P", f"{{ node.description = \"Numpad Macros ({name})\" }}"]
+            cmd = ["pw-cat", "--playback"] + (["--raw"] if self._pwcat_raw() else []) + [
+                "--format", "f32", "--rate", str(SR), "--channels", "2",
+                "--latency", "40ms", "-P", f"{{ node.description = \"Numpad Macros ({name})\" }}"]
             if target:
                 cmd += ["--target", target]
             return cmd + ["-"]
@@ -660,7 +742,8 @@ class PipeWireBoard(_BoardBase):
             self._setup_modules()
         self.spk = _Bus(self.np, self.settings)
         self.mic = _Bus(self.np, self.settings)
-        self._sinks = [_PipeSink(self._cmd(None, "audífonos"), self.spk),
+        spk_target = self._source_name(self.settings.get("monitor_device", "")) or None
+        self._sinks = [_PipeSink(self._cmd(spk_target, "audífonos"), self.spk),
                        _PipeSink(self._cmd(self.SINK, "micrófono"), self.mic)]
 
     def _close_streams(self):

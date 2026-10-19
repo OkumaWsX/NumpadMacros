@@ -222,7 +222,8 @@ case "$1" in
 esac
 """
         # pw-cat falso: anota sus argumentos y guarda el audio que recibe
-        play = (f"#!/bin/sh\necho \"pw-cat $*\" >> {self.log}\n"
+        play = (f"#!/bin/sh\n[ \"$1\" = --help ] && {{ echo \"  -a, --raw   Raw mode\"; exit 0; }}\n"
+                f"echo \"pw-cat $*\" >> {self.log}\n"
                 f"case \"$*\" in *numpad_macros_sink*) exec cat > {self.dir}/mic.raw;; "
                 f"*) exec cat > {self.dir}/spk.raw;; esac\n")
         for name, body in (("pactl", pactl), ("pw-cat", play)):
@@ -270,6 +271,7 @@ esac
         plays = [ln for ln in self.lines() if ln.startswith("pw-cat")][-2:]   # las de la última conexión
         self.assertTrue(any("--target numpad_macros_sink" in p for p in plays))
         self.assertTrue(all("--format f32" in p for p in plays))
+        self.assertTrue(all("--raw" in p for p in plays))           # PipeWire nuevo: audio crudo explícito
         mic = self.np.fromfile(os.path.join(self.dir, "mic.raw"), dtype="float32")
         self.assertGreater(abs(mic).max(), 0.05)          # el sonido llegó al micrófono virtual
         self.assertEqual(self.board.inputs(), ["Mic USB [alsa_input.usb]"])

@@ -770,14 +770,19 @@ class App:
 
         ok, _msg = self.board.available()
         self.audio_widgets = []
+        # dónde escuchas tú (todos los sistemas)
+        r += 1
+        ttk.Label(t, text="Tus audífonos", style="Panel.TLabel").grid(row=r, column=0, sticky="w", pady=3)
+        orow = ttk.Frame(t, style="Panel.TFrame")
+        orow.grid(row=r, column=1, sticky="w", padx=10)
+        self.mon_cb = ttk.Combobox(orow, state="readonly", width=28)
+        self.mon_cb.pack(side="left")
+        self.mon_cb.bind("<<ComboboxSelected>>", lambda e: self._on_audio())
+        ttk.Button(orow, text="↻", width=3, command=self._fill_outputs).pack(side="left", padx=(6, 0))
+        ttk.Button(orow, text="▶ Probar", width=9, command=self._test_output).pack(side="left", padx=(6, 0))
+        self._fill_outputs()
+        self.audio_widgets += [self.mon_cb]
         if self.board.kind == "mixer":
-            outs = ["(predeterminada del sistema)"] + self.board.outputs()
-            r += 1
-            ttk.Label(t, text="Tus audífonos", style="Panel.TLabel").grid(row=r, column=0, sticky="w", pady=3)
-            self.mon_cb = ttk.Combobox(t, state="readonly", width=44, values=outs)
-            self.mon_cb.set(a["monitor_device"] or outs[0])
-            self.mon_cb.grid(row=r, column=1, sticky="w", padx=10)
-            self.mon_cb.bind("<<ComboboxSelected>>", lambda e: self._on_audio())
             r += 1
             ttk.Label(t, text="Micrófono virtual", style="Panel.TLabel").grid(row=r, column=0, sticky="w", pady=3)
             mics = ["(ninguno)"] + self.board.outputs()
@@ -787,7 +792,7 @@ class App:
             self.micdev_cb.set(a["mic_device"] or mics[0])
             self.micdev_cb.grid(row=r, column=1, sticky="w", padx=10)
             self.micdev_cb.bind("<<ComboboxSelected>>", lambda e: self._on_audio())
-            self.audio_widgets += [self.mon_cb, self.micdev_cb]
+            self.audio_widgets += [self.micdev_cb]
         r += 1
         self.mix_var = tk.BooleanVar(value=a["mix_mic"])
         mix = ttk.Checkbutton(t, text="Mezclar mi micrófono real (hablo y suenan los efectos por el mismo mic)",
@@ -891,6 +896,27 @@ class App:
             for wdg in self.audio_widgets:
                 wdg.state(["disabled"])
         self._paint_vmic()
+
+    def _fill_outputs(self):
+        """Lista de salidas (audífonos, parlantes, HDMI…); se puede refrescar al conectar algo."""
+        a = self.cfg["audio"]
+        try:
+            outs = self.board.outputs()
+        except Exception:
+            outs = []
+        values = ["(predeterminada del sistema)"] + outs
+        cur = a.get("monitor_device", "")
+        if cur and cur not in values:
+            values.append(cur)                     # elegida antes, ahora desconectada
+        self.mon_cb.configure(values=values)
+        self.mon_cb.set(cur or values[0])
+
+    def _test_output(self):
+        try:
+            self.board.test_tone()
+            self._set_status("Sonó un pitido corto en tus audífonos (no sale por el micrófono).")
+        except Exception as e:
+            self._set_status(f"No pude probar la salida: {e}", bad=True)
 
     def _paint_processing(self):
         a = self.cfg["audio"]
@@ -1080,9 +1106,9 @@ class App:
     def _on_audio(self):
         a = self.cfg["audio"]
         with self.engine.lock:
+            mon = self.mon_cb.get()
+            a["monitor_device"] = "" if mon.startswith("(") else mon
             if self.board.kind == "mixer":
-                mon = self.mon_cb.get()
-                a["monitor_device"] = "" if mon.startswith("(") else mon
                 mic = self.micdev_cb.get()
                 a["mic_device"] = "" if mic.startswith("(") else mic
             a["mix_mic"] = self.mix_var.get()

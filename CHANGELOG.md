@@ -4,9 +4,12 @@ Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https:
 
 ## [Sin publicar]
 ### Añadido
+- Linux: elegir por dónde escuchas los sonidos (audífonos, parlantes, HDMI…) en la pestaña **Audio**, con botón para refrescar la lista y **▶ Probar** (pitido corto solo en tus audífonos).
 - Linux: la app se agrega sola al menú de aplicaciones con su propio icono, así la barra de tareas (KDE, GNOME…) muestra el icono de Numpad Macros en vez de uno genérico, aunque la abras sin usar `instalar_linux.sh`.
 
 ### Corregido
+- Linux: se escuchaba estática al abrir la app con versiones nuevas de PipeWire (como la de CachyOS). Ahora el audio se entrega en el formato que esas versiones esperan.
+- Linux: la salida de audio ya no queda abierta todo el tiempo; se cierra sola tras unos segundos de silencio y se abre con el siguiente sonido.
 - El aviso del compresor y de saturación ya no queda cortado junto a los medidores: ahora aparece con los demás indicadores.
 - Mensaje más claro cuando no se puede buscar actualizaciones por falta de conexión.
 
