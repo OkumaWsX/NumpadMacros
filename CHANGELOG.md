@@ -4,6 +4,8 @@ Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https:
 
 ## [Sin publicar]
 ### Añadido
+- **App para Android** (nueva): lanza y edita tus sonidos desde el celular por **Wi-Fi, cable USB o Bluetooth**. Nueva pestaña **Celular** con código QR y código de 4 números para vincular (solo la primera vez), lista de celulares vinculados y actividad. Desde el celular puedes cambiar de banco, detener, ajustar el volumen, asignar sonidos y atajos a cualquier tecla y **subir sonidos nuevos** (o grabarlos en el momento).
+- **Teclas F13–F24 como botones**: casi ningún teclado las trae, pero las envían el software de teclados y mouse gamer, un Stream Deck o AutoHotkey. Se asignan con el botón «F13–F24» bajo el dibujo del numpad (y desde el celular). Las que no tienen acción pasan normal a los demás programas.
 - Linux: elegir por dónde escuchas los sonidos (audífonos, parlantes, HDMI…) en la pestaña **Audio**, con botón para refrescar la lista y **▶ Probar** (pitido corto solo en tus audífonos).
 - Linux: la app se agrega sola al menú de aplicaciones con su propio icono, así la barra de tareas (KDE, GNOME…) muestra el icono de Numpad Macros en vez de uno genérico, aunque la abras sin usar `instalar_linux.sh`.
 
