@@ -4,7 +4,7 @@
 # (o arrastrando la versión al programa Publicador, que hace lo mismo).
 #
 # 1. preparar:  calcula el número, revisa que el CHANGELOG tenga novedades.
-# 2. compilar:  pruebas + Windows (instalador y portátil), Linux y macOS.
+# 2. compilar:  pruebas + Windows (instalador y portátil), Linux, macOS y el APK de Android.
 # 3. publicar:  solo si todo lo anterior salió bien: guarda el número nuevo,
 #               crea la etiqueta vX.Y.Z, la Release con los archivos y sus
 #               huellas SHA256 (las usa la app para actualizarse) y avisa en Discord.
@@ -81,9 +81,15 @@ jobs:
     with:
       preparado: true
 
+  android:
+    name: App Android
+    needs: preparar
+    uses: ./.github/workflows/android.yml
+    secrets: inherit
+
   publicar:
     name: Publicar
-    needs: [preparar, compilar]
+    needs: [preparar, compilar, android]
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.preparar.outputs.version }}
