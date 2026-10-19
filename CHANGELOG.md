@@ -3,6 +3,8 @@
 Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
+
+## [3.3.1] - 2026-10-19
 ### Añadido
 - **App para Android** (nueva): lanza y edita tus sonidos desde el celular por **Wi-Fi, cable USB o Bluetooth**. Nueva pestaña **Celular** con código QR y código de 4 números para vincular (solo la primera vez), lista de celulares vinculados y actividad. Desde el celular puedes cambiar de banco, detener, ajustar el volumen, asignar sonidos y atajos a cualquier tecla y **subir sonidos nuevos** (o grabarlos en el momento).
 - **Teclas F13–F24 como botones**: casi ningún teclado las trae, pero las envían el software de teclados y mouse gamer, un Stream Deck o AutoHotkey. Se asignan con el botón «F13–F24» bajo el dibujo del numpad (y desde el celular). Las que no tienen acción pasan normal a los demás programas.
@@ -72,5 +74,6 @@ Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https:
 ### Añadido
 - Primera versión para Windows: numpad como panel de sonidos de Soundpad y atajos, con bancos.
 
+[3.3.1]: https://github.com/OkumaWsX/NumpadMacros/releases/tag/v3.3.1
 [3.3.0]: https://github.com/OkumaWsX/NumpadMacros/releases/tag/v3.3.0
 [3.2.1]: https://github.com/OkumaWsX/NumpadMacros/releases/tag/v3.2.1
