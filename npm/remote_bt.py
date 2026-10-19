@@ -133,7 +133,7 @@ def _try_sdptool():
 
 # ====================================================================== Windows
 class _GUID(ctypes.Structure):
-    _fields_ = [("Data1", ctypes.c_ulong), ("Data2", ctypes.c_ushort),
+    _fields_ = [("Data1", ctypes.c_uint32), ("Data2", ctypes.c_ushort),
                 ("Data3", ctypes.c_ushort), ("Data4", ctypes.c_ubyte * 8)]
 
     @classmethod
@@ -146,7 +146,7 @@ class _GUID(ctypes.Structure):
 class _SOCKADDR_BTH(ctypes.Structure):
     _pack_ = 1
     _fields_ = [("addressFamily", ctypes.c_ushort), ("btAddr", ctypes.c_ulonglong),
-                ("serviceClassId", _GUID), ("port", ctypes.c_ulong)]
+                ("serviceClassId", _GUID), ("port", ctypes.c_uint32)]
 
 
 class _SOCKET_ADDRESS(ctypes.Structure):
@@ -159,13 +159,13 @@ class _CSADDR_INFO(ctypes.Structure):
 
 
 class _WSAQUERYSETW(ctypes.Structure):
-    _fields_ = [("dwSize", ctypes.c_ulong), ("lpszServiceInstanceName", ctypes.c_wchar_p),
+    _fields_ = [("dwSize", ctypes.c_uint32), ("lpszServiceInstanceName", ctypes.c_wchar_p),
                 ("lpServiceClassId", ctypes.POINTER(_GUID)), ("lpVersion", ctypes.c_void_p),
-                ("lpszComment", ctypes.c_wchar_p), ("dwNameSpace", ctypes.c_ulong),
+                ("lpszComment", ctypes.c_wchar_p), ("dwNameSpace", ctypes.c_uint32),
                 ("lpNSProviderId", ctypes.c_void_p), ("lpszContext", ctypes.c_wchar_p),
-                ("dwNumberOfProtocols", ctypes.c_ulong), ("lpafpProtocols", ctypes.c_void_p),
-                ("lpszQueryString", ctypes.c_wchar_p), ("dwNumberOfCsAddrs", ctypes.c_ulong),
-                ("lpcsaBuffer", ctypes.POINTER(_CSADDR_INFO)), ("dwOutputFlags", ctypes.c_ulong),
+                ("dwNumberOfProtocols", ctypes.c_uint32), ("lpafpProtocols", ctypes.c_void_p),
+                ("lpszQueryString", ctypes.c_wchar_p), ("dwNumberOfCsAddrs", ctypes.c_uint32),
+                ("lpcsaBuffer", ctypes.POINTER(_CSADDR_INFO)), ("dwOutputFlags", ctypes.c_uint32),
                 ("lpBlob", ctypes.c_void_p)]
 
 

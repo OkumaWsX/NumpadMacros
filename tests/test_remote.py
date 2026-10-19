@@ -302,3 +302,22 @@ class FKeyTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BluetoothPiecesTest(unittest.TestCase):
+    def test_windows_structs(self):
+        import ctypes
+        from npm import remote_bt as bt
+        self.assertEqual(ctypes.sizeof(bt._SOCKADDR_BTH), 30)     # como en ws2bth.h
+        g = bt._GUID.of(bt.SERVICE_UUID)
+        self.assertEqual((g.Data1, g.Data2, g.Data3), (0x8f3c6a52, 0x5e0b, 0x4c6e))
+        self.assertEqual(bytes(g.Data4), bt.SERVICE_UUID.bytes[8:])
+
+    @unittest.skipUnless(sys.platform == "win32", "solo Windows")
+    def test_windows_python_has_rfcomm(self):
+        self.assertTrue(hasattr(socket, "BTPROTO_RFCOMM"))
+
+    def test_linux_sockaddr(self):
+        import ctypes
+        from npm import remote_bt as bt
+        self.assertEqual(ctypes.sizeof(bt._sockaddr_rc), 10)
