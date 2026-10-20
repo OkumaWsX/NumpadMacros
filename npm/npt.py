@@ -2,36 +2,86 @@
 # Copyright (C) 2026 OkumaWsX
 """Archivos de tema .npt (NumPad Theme).
 
-Estructura (binaria):
-    "NPT" | versión (1 byte) | opciones (1 byte, bit 0 = firmado) | nonce (12 bytes)
+Hay dos versiones del formato y Numpad Macros lee las dos:
+
+**Versión 1** (temas de Numpad Macros y del Publicador)::
+
+    "NPT" | 1 | opciones (1 byte, bit 0 = firmado) | nonce (12 bytes)
     | largo del contenido (4 bytes) | contenido cifrado (AES-256-GCM) | firma (64 bytes, si va firmado)
 
-El contenido es el tema en JSON comprimido. El cifrado hace que no se pueda leer
-ni editar con un editor de texto y su sello (GCM) detecta cualquier cambio: si
-el archivo se daña o se modifica, no se abre. La firma Ed25519 (opcional) solo
-la puede hacer el creador: así se reconocen los temas oficiales.
+Solo el creador firma (con ``OFFICIAL_KEY``); los temas sin firma son de la comunidad.
+
+**Versión 2** (temas del Estudio de Temas: transparencia por capa e imágenes)::
+
+    "NPT" | 2 | opciones (0) | clave pública del autor (32 bytes) | nonce (12 bytes)
+    | contenido cifrado (AES-256-GCM) | firma Ed25519 del autor (64 bytes)
+
+Todos los temas v2 van firmados: por el creador (oficial) o por la firma de autor
+de cada persona (comunidad). Así nadie puede hacerse pasar por otro autor.
+
+En las dos, el cifrado hace que no se pueda leer ni editar con un editor de texto
+y su sello (GCM) detecta cualquier cambio. Como el código es abierto, la clave de
+contenido no es secreta: lo que nadie puede falsificar es la firma.
 """
+from __future__ import annotations
+
 import hashlib
 import json
 import os
+import re
 import struct
 import zlib
+from dataclasses import dataclass, field
+from datetime import date
 
 MAGIC = b"NPT"
-VERSION = 1
+VERSION = 1                       # versión que escribe pack()
+VERSION_STUDIO = 2                # versión que escribe write() (Estudio de Temas)
 FLAG_SIGNED = 1
-EXT = ".npt"
-MAX_SIZE = 256 * 1024
+EXT = EXTENSION = ".npt"
+MAX_SIZE = MAX_FILE = 5 * 1024 * 1024        # 5 MB por tema, imágenes incluidas
+MAX_PLAIN = 24 * 1024 * 1024                 # tope al descomprimir (evita archivos trampa)
 # Clave pública del creador (OkumaWsX) para reconocer los temas oficiales
 OFFICIAL_KEY = "d22a3b4117eb17f96229d2ee90240c0f5e324ac34f97783de09124765d6711ff"
+OFFICIAL_NAME = "OkumaWsX"
 _K = hashlib.sha256(b"NumpadMacros/npt/1/" + bytes.fromhex(OFFICIAL_KEY)[::-1]).digest()
 
 REQUIRED = ("bg", "panel", "panel2", "line", "text", "muted", "acc", "on_acc", "key", "key_set",
             "key_global", "ok", "bad", "warn")
+# Las 22 capas de color, en el orden en que se muestran (los temas v2 traen todas).
+TOKENS = (
+    "bg", "panel", "panel2", "line", "text", "muted",
+    "acc", "on_acc", "acc_hover", "acc_dim", "acc_bg",
+    "key", "key_set", "key_set_line", "key_set_text", "key_global", "key_global_line", "key_global_text",
+    "ok", "on_ok", "bad", "warn",
+)
+# Todas menos el fondo pueden tener transparencia propia (el fondo usa la de la ventana).
+ALPHA_TOKENS = tuple(t for t in TOKENS if t != "bg")
+# Capa sobre la que se mezcla cada una cuando no es opaca.
+PARENT = {
+    "panel": "bg", "panel2": "panel", "line": "panel", "text": "panel", "muted": "panel",
+    "acc": "panel", "on_acc": "acc", "acc_hover": "panel", "acc_dim": "panel2", "acc_bg": "panel",
+    "key": "panel", "key_set": "panel", "key_set_line": "panel", "key_set_text": "key_set",
+    "key_global": "panel", "key_global_line": "panel", "key_global_text": "key_global",
+    "ok": "bg", "on_ok": "ok", "bad": "panel", "warn": "panel",
+}
+# Espacios para imágenes (v2) y su tamaño máximo (ancho, alto).
+IMAGE_SLOTS = {"banner": (1200, 120), "keys": (600, 520), "logo": (64, 64)}
+WINDOW_MIN = 50                   # opacidad mínima de la ventana, igual que el Laboratorio
+
+_PUB_LEN, _NONCE_LEN, _SIG_LEN = 32, 12, 64
+_HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
 class NptError(ValueError):
-    """El archivo no es un tema válido (el mensaje explica por qué, para el usuario)."""
+    """El archivo no es un tema válido (el mensaje explica por qué, para el usuario).
+
+    ``code``: formato, version, danado, grande o contenido.
+    """
+
+    def __init__(self, message: str = "", code: str = "contenido"):
+        super().__init__(message)
+        self.code = code
 
 
 def _aes():
@@ -46,6 +96,7 @@ def _valid_hex(v):
     return isinstance(v, str) and len(v) == 7 and v[0] == "#" and all(c in "0123456789abcdefABCDEF" for c in v[1:])
 
 
+# ================================================================ versión 1
 def check_theme(t: dict) -> dict:
     """Revisa y limpia un tema. Devuelve el tema; NptError si le falta algo."""
     if not isinstance(t, dict):
@@ -73,7 +124,7 @@ def check_theme(t: dict) -> dict:
 
 
 def pack(theme: dict, private_key=None) -> bytes:
-    """Tema -> bytes .npt (cifrado; firmado si se entrega la clave privada Ed25519)."""
+    """Tema -> bytes .npt v1 (cifrado; firmado si se entrega la clave privada Ed25519)."""
     theme = check_theme(theme)
     payload = zlib.compress(json.dumps(theme, ensure_ascii=False, separators=(",", ":")).encode("utf-8"), 9)
     flags = FLAG_SIGNED if private_key is not None else 0
@@ -86,40 +137,52 @@ def pack(theme: dict, private_key=None) -> bytes:
     return body
 
 
-def unpack(data: bytes) -> tuple[dict, bool]:
-    """bytes .npt -> (tema, es_oficial). NptError con un mensaje claro si falla."""
-    if len(data) > MAX_SIZE:
-        raise NptError("El archivo es demasiado grande para ser un tema")
-    if len(data) < 21 or data[:3] != MAGIC:
-        raise NptError("No es un archivo de tema de Numpad Macros (.npt)")
-    if data[3] != VERSION:
-        raise NptError("Este tema es de una versión más nueva de Numpad Macros: actualiza el programa")
+def _unpack_v1(data: bytes) -> tuple[dict, bool]:
     flags = data[4]
     nonce = data[5:17]
     (n,) = struct.unpack(">I", data[17:21])
     end = 21 + n
     if len(data) < end:
-        raise NptError("El archivo está incompleto o dañado")
+        raise NptError("El archivo está incompleto o dañado", "danado")
     ct = data[21:end]
     official = False
     if flags & FLAG_SIGNED:
         sig = data[end:end + 64]
         if len(sig) != 64 or len(data) != end + 64:
-            raise NptError("El archivo está incompleto o dañado")
+            raise NptError("El archivo está incompleto o dañado", "danado")
         official = verify(data[:end], sig)
         if not official:
-            raise NptError("La firma del tema no es válida: el archivo fue modificado")
+            raise NptError("La firma del tema no es válida: el archivo fue modificado", "danado")
     elif len(data) != end:
-        raise NptError("El archivo está dañado o fue modificado")
+        raise NptError("El archivo está dañado o fue modificado", "danado")
     try:
         payload = _aes().decrypt(nonce, ct, data[:17])
     except Exception:
-        raise NptError("El archivo está dañado o fue modificado (no pasó la revisión de integridad)")
+        raise NptError("El archivo está dañado o fue modificado (no pasó la revisión de integridad)", "danado")
     try:
-        theme = json.loads(zlib.decompress(payload).decode("utf-8"))
+        d = zlib.decompressobj()
+        raw = d.decompress(payload, MAX_PLAIN)
+        if d.unconsumed_tail:
+            raise ValueError
+        theme = json.loads(raw.decode("utf-8"))
     except Exception:
-        raise NptError("El archivo está dañado")
+        raise NptError("El archivo está dañado", "danado")
     return check_theme(theme), official
+
+
+def unpack(data: bytes) -> tuple[dict, bool]:
+    """bytes .npt (v1 o v2) -> (tema, es_oficial). NptError con un mensaje claro si falla.
+
+    El tema es un dict con name, author, version, colors y, si usa transparencia de
+    ventana, alpha = {"window", "idle"}. Los temas v2 traen además ``layer_alpha``
+    (transparencia por capa, 0–100), ``images`` (espacio -> PNG), ``description``,
+    ``kind``, ``author_key`` y ``reserved_name``.
+    """
+    _check_head(data)
+    if data[3] == VERSION:
+        return _unpack_v1(data)
+    res = _read_v2(data)
+    return res.to_dict(), res.official
 
 
 def verify(body: bytes, sig: bytes) -> bool:
@@ -145,3 +208,332 @@ def read_file(path: str) -> tuple[dict, bool]:
     except OSError as e:
         raise NptError(f"No pude leer el archivo: {e}")
     return unpack(data)
+
+
+def _check_head(data: bytes) -> None:
+    if len(data) > MAX_SIZE:
+        raise NptError("El archivo es demasiado grande para ser un tema", "grande")
+    if len(data) < 21 or data[:3] != MAGIC:
+        raise NptError("No es un archivo de tema de Numpad Macros (.npt)", "formato")
+    if data[3] not in (VERSION, VERSION_STUDIO):
+        raise NptError("Este tema es de una versión más nueva de Numpad Macros: actualiza el programa", "version")
+
+
+# ================================================================ versión 2 (Estudio de Temas)
+@dataclass
+class Theme:
+    name: str
+    author: str
+    colors: dict
+    version: str = "1.0"
+    description: str = ""
+    kind: str = "oscuro"                                  # "oscuro" o "claro"
+    alpha: dict = field(default_factory=dict)             # capa -> 0..100 (falta = 100)
+    window: dict = field(default_factory=lambda: {"opacidad": 100, "sin_usar": 100})
+    images: dict = field(default_factory=dict)            # espacio -> bytes PNG
+    created: str = field(default_factory=lambda: date.today().isoformat())
+
+    @property
+    def transparency(self) -> bool:
+        """El tema usa transparencia (ventana o capas): el Laboratorio lo muestra como «Admite»."""
+        return (any(v < 100 for v in self.alpha.values())
+                or self.window.get("opacidad", 100) < 100 or self.window.get("sin_usar", 100) < 100)
+
+
+@dataclass
+class ReadResult:
+    theme: Theme
+    author_key: str            # clave pública de quien firmó (hex); "" si no va firmado
+    official: bool             # firmado por el creador oficial
+    reserved_name: bool        # usa el nombre del creador oficial sin ser oficial
+    format: int = 2
+
+    @property
+    def label(self) -> str:
+        if self.official:
+            return f"Oficial · {OFFICIAL_NAME}"
+        return f"Comunidad · {self.theme.author or 'Anónimo'}"
+
+    def to_dict(self) -> dict:
+        """El tema como lo usa Numpad Macros (las mismas claves que la versión 1, más las nuevas)."""
+        t = self.theme
+        out = {"name": t.name, "author": OFFICIAL_NAME if self.official else (t.author or "Anónimo"),
+               "version": t.version, "colors": dict(t.colors)}
+        if t.transparency:
+            out["alpha"] = {"window": t.window.get("opacidad", 100) / 100, "idle": t.window.get("sin_usar", 100) / 100}
+        out.update(description=t.description, kind=t.kind, layer_alpha=dict(t.alpha), images=dict(t.images),
+                   author_key=self.author_key, reserved_name=self.reserved_name, format=self.format)
+        return out
+
+
+def normalize_name(name: str) -> str:
+    s = (name or "").lower().translate(str.maketrans("0135@", "oiesa"))
+    return re.sub(r"[^a-z0-9]", "", s)
+
+
+def is_reserved_name(name: str) -> bool:
+    """¿Se parece al nombre del creador oficial? (mayúsculas, espacios y símbolos no cuentan)."""
+    return normalize_name(OFFICIAL_NAME) in normalize_name(name)
+
+
+def is_official_key(pub_hex: str) -> bool:
+    return isinstance(pub_hex, str) and pub_hex.lower() == OFFICIAL_KEY.lower()
+
+
+def fingerprint(pub_hex: str) -> str:
+    """Huella corta y legible de una clave pública: «7F3A 9C21 E4B0 55D8 · 0A6E 13F9 C2B7 4D80»."""
+    h = hashlib.sha256(bytes.fromhex(pub_hex)).hexdigest()[:32].upper()
+    g = [h[i:i + 4] for i in range(0, 32, 4)]
+    return " ".join(g[:4]) + " · " + " ".join(g[4:])
+
+
+class KeyFileError(Exception):
+    """Problema con un archivo de clave. ``code``: password (falta), wrong (incorrecta), formato."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+class SigningKey:
+    """Clave para firmar temas v2. ``kind`` es "autor" (comunidad) u "oficial"."""
+
+    def __init__(self, private, kind: str = "autor", name: str = "", created: str = ""):
+        self._k = private
+        self.kind = kind
+        self.name = name
+        self.created = created or date.today().isoformat()
+
+    @classmethod
+    def generate(cls, kind: str = "autor", name: str = "") -> "SigningKey":
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        return cls(Ed25519PrivateKey.generate(), kind, name)
+
+    @property
+    def public_bytes(self) -> bytes:
+        from cryptography.hazmat.primitives import serialization as ser
+        return self._k.public_key().public_bytes(ser.Encoding.Raw, ser.PublicFormat.Raw)
+
+    @property
+    def public_hex(self) -> str:
+        return self.public_bytes.hex()
+
+    @property
+    def fingerprint(self) -> str:
+        return fingerprint(self.public_hex)
+
+    @property
+    def is_official(self) -> bool:
+        return is_official_key(self.public_hex)
+
+    def sign(self, data: bytes) -> bytes:
+        return self._k.sign(data)
+
+    # archivo .npkey: JSON con la clave privada (PEM, cifrada si hay contraseña)
+    def to_file(self, password: str | None = None) -> bytes:
+        from cryptography.hazmat.primitives import serialization as ser
+        enc = ser.BestAvailableEncryption(password.encode()) if password else ser.NoEncryption()
+        pem = self._k.private_bytes(ser.Encoding.PEM, ser.PrivateFormat.PKCS8, enc)
+        data = {"npkey": 1, "tipo": self.kind, "nombre": self.name, "creada": self.created,
+                "protegida": bool(password), "publica": self.public_hex, "pem": pem.decode()}
+        return json.dumps(data, ensure_ascii=False, indent=1).encode()
+
+    @classmethod
+    def info(cls, raw: bytes) -> dict:
+        """Datos visibles de un .npkey sin pedir la contraseña."""
+        try:
+            d = json.loads(raw.decode())
+            assert isinstance(d, dict) and d.get("npkey") == 1 and isinstance(d.get("pem"), str)
+        except Exception:
+            raise KeyFileError("formato", "No es un archivo de clave del Estudio de Temas.")
+        return d
+
+    @classmethod
+    def from_file(cls, raw: bytes, password: str | None = None) -> "SigningKey":
+        d = cls.info(raw)
+        return cls(_load_pem(d["pem"].encode(), password), d.get("tipo", "autor"), d.get("nombre", ""),
+                   d.get("creada", ""))
+
+    @classmethod
+    def from_pem(cls, raw: bytes, password: str | None = None, kind: str = "oficial", name: str = OFFICIAL_NAME):
+        """Clave PEM suelta (la «firma-temas-OkumaWsX.key» del Publicador)."""
+        return cls(_load_pem(raw, password), kind, name)
+
+
+def _load_pem(pem: bytes, password: str | None):
+    from cryptography.hazmat.primitives import serialization as ser
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    try:
+        k = ser.load_pem_private_key(pem, password.encode() if password else None)
+    except TypeError:
+        raise KeyFileError("password" if not password else "wrong",
+                           "La clave está protegida con contraseña." if not password
+                           else "La clave no está protegida con contraseña.")
+    except ValueError:
+        raise KeyFileError("wrong" if password else "formato",
+                           "La contraseña no es correcta." if password else "El archivo no tiene una clave válida.")
+    if not isinstance(k, Ed25519PrivateKey):
+        raise KeyFileError("formato", "El archivo no tiene una clave válida.")
+    return k
+
+
+def validate(theme: Theme) -> None:
+    """Revisa que un tema v2 esté completo y sea válido. Lanza NptError('contenido')."""
+    def bad(msg):
+        raise NptError(msg, "contenido")
+
+    if not isinstance(theme.name, str) or not theme.name.strip() or len(theme.name) > 32:
+        bad("El nombre del tema debe tener entre 1 y 32 caracteres.")
+    if not isinstance(theme.author, str) or len(theme.author) > 24:
+        bad("El nombre de autor puede tener hasta 24 caracteres.")
+    if not isinstance(theme.version, str) or not isinstance(theme.description, str) \
+            or len(theme.version) > 8 or len(theme.description) > 80:
+        bad("La versión o la descripción no son válidas.")
+    if theme.kind not in ("oscuro", "claro"):
+        bad("El tipo de tema debe ser «oscuro» o «claro».")
+    if not isinstance(theme.colors, dict) or not isinstance(theme.alpha, dict) \
+            or not isinstance(theme.window, dict) or not isinstance(theme.images, dict):
+        bad("El contenido del tema no tiene el formato correcto.")
+    missing = [t for t in TOKENS if not _HEX.match(str(theme.colors.get(t, "")))]
+    if missing:
+        bad("Faltan colores o no son válidos: " + ", ".join(missing))
+    for k, v in theme.alpha.items():
+        if k not in ALPHA_TOKENS or type(v) is not int or not 0 <= v <= 100:
+            bad(f"Transparencia no válida en «{k}».")
+    for k in ("opacidad", "sin_usar"):
+        v = theme.window.get(k, 100)
+        if type(v) is not int or not WINDOW_MIN <= v <= 100:
+            bad(f"La opacidad de la ventana debe estar entre {WINDOW_MIN} y 100.")
+    for slot, data in theme.images.items():
+        if slot not in IMAGE_SLOTS:
+            bad(f"Espacio de imagen desconocido: «{slot}».")
+        if not isinstance(data, (bytes, bytearray)) or image_format(data) != "png":
+            bad(f"La imagen de «{slot}» debe ser PNG.")
+        w, h = image_size(data)
+        mw, mh = IMAGE_SLOTS[slot]
+        if not (0 < w <= mw and 0 < h <= mh):
+            bad(f"La imagen de «{slot}» mide {w}×{h}; el máximo es {mw}×{mh}.")
+
+
+def image_format(data: bytes) -> str | None:
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "webp"
+    return None
+
+
+def image_size(data: bytes) -> tuple[int, int]:
+    """Ancho y alto leídos del encabezado PNG (sin abrir la imagen)."""
+    if image_format(data) == "png" and len(data) >= 24:
+        return struct.unpack(">II", data[16:24])
+    return 0, 0
+
+
+def _pack_content(theme: Theme) -> bytes:
+    blobs, index, off = [], {}, 0
+    for slot in sorted(theme.images):
+        data = bytes(theme.images[slot])
+        index[slot] = {"inicio": off, "largo": len(data), "formato": image_format(data)}
+        blobs.append(data)
+        off += len(data)
+    meta = {
+        "formato": VERSION_STUDIO, "nombre": theme.name, "autor": theme.author, "version": theme.version,
+        "descripcion": theme.description, "tipo": theme.kind, "creado": theme.created,
+        "colores": {t: theme.colors[t].lower() for t in TOKENS},
+        "alfa": {k: v for k, v in sorted(theme.alpha.items()) if v < 100},
+        "ventana": {"opacidad": theme.window.get("opacidad", 100), "sin_usar": theme.window.get("sin_usar", 100)},
+        "admite_transparencia": theme.transparency,
+        "imagenes": index,
+    }
+    js = json.dumps(meta, ensure_ascii=False, separators=(",", ":")).encode()
+    return b"NPTC" + struct.pack(">I", len(js)) + js + b"".join(blobs)
+
+
+def _unpack_content(raw: bytes) -> Theme:
+    try:
+        if raw[:4] != b"NPTC":
+            raise ValueError
+        n = struct.unpack(">I", raw[4:8])[0]
+        meta = json.loads(raw[8:8 + n].decode())
+        if not isinstance(meta, dict):
+            raise ValueError
+        blob = raw[8 + n:]
+        images = {}
+        idx = meta.get("imagenes") or {}
+        if not isinstance(idx, dict):
+            raise ValueError
+        for slot, e in idx.items():
+            a, ln = int(e["inicio"]), int(e["largo"])
+            if a < 0 or ln <= 0 or a + ln > len(blob):
+                raise ValueError
+            images[slot] = blob[a:a + ln]
+        th = Theme(name=meta["nombre"], author=meta.get("autor", ""), colors=meta["colores"],
+                   version=meta.get("version", "1.0"), description=meta.get("descripcion", ""),
+                   kind=meta.get("tipo", "oscuro"), alpha=meta.get("alfa") or {},
+                   window=meta.get("ventana") or {}, images=images, created=str(meta.get("creado", "")))
+    except Exception:
+        raise NptError("El contenido del tema no se puede leer.", "contenido")
+    validate(th)
+    th.colors = {k: th.colors[k].lower() for k in TOKENS}
+    return th
+
+
+def write(theme: Theme, key: SigningKey) -> bytes:
+    """Crea un .npt v2: valida, comprime, cifra y firma con la clave de autor (o la oficial)."""
+    validate(theme)
+    plain = zlib.compress(_pack_content(theme), 9)
+    header = MAGIC + bytes([VERSION_STUDIO, 0])
+    pub = key.public_bytes
+    nonce = os.urandom(_NONCE_LEN)
+    ct = _aes().encrypt(nonce, plain, header + pub)
+    body = header + pub + nonce + ct
+    out = body + key.sign(body)
+    if len(out) > MAX_FILE:
+        raise NptError(f"El tema pesa {len(out) // 1024} KB; el máximo es {MAX_FILE // 1024 // 1024} MB. "
+                       "Usa imágenes más livianas o menos imágenes.", "grande")
+    return out
+
+
+def _read_v2(data: bytes) -> ReadResult:
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    if len(data) < 5 + _PUB_LEN + _NONCE_LEN + 16 + _SIG_LEN:
+        raise NptError("El archivo está incompleto o dañado", "danado")
+    header, pub = data[:5], data[5:5 + _PUB_LEN]
+    body, sig = data[:-_SIG_LEN], data[-_SIG_LEN:]
+    try:
+        Ed25519PublicKey.from_public_bytes(pub).verify(sig, body)
+    except (InvalidSignature, ValueError):
+        raise NptError("El archivo está dañado o fue modificado después de crearlo.", "danado")
+    nonce = data[5 + _PUB_LEN:5 + _PUB_LEN + _NONCE_LEN]
+    try:
+        plain = _aes().decrypt(nonce, body[5 + _PUB_LEN + _NONCE_LEN:], header + pub)
+    except Exception:
+        raise NptError("El archivo está dañado o fue modificado después de crearlo.", "danado")
+    try:
+        d = zlib.decompressobj()
+        raw = d.decompress(plain, MAX_PLAIN)
+    except zlib.error:
+        raise NptError("El contenido del tema no se puede leer.", "contenido")
+    if d.unconsumed_tail:
+        raise NptError("El contenido del tema es demasiado grande.", "contenido")
+    theme = _unpack_content(raw)
+    pub_hex = pub.hex()
+    official = is_official_key(pub_hex)
+    return ReadResult(theme, pub_hex, official, (not official) and is_reserved_name(theme.author), 2)
+
+
+def read(data: bytes) -> ReadResult:
+    """Lee un .npt de cualquier versión (para el Estudio): firma, sello, descifrado y validación."""
+    _check_head(data)
+    if data[3] == VERSION_STUDIO:
+        return _read_v2(data)
+    t, official = _unpack_v1(data)
+    a = t.get("alpha")
+    window = ({"opacidad": max(WINDOW_MIN, round(a["window"] * 100)),
+               "sin_usar": max(WINDOW_MIN, round(a["idle"] * 100))} if a else {"opacidad": 100, "sin_usar": 100})
+    th = Theme(name=t["name"][:32], author="" if t["author"] == "Desconocido" else t["author"][:24],
+               colors=dict(t["colors"]), version=t["version"][:8], window=window)
+    return ReadResult(th, OFFICIAL_KEY if official else "", official,
+                      (not official) and is_reserved_name(th.author), 1)

@@ -7,3 +7,7 @@ interception.dll
 
 third_party/
 dist-installer/
+
+# Claves del Estudio de Temas: nunca se suben
+*.npkey
+*.key

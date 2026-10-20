@@ -5,7 +5,7 @@ name: Compilar app
 on:
   push:
     branches: [main]
-    paths-ignore: ["**.md", "docs/**", "tools/publicador/**"]
+    paths-ignore: ["**.md", "docs/**", "tools/publicador/**", "tools/estudio/**"]
   pull_request:
   workflow_dispatch:
 

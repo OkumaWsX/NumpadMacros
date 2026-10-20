@@ -1,0 +1,75 @@
+# Compila el Estudio de Temas (programa aparte) para Windows, Linux y macOS.
+# Corre cuando cambia su código o el formato .npt, o a mano desde Actions.
+name: Compilar Estudio de Temas
+
+on:
+  push:
+    branches: [main]
+    paths: ["tools/estudio/**", "npm/npt.py", "docs/temas/temas.json", "tests/test_npt.py",
+            "tests/test_estudio.py", ".github/workflows/estudio.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: EstudioTemas-Windows
+          - os: ubuntu-22.04          # glibc antiguo: funciona en más distribuciones
+            name: EstudioTemas-Linux
+          - os: macos-14              # Apple Silicon
+            name: EstudioTemas-macOS
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Dependencias
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r tools/estudio/requirements.txt pyinstaller==6.22.3
+
+      - name: Pruebas
+        shell: bash
+        run: python -m unittest tests.test_npt tests.test_estudio -v
+
+      - name: Compilar
+        shell: bash
+        working-directory: tools/estudio
+        run: pyinstaller --noconfirm Estudio.spec
+
+      - name: Empaquetar (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path tools/estudio/dist/EstudioTemas-NumpadMacros.exe, tools/estudio/LEEME.md -DestinationPath "${{ matrix.name }}.zip"
+
+      - name: Empaquetar (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p pkg/EstudioTemas
+          cp tools/estudio/dist/EstudioTemas-NumpadMacros tools/estudio/LEEME.md assets/icon.png pkg/EstudioTemas/
+          chmod +x pkg/EstudioTemas/EstudioTemas-NumpadMacros
+          tar -C pkg -czf "${{ matrix.name }}.tar.gz" EstudioTemas
+
+      - name: Empaquetar (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          codesign --force --deep --sign - "tools/estudio/dist/Estudio de Temas.app"
+          ditto -c -k --keepParent "tools/estudio/dist/Estudio de Temas.app" "${{ matrix.name }}.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            ${{ matrix.name }}.zip
+            ${{ matrix.name }}.tar.gz
+          if-no-files-found: error

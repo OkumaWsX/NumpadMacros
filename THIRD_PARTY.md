@@ -30,6 +30,16 @@ Numpad Macros usa o integra los siguientes componentes. Cada uno conserva su pro
 | [ZXing Android Embedded](https://github.com/journeyapps/zxing-android-embedded) / [ZXing](https://github.com/zxing/zxing) | Escanear el código QR | Apache-2.0 |
 | [Gradle](https://gradle.org/) y Android Gradle Plugin | Compilar el APK | Apache-2.0 (solo para compilar) |
 
+### Estudio de Temas (carpeta `tools/estudio/`, programa aparte)
+
+| Componente | Uso | Licencia |
+|---|---|---|
+| [Python](https://www.python.org/) y tkinter | Lenguaje e interfaz | PSF License / Tcl-Tk License |
+| [Pillow](https://python-pillow.org/) | Colores desde una imagen y preparar las imágenes de los temas | MIT-CMU (HPND) |
+| [cryptography](https://github.com/pyca/cryptography) | Cifrar y firmar los temas .npt | Apache-2.0 / BSD-3-Clause |
+| [tkinterdnd2](https://github.com/Eliav2/tkinterdnd2) / [tkdnd](https://github.com/petasis/tkdnd) | Arrastrar imágenes a la ventana (opcional) | MIT / BSD |
+| [PyInstaller](https://pyinstaller.org/) | Empaquetado | GPL-2.0 con excepción de bootloader (solo para compilar) |
+
 ### Solo en el Publicador (herramienta del creador, no se entrega a los usuarios)
 
 | Componente | Uso | Licencia |

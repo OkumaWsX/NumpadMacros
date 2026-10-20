@@ -1,0 +1,5 @@
+# Estudio de Temas (Windows, Linux y macOS)
+Pillow>=10
+cryptography>=42
+# Opcional: arrastrar imágenes a la ventana
+tkinterdnd2>=0.4
