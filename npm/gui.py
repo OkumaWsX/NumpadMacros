@@ -5,6 +5,7 @@ import os
 import queue
 import sys
 import threading
+import traceback
 import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, simpledialog, ttk
@@ -1072,6 +1073,14 @@ class App:
         r += 1
         ttk.Checkbutton(t, text=f"Iniciar con {OS_NAME}", variable=self.auto_var,
                         command=self._on_autostart).grid(row=r, column=0, sticky="w", pady=(6, 0))
+        r += 1
+        cl = ttk.Frame(t)
+        cl.grid(row=r, column=0, sticky="w", pady=(12, 0))
+        ttk.Label(cl, text="Al cerrar la ventana:").pack(side="left")
+        self.close_var = tk.StringVar(value=self.cfg.get("ui", {}).get("close", "ask"))
+        for val, txt in (("ask", "Preguntar"), ("tray", "Dejar en la bandeja"), ("quit", "Salir del programa")):
+            ttk.Radiobutton(cl, text=txt, value=val, variable=self.close_var,
+                            command=self._on_close_opt).pack(side="left", padx=(10, 0))
         r += 1
         ttk.Label(t, style="Muted.TLabel", wraplength=520, justify="left", text=(
             "Al pausar o cerrar el programa todo vuelve a funcionar normal. Si por error elegiste "
@@ -2457,7 +2466,11 @@ class App:
         for q in (self.engine.events, self.uiq):
             try:
                 while True:
-                    self._handle(q.get_nowait())
+                    ev = q.get_nowait()
+                    try:
+                        self._handle(ev)
+                    except Exception:            # un error no debe congelar la ventana
+                        traceback.print_exc()
             except queue.Empty:
                 pass
         self.root.after(30, self._poll)
@@ -2545,9 +2558,17 @@ class App:
         elif kind == "tray":
             cmd = ev[1]
             if cmd == "show":
-                self.root.deiconify()
-                self.root.lift()
-                self.root.focus_force()
+                self._show_window()
+            elif cmd == "show_toggle":          # clic en el icono: mostrar u ocultar
+                if self.root.state() in ("withdrawn", "iconic") or not self.root.winfo_viewable():
+                    self._show_window()
+                else:
+                    self._to_tray()
+            elif cmd == "popup":
+                self._tray_popup()
+            elif cmd == "help":
+                self._show_window()
+                self._show_about()
             elif cmd == "toggle":
                 self._toggle_active()
             elif cmd == "quit":
@@ -2661,13 +2682,30 @@ class App:
             self.cfg["updates"]["beta"] = self.upd_beta.get()
         self._save()
 
+    def _upd_text(self, text):
+        """Texto de actualizaciones en «Creador y soporte» (si esa ventana está abierta)."""
+        lbl = getattr(self, "upd_lbl", None)
+        try:
+            if lbl is not None and lbl.winfo_exists():
+                lbl.configure(text=text)
+        except tk.TclError:
+            pass
+
+    def _upd_btn(self, enabled):
+        btn = getattr(self, "btn_check", None)
+        try:
+            if btn is not None and btn.winfo_exists():
+                btn.state(["!disabled"] if enabled else ["disabled"])
+        except tk.TclError:
+            pass
+
     def _check_updates(self, manual=False):
         upd = self.cfg["updates"]
         if not manual and not updater.due(upd):
             return
         if manual:
-            self.upd_lbl.configure(text="Buscando…")
-            self.btn_check.state(["disabled"])
+            self._upd_text("Buscando…")
+            self._upd_btn(False)
         snapshot = dict(upd)
 
         def job():
@@ -2679,24 +2717,24 @@ class App:
         threading.Thread(target=job, daemon=True).start()
 
     def _on_update_result(self, manual, rel, err, checked_at):
-        self.btn_check.state(["!disabled"])
+        self._upd_btn(True)
         if checked_at:
             with self.engine.lock:
                 self.cfg["updates"]["last_check"] = checked_at
             self._save()
         if err:
-            self.upd_lbl.configure(text="No se pudo comprobar (sin conexión con GitHub). Se volverá a intentar.")
+            self._upd_text("No se pudo comprobar (sin conexión con GitHub). Se volverá a intentar.")
             if manual:
                 self._set_status("No pude consultar si hay versiones nuevas (¿hay internet?).", bad=True)
             return
         stamp = time.strftime("%H:%M")
         if not rel:
-            self.upd_lbl.configure(text=f"Estás al día · comprobado a las {stamp}")
+            self._upd_text(f"Estás al día · comprobado a las {stamp}")
             if manual:
                 self._set_status("Tienes la última versión.")
             return
         self.update_rel = rel
-        self.upd_lbl.configure(text=f"Hay una versión nueva: {rel.version}")
+        self._upd_text(f"Hay una versión nueva: {rel.version}")
         extra = " · importante" if rel.important else (" · beta" if rel.prerelease else "")
         self.banner_lbl.configure(text=f"Hay una nueva versión: {rel.version}{extra}   (tienes {__version__})")
         self.banner.grid()
@@ -2725,7 +2763,7 @@ class App:
             self.cfg["updates"]["skip"] = version
         self._save()
         self.banner.grid_remove()
-        self.upd_lbl.configure(text=f"Omitiste la versión {version}")
+        self._upd_text(f"Omitiste la versión {version}")
         self._set_status(f"No volveré a avisar de la versión {version}.")
 
     def _install_update(self, path, dialog):
@@ -2780,11 +2818,21 @@ class App:
             self._set_status(f"No pude guardar la configuración: {e}", bad=True)
         self._remote_state()          # los celulares ven el cambio al instante
 
+    def _tray_menu(self):
+        """Opciones del icono de la bandeja: [(texto, comando)] o None = separador."""
+        return [
+            ("Mostrar ventana", "show"),
+            ("Pausar" if self.engine.active else "Reanudar", "toggle"),
+            None,
+            ("Ayuda y soporte", "help"),
+            None,
+            ("Salir de Numpad Macros", "quit"),
+        ]
+
     def _setup_tray(self):
         if IS_MAC:          # en macOS el icono de bandeja necesita el hilo principal (lo usa tkinter)
             return
         try:
-            import pystray
             from PIL import Image, ImageDraw
         except Exception:
             return
@@ -2795,24 +2843,134 @@ class App:
             img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
             ImageDraw.Draw(img).rounded_rectangle((4, 4, 60, 60), 12, fill=(242, 163, 58, 255))
         put = self.uiq.put
+
+        # Linux: menú nativo del escritorio (KDE, GNOME con AppIndicator, XFCE, Cinnamon…)
+        if sys.platform.startswith("linux"):
+            try:
+                from . import tray_sni
+                tray = tray_sni.SniTray(
+                    "NumpadMacros", "Numpad Macros", img,
+                    lambda: [None if e is None else (e[0], lambda c=e[1]: put(("tray", c)))
+                             for e in self._tray_menu()],
+                    on_activate=lambda: put(("tray", "show_toggle")),
+                    on_secondary=lambda: put(("tray", "toggle")))
+                if tray.start():
+                    self.tray = tray
+                    return
+            except Exception:
+                pass
+        try:
+            import pystray
+        except Exception:
+            return
+
+        def item(text, cmd, **kw):
+            return pystray.MenuItem(text, lambda: put(("tray", cmd)), **kw)
         menu = pystray.Menu(
-            pystray.MenuItem("Mostrar", lambda: put(("tray", "show")), default=True),
-            pystray.MenuItem(lambda item: "Pausar" if self.engine.active else "Reanudar",
+            item("Mostrar ventana", "show", default=True),
+            pystray.MenuItem(lambda _i: "Pausar" if self.engine.active else "Reanudar",
                              lambda: put(("tray", "toggle"))),
-            pystray.MenuItem("Salir", lambda: put(("tray", "quit"))),
+            pystray.Menu.SEPARATOR,
+            item("Ayuda y soporte", "help"),
+            pystray.Menu.SEPARATOR,
+            item("Salir de Numpad Macros", "quit"),
         )
         try:
-            self.tray = pystray.Icon("NumpadMacros", img, "Numpad Macros", menu)
-            self.tray.run_detached()
+            tray = pystray.Icon("NumpadMacros", img, "Numpad Macros", menu)
+            if not getattr(tray, "HAS_MENU", True):
+                # bandeja sin menú (pystray en modo xorg): el clic abre nuestro propio menú
+                tray = pystray.Icon("NumpadMacros", img, "Numpad Macros", pystray.Menu(
+                    item("Opciones", "popup", default=True)))
+            tray.run_detached()
+            self.tray = tray
         except Exception:
             self.tray = None
 
+    def _tray_popup(self):
+        """Menú de la bandeja dibujado por la app (cuando el escritorio no muestra uno)."""
+        m = tk.Menu(self.root, tearoff=0, bg=C["panel"], fg=C["text"],
+                    activebackground=C["accent"], activeforeground=C["on_accent"])
+        for e in self._tray_menu():
+            if e is None:
+                m.add_separator()
+            else:
+                m.add_command(label=e[0], command=lambda c=e[1]: self.uiq.put(("tray", c)))
+        x, y = self.root.winfo_pointerxy()
+        try:
+            m.tk_popup(x, y)
+        finally:
+            m.grab_release()
+
+    def _show_window(self):
+        self.root.deiconify()
+        self.root.lift()
+        self.root.focus_force()
+
     def _on_close(self):
-        if self.tray:
-            self.root.withdraw()
-            self._set_status("Sigue funcionando en la bandeja del sistema.")
-        else:
-            self._quit()
+        if not self.tray:
+            return self._quit()
+        ui = self.cfg.setdefault("ui", {})
+        how = ui.get("close", "ask")
+        if how == "quit":
+            return self._quit()
+        if how == "tray":
+            return self._to_tray()
+        self._ask_close()
+
+    def _to_tray(self):
+        self.root.withdraw()
+        self._set_status("Sigue funcionando en la bandeja del sistema.")
+
+    def _ask_close(self):
+        """Primera vez que se cierra la ventana: ¿salir o dejarla en la bandeja?"""
+        w = getattr(self, "close_win", None)
+        if w is not None and w.winfo_exists():
+            w.lift()
+            return
+        w = tk.Toplevel(self.root)
+        self.close_win = w
+        w.title("Cerrar Numpad Macros")
+        w.configure(bg=C["panel"])
+        w.transient(self.root)
+        w.resizable(False, False)
+        body = ttk.Frame(w, style="Panel.TFrame", padding=22)
+        body.pack(fill="both", expand=True)
+        ttk.Label(body, text="¿Qué hago al cerrar la ventana?", style="H.TLabel").pack(anchor="w")
+        ttk.Label(body, style="Muted.TLabel", wraplength=400, justify="left", text=(
+            "En la bandeja, tus teclas siguen funcionando y la ventana vuelve con el icono de "
+            "Numpad Macros (junto al reloj). Al salir, el programa se cierra por completo.")
+        ).pack(anchor="w", pady=(6, 12))
+        remember = tk.BooleanVar(value=False)
+        ttk.Checkbutton(body, text="Recordar mi elección", variable=remember).pack(anchor="w")
+        ttk.Label(body, style="Muted.TLabel", text="Puedes cambiarlo en «Numpad y opciones».").pack(
+            anchor="w", pady=(2, 14))
+        row = ttk.Frame(body, style="Panel.TFrame")
+        row.pack(fill="x")
+
+        def choose(how):
+            if remember.get():
+                self.cfg.setdefault("ui", {})["close"] = how
+                if hasattr(self, "close_var"):
+                    self.close_var.set(how)
+                self._save()
+            w.destroy()
+            if how == "quit":
+                self._quit()
+            else:
+                self._to_tray()
+        ttk.Button(row, text="Salir del programa", command=lambda: choose("quit")).pack(side="right")
+        ttk.Button(row, text="Dejar en la bandeja", style="Accent.TButton",
+                   command=lambda: choose("tray")).pack(side="right", padx=(0, 8))
+        w.protocol("WM_DELETE_WINDOW", w.destroy)          # cerrar este aviso = no hacer nada
+        w.update_idletasks()
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - w.winfo_width()) // 2
+        y = self.root.winfo_rooty() + (self.root.winfo_height() - w.winfo_height()) // 3
+        w.geometry(f"+{max(0, x)}+{max(0, y)}")
+        w.grab_set()
+
+    def _on_close_opt(self):
+        self.cfg.setdefault("ui", {})["close"] = self.close_var.get()
+        self._save()
 
     def _quit(self):
         try:

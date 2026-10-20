@@ -27,7 +27,8 @@ hidden = ["npm.capture_win", "npm.capture_linux", "npm.capture_mac",
 if IS_WIN:
     hidden += ["pystray._win32"]
 elif IS_LINUX:
-    hidden += ["pystray._xorg", "pystray._appindicator", "pystray._gtk"]
+    hidden += ["pystray._xorg", "pystray._appindicator", "pystray._gtk",
+               "npm.tray_sni", "jeepney", "jeepney.io.blocking", "jeepney.bus_messages"]
 
 # En Linux la salida va por PipeWire: no hace falta empaquetar PortAudio
 excludes = ["tests"]

@@ -11,6 +11,7 @@ Numpad Macros usa o integra los siguientes componentes. Cada uno conserva su pro
 | [PyInstaller](https://pyinstaller.org/) | Empaquetado de la app | GPL-2.0 con excepción de bootloader | Solo para compilar |
 | [Inno Setup](https://jrsoftware.org/isinfo.php) | Instalador de Windows | Licencia de Inno Setup | Solo para compilar |
 | [pystray](https://github.com/moses-palmer/pystray) | Icono en la bandeja del sistema | LGPL-3.0 | Empaquetado (Windows y Linux) |
+| [Jeepney](https://gitlab.com/takluyver/jeepney) | Menú del icono de la bandeja (D-Bus) | MIT | Empaquetado (Linux) |
 | [Pillow](https://python-pillow.org/) | Imágenes del icono | MIT-CMU (HPND) | Empaquetado (Windows y Linux) |
 | [NumPy](https://numpy.org/) | Mezcla, medición de volumen y compresor | BSD-3-Clause | Empaquetado (todos los sistemas) |
 | [python-sounddevice](https://github.com/spatialaudio/python-sounddevice) / PortAudio | Salida y entrada de audio | MIT | Empaquetado (Windows y macOS) |
