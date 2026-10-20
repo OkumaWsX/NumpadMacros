@@ -5,7 +5,7 @@ name: Compilar Estudio de Temas
 on:
   push:
     branches: [main]
-    paths: ["tools/estudio/**", "npm/npt.py", "docs/temas/temas.json", "tests/test_npt.py",
+    paths: ["tools/estudio/**", "npm/npt.py", "npm/config.py", "npm/desktop_linux.py", "docs/temas/temas.json", "tests/test_npt.py",
             "tests/test_estudio.py", ".github/workflows/estudio.yml"]
   workflow_dispatch:
 

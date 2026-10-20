@@ -104,7 +104,7 @@ class FormatTest(unittest.TestCase):
             self.assertFalse(npt.read(npt.write(theme(), self.key)).official)
 
     def test_reserved_name_without_official_key(self):
-        for name in ("OkumaWsX", "okuma wsx", "0KUMA_WSX", "x.OkumaWsX.x"):
+        for name in ("OkumaWsX", "okuma wsx", "0KUMA_WSX", "x.OkumaWsX.x", "Okumа WsX", "Okuma_Ws×", "ＯｋｕｍａＷｓＸ"):
             res = npt.read(npt.write(theme(author=name), self.key))
             self.assertFalse(res.official)
             self.assertTrue(res.reserved_name, name)
@@ -114,7 +114,7 @@ class FormatTest(unittest.TestCase):
     def test_unpack_gives_numpad_macros_dict(self):
         imgs = {"logo": png(64, 64)}
         t, official = npt.unpack(npt.write(theme(alpha={"key": 70}, window={"opacidad": 80, "sin_usar": 60},
-                                                 images=imgs), self.key))
+                                                 images=imgs), self.key), images=True)
         self.assertFalse(official)
         self.assertEqual(t["author"], "@kaori")
         self.assertEqual(t["alpha"], {"window": 0.8, "idle": 0.6})
@@ -122,6 +122,8 @@ class FormatTest(unittest.TestCase):
         self.assertEqual(t["images"], imgs)
         self.assertEqual(t["author_key"], self.key.public_hex)
         self.assertEqual(len(t["colors"]), 22)
+        self.assertEqual(t["image_slots"], ["logo"])
+        self.assertNotIn("images", npt.unpack(npt.write(theme(images=imgs), self.key))[0])
         t2, _ = npt.unpack(npt.write(theme(), self.key))
         self.assertNotIn("alpha", t2)                         # opaco: no «admite transparencia»
 
@@ -133,6 +135,30 @@ class FormatTest(unittest.TestCase):
         self.assertEqual(res.theme.window, {"opacidad": 90, "sin_usar": 70})
         self.assertEqual(res.author_key, "")
         self.assertFalse(res.official)
+
+    def test_weak_key_forgery_is_rejected(self):
+        import zlib
+        plain = zlib.compress(npt._pack_content(theme(name="Falso")))
+        for weak in ("01" + "00" * 31, "00" * 32, "ec" + "ff" * 30 + "7f",
+                     "c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a"):
+            pub = bytes.fromhex(weak)
+            head = b"NPT\x02\x00"
+            nonce = b"\1" * 12
+            body = head + pub + nonce + npt._aes().encrypt(nonce, plain, head + pub)
+            forged = body + pub + b"\0" * 32                 # firma «universal» con clave débil
+            with self.assertRaises(npt.NptError) as cm:
+                npt.read(forged)
+            self.assertEqual(cm.exception.code, "danado")
+        self.assertFalse(npt._weak_key(self.key.public_bytes))
+        for _ in range(20):
+            self.assertFalse(npt._weak_key(npt.SigningKey.generate().public_bytes))
+
+    def test_reserved_name_hidden_in_numpad_macros(self):
+        t, _ = npt.unpack(npt.write(theme(author="OkumaWsX"), self.key))
+        self.assertEqual(t["author"], "Anónimo")
+        self.assertTrue(t["reserved_name"])
+        v1, _ = npt.unpack(npt.pack({"name": "x", "author": "okuma wsx", "colors": base_colors()}))
+        self.assertEqual(v1["author"], "Desconocido")
 
     def test_anonymous_label(self):
         res = npt.read(npt.write(theme(author=""), self.key))

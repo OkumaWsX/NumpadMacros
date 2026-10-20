@@ -76,21 +76,23 @@ class Scrollable(tk.Frame):
         self.sb.pack(side="right", fill="y")
         self.inner.bind("<Configure>", lambda e: self.cv.configure(scrollregion=self.cv.bbox("all")))
         self.cv.bind("<Configure>", lambda e: self.cv.itemconfigure(self._win, width=e.width))
-        for w in (self.cv, self.inner):
-            w.bind("<Enter>", self._bind)
-            w.bind("<Leave>", self._unbind)
+        self.bind("<Enter>", self._wheel_on)
+        self.bind("<Leave>", self._wheel_off)
 
-    def _bind(self, _e):
+    def _wheel_on(self, _e):
         self.cv.bind_all("<MouseWheel>", self._wheel)
         self.cv.bind_all("<Button-4>", lambda e: self.cv.yview_scroll(-3, "units"))
         self.cv.bind_all("<Button-5>", lambda e: self.cv.yview_scroll(3, "units"))
 
-    def _unbind(self, _e):
+    def _wheel_off(self, e):
+        w = self.winfo_containing(e.x_root, e.y_root)
+        if w is not None and str(w).startswith(str(self)):
+            return                                   # sigue dentro (pasó a un elemento hijo)
         for s in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
             self.cv.unbind_all(s)
 
     def _wheel(self, e):
-        d = e.delta if sys.platform == "darwin" else e.delta // 120
+        d = e.delta if sys.platform == "darwin" else (int(e.delta / 120) or (1 if e.delta > 0 else -1))
         self.cv.yview_scroll(-d, "units")
 
 
@@ -597,7 +599,7 @@ class App:
                  if self.mode == "creador" else
                  "Ed25519 con tu firma de autor. Prueba que todos tus temas vienen de la misma persona, pero no los "
                  "vuelve oficiales.")
-        for k, v in (("NPT v1", "Encabezado: identifica el archivo como tema de Numpad Macros y su versión."),
+        for k, v in (("NPT v2", "Encabezado: identifica el archivo como tema de Numpad Macros y su versión."),
                      ("Contenido", "Nombre, autor, descripción, los 22 colores con la transparencia de cada uno y la "
                                    "opacidad de la ventana, comprimidos y cifrados (AES-256-GCM). Con un editor de "
                                    "texto solo se ven símbolos."),
@@ -1439,7 +1441,11 @@ class App:
             if raw and messagebox.askyesno(
                     APP, "Encontramos tu clave de firma de temas (la que usa el Publicador).\n\n"
                          "¿Usarla en el Estudio para firmar temas oficiales?", parent=self.root):
-                K.import_key_file(raw)
+                try:
+                    K.import_key_file(raw)
+                except (OSError, npt.KeyFileError) as e:
+                    messagebox.showerror(APP, f"No se pudo guardar la clave:\n{e}", parent=self.root)
+                    return
                 self.mode, self.official = K.mode(), K.official_info()
                 self._build()
                 self.render()

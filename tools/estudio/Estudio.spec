@@ -19,7 +19,11 @@ a = Analysis([os.path.join(HERE, "estudio.py")], pathex=[HERE, ROOT], datas=data
              excludes=["numpy", "unittest", "pydoc"])
 pyz = PYZ(a.pure)
 icon = os.path.join(ROOT, "assets", "icon.ico" if sys.platform == "win32" else "icon.png")
-exe = EXE(pyz, a.scripts, a.binaries, a.datas, [], name="EstudioTemas-NumpadMacros",
-          console=False, upx=False, icon=icon if sys.platform != "darwin" else None)
 if sys.platform == "darwin":
-    app = BUNDLE(exe, name="Estudio de Temas.app", icon=None, bundle_identifier="com.okumawsx.estudiotemas")
+    # macOS: app en carpeta (onedir) dentro del .app, como Numpad Macros
+    exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="EstudioTemas-NumpadMacros", console=False, upx=False)
+    coll = COLLECT(exe, a.binaries, a.datas, upx=False, name="EstudioTemas")
+    app = BUNDLE(coll, name="Estudio de Temas.app", icon=None, bundle_identifier="com.okumawsx.estudiotemas")
+else:
+    exe = EXE(pyz, a.scripts, a.binaries, a.datas, [], name="EstudioTemas-NumpadMacros",
+              console=False, upx=False, icon=icon)

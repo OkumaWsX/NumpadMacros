@@ -167,22 +167,26 @@ def _unpack_v1(data: bytes) -> tuple[dict, bool]:
         theme = json.loads(raw.decode("utf-8"))
     except Exception:
         raise NptError("El archivo está dañado", "danado")
-    return check_theme(theme), official
+    t = check_theme(theme)
+    if not official and is_reserved_name(t["author"]):
+        t["author"] = "Desconocido"              # nadie más puede usar el nombre del creador
+    return t, official
 
 
-def unpack(data: bytes) -> tuple[dict, bool]:
+def unpack(data: bytes, images: bool = False) -> tuple[dict, bool]:
     """bytes .npt (v1 o v2) -> (tema, es_oficial). NptError con un mensaje claro si falla.
 
     El tema es un dict con name, author, version, colors y, si usa transparencia de
     ventana, alpha = {"window", "idle"}. Los temas v2 traen además ``layer_alpha``
     (transparencia por capa, 0–100), ``images`` (espacio -> PNG), ``description``,
-    ``kind``, ``author_key`` y ``reserved_name``.
+    ``kind``, ``author_key`` y ``reserved_name``. Las imágenes solo se incluyen con
+    ``images=True`` (si no, ``image_slots`` dice qué espacios tienen imagen).
     """
     _check_head(data)
     if data[3] == VERSION:
         return _unpack_v1(data)
     res = _read_v2(data)
-    return res.to_dict(), res.official
+    return res.to_dict(images), res.official
 
 
 def verify(body: bytes, sig: bytes) -> bool:
@@ -201,13 +205,13 @@ def load_private_key(path: str):
         return serialization.load_pem_private_key(f.read(), password=None)
 
 
-def read_file(path: str) -> tuple[dict, bool]:
+def read_file(path: str, images: bool = False) -> tuple[dict, bool]:
     try:
         with open(path, "rb") as f:
             data = f.read(MAX_SIZE + 1)
     except OSError as e:
         raise NptError(f"No pude leer el archivo: {e}")
-    return unpack(data)
+    return unpack(data, images)
 
 
 def _check_head(data: bytes) -> None:
@@ -254,20 +258,30 @@ class ReadResult:
             return f"Oficial · {OFFICIAL_NAME}"
         return f"Comunidad · {self.theme.author or 'Anónimo'}"
 
-    def to_dict(self) -> dict:
+    def to_dict(self, images: bool = True) -> dict:
         """El tema como lo usa Numpad Macros (las mismas claves que la versión 1, más las nuevas)."""
         t = self.theme
-        out = {"name": t.name, "author": OFFICIAL_NAME if self.official else (t.author or "Anónimo"),
+        author = OFFICIAL_NAME if self.official else ("Anónimo" if self.reserved_name or not t.author else t.author)
+        out = {"name": t.name, "author": author,
                "version": t.version, "colors": dict(t.colors)}
         if t.transparency:
             out["alpha"] = {"window": t.window.get("opacidad", 100) / 100, "idle": t.window.get("sin_usar", 100) / 100}
-        out.update(description=t.description, kind=t.kind, layer_alpha=dict(t.alpha), images=dict(t.images),
+        out.update(description=t.description, kind=t.kind, layer_alpha=dict(t.alpha), image_slots=sorted(t.images),
                    author_key=self.author_key, reserved_name=self.reserved_name, format=self.format)
+        if images:
+            out["images"] = dict(t.images)
         return out
 
 
+# letras de otros alfabetos que se ven iguales a las latinas (para que no se cuele el nombre del creador)
+_LOOKALIKE = str.maketrans("аеорсухкмтвнѕіјԁԝωυսµ×０１２３４５６７８９",
+                           "aeopcyxkmtbhsijdwwuuux0123456789")
+
+
 def normalize_name(name: str) -> str:
-    s = (name or "").lower().translate(str.maketrans("0135@", "oiesa"))
+    import unicodedata
+    s = unicodedata.normalize("NFKD", name or "").lower().translate(_LOOKALIKE)
+    s = s.translate(str.maketrans("0135@", "oiesa"))
     return re.sub(r"[^a-z0-9]", "", s)
 
 
@@ -495,6 +509,32 @@ def write(theme: Theme, key: SigningKey) -> bytes:
     return out
 
 
+_P = 2 ** 255 - 19
+_D = -121665 * pow(121666, _P - 2, _P) % _P
+
+
+def _weak_key(pub: bytes) -> bool:
+    """True si la clave no es un punto válido de orden grande (claves «débiles» con las que
+    cualquiera podría falsificar una firma). Se multiplica el punto por 8: si da el neutro, es débil."""
+    y = int.from_bytes(pub, "little") & ((1 << 255) - 1)
+    sign = pub[31] >> 7
+    if y >= _P:
+        return True
+    x2 = (y * y - 1) * pow(_D * y * y + 1, _P - 2, _P) % _P
+    x = pow(x2, (_P + 3) // 8, _P)
+    if (x * x - x2) % _P:
+        x = x * pow(2, (_P - 1) // 4, _P) % _P
+    if (x * x - x2) % _P or (x == 0 and sign):
+        return True
+    if x & 1 != sign:
+        x = _P - x
+    for _ in range(3):                           # 3 duplicaciones = multiplicar por 8
+        xy = x * y % _P
+        t = _D * xy * xy % _P
+        x, y = 2 * xy * pow(1 + t, _P - 2, _P) % _P, (y * y + x * x) * pow(1 - t, _P - 2, _P) % _P
+    return x == 0 and y == 1
+
+
 def _read_v2(data: bytes) -> ReadResult:
     from cryptography.exceptions import InvalidSignature
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -502,6 +542,8 @@ def _read_v2(data: bytes) -> ReadResult:
         raise NptError("El archivo está incompleto o dañado", "danado")
     header, pub = data[:5], data[5:5 + _PUB_LEN]
     body, sig = data[:-_SIG_LEN], data[-_SIG_LEN:]
+    if _weak_key(pub):
+        raise NptError("El archivo está dañado o fue modificado después de crearlo.", "danado")
     try:
         Ed25519PublicKey.from_public_bytes(pub).verify(sig, body)
     except (InvalidSignature, ValueError):
