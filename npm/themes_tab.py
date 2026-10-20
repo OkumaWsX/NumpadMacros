@@ -6,6 +6,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from . import npt, themes
+from . import aa
 from .theme import BASE, C, FONT
 
 DOTS = [("bg", "Fondo"), ("panel", "Panel"), ("panel2", "Panel 2"), ("line", "Línea"), ("text", "Texto"),
@@ -198,7 +199,12 @@ class ThemesTab:
         for i, (k, name) in enumerate(DOTS):
             x = 22 + (i % 6) * 43
             y = 16 + (i // 6) * 48
-            cv.create_oval(x - 13, y - 13, x + 13, y + 13, fill=th["colors"].get(k, "#000000"), outline=C["line"])
+            img = aa.dot(cv, 26, th["colors"].get(k, "#000000"), outline=C["line"], width=1)
+            if img is not None:
+                cv.create_image(x - 13, y - 13, image=img, anchor="nw")
+            else:
+                cv.create_oval(x - 13, y - 13, x + 13, y + 13, fill=th["colors"].get(k, "#000000"),
+                               outline=C["line"])
             cv.create_text(x, y + 22, text=name, fill=C["muted"], font=(FONT, BASE - 3))
         self.btn_use.state(["disabled"] if self._same(th, cur) else ["!disabled"])
         if th.get("builtin"):

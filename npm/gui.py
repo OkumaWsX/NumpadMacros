@@ -11,7 +11,7 @@ import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from . import __version__, about, capture, config, library, sysutil, updater
+from . import aa, __version__, about, capture, config, library, sysutil, updater
 from . import loudness as ld
 from .capture import PLATFORM, BackendError, describe_device
 from .engine import Engine
@@ -1994,10 +1994,14 @@ class App:
                 line = C["text"]
         small = size == "small"
         r = max(5, int(u * (.14 if small else .12)))
-        # borde y relleno como dos formas llenas (el contorno de Tk deja puntos en las esquinas)
-        self._round_rect(x0 + 1, y0 + 1, x1 - 1, y1 - 1, r, canvas=cv, fill=line, outline="")
-        self._round_rect(x0 + 1 + lw, y0 + 1 + lw, x1 - 1 - lw, y1 - 1 - lw, max(3, r - lw), canvas=cv,
-                         fill=fill, outline="")
+        # fondo suavizado (Pillow); sin Pillow, dos formas llenas del lienzo
+        img = aa.key_shape(self.root, int(x1 - x0) - 1, int(y1 - y0) - 1, r, fill, line, lw)
+        if img is not None:
+            cv.create_image(int(x0) + 1, int(y0) + 1, image=img, anchor="nw")
+        else:
+            self._round_rect(x0 + 1, y0 + 1, x1 - 1, y1 - 1, r, canvas=cv, fill=line, outline="")
+            self._round_rect(x0 + 1 + lw, y0 + 1 + lw, x1 - 1 - lw, y1 - 1 - lw, max(3, r - lw), canvas=cv,
+                             fill=fill, outline="")
         pad = max(5, int(u * .13))
         num_px = max(11, min(15, int(u * .30))) if small else max(13, min(22, int(u * .24)))
         if len(label) > 2:
@@ -2012,7 +2016,11 @@ class App:
             gs = max(11, int(u * .19))
             gx, gy = x1 - pad - gs + 2, y0 + pad - 1
             gline = C["key_global_line"] if not col else col
-            cv.create_rectangle(gx, gy, gx + gs, gy + gs, fill=gline, outline="")
+            bimg = aa.badge(self.root, gs, gline)
+            if bimg is not None:
+                cv.create_image(gx, gy, image=bimg, anchor="nw")
+            else:
+                cv.create_rectangle(gx, gy, gx + gs, gy + gs, fill=gline, outline="")
             cv.create_text(gx + gs / 2, gy + gs / 2, text="G", fill=C["bg"],
                            font=self._key_font(max(8, int(gs * .72)), True))
         if not shown:
@@ -2298,9 +2306,16 @@ class App:
             return
         self.color_card.grid()
         cur = act.get("color", -1) if isinstance(act.get("color"), int) else -1
+        n = int(round(30 * getattr(self, "dpi", 1.0)))
         for i, cv in self.swatches:
             cv.delete("all")
             on = i == cur
+            img = aa.swatch(self.root, n, None if i < 0 else BUTTON_COLORS[i][1], on,
+                            C["text"], "#14161b", C["muted"])
+            if img is not None:
+                cv.configure(width=n, height=n)
+                cv.create_image(0, 0, image=img, anchor="nw")
+                continue
             if on:
                 cv.create_oval(1, 1, 29, 29, outline=C["text"], width=2)
             if i < 0:

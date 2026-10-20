@@ -5,6 +5,7 @@ import math
 import time
 import tkinter as tk
 
+from . import aa
 from . import loudness as ld
 from .theme import BASE, C, FONT, mix
 
@@ -84,18 +85,28 @@ class CompCurve(tk.Canvas):
             p = _db_x(db, S)
             self.create_line(p, 0, p, S, fill=C["line"])
             self.create_line(0, S - p, S, S - p, fill=C["line"])
-        self.create_line(0, S, S, 0, fill=C["muted"], dash=(3, 3))
         pts = []
         for i in range(61):
             x_db = FLOOR + i
             y_db = ld.curve(x_db, thr, ratio) if on else x_db
             y_db = min(y_db, ceil) if on else y_db
-            pts += [_db_x(x_db, S), S - _db_x(y_db, S)]
-        self.create_line(*pts, fill=C["accent"] if on else C["muted"], width=2)
+            pts.append((_db_x(x_db, S), S - _db_x(y_db, S)))
+        segs = [([(0, S), (S, 0)], C["muted"], 1, (3, 3))]
+        dots = []
+        if on:
+            yc = S - _db_x(ceil, S)
+            segs.append(([(0, yc), (S, yc)], C["bad"], 1, (2, 2)))
+        segs.append((pts, C["accent"] if on else C["muted"], 2, None))
         if on:
             p = _db_x(thr, S)
-            self.create_oval(p - 3, S - p - 3, p + 3, S - p + 3, fill=C["accent"], outline="")
-            yc = S - _db_x(ceil, S)
-            self.create_line(0, yc, S, yc, fill=C["bad"], dash=(2, 2))
+            dots.append((p, S - p, 3, C["accent"]))
+        img = aa.curve(self, S, S, segs, tuple(dots))
+        if img is not None:
+            self.create_image(0, 0, image=img, anchor="nw")
+        else:
+            for line, col, wd, dash in segs:
+                self.create_line(*[c for xy in line for c in xy], fill=col, width=wd, dash=dash or "")
+            for x, y, r, col in dots:
+                self.create_oval(x - r, y - r, x + r, y + r, fill=col, outline="")
         self.create_text(4, 4, anchor="nw", text="salida", fill=C["muted"], font=(FONT, BASE - 2))
         self.create_text(S - 4, S - 4, anchor="se", text="entrada", fill=C["muted"], font=(FONT, BASE - 2))

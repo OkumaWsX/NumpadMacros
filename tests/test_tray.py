@@ -49,3 +49,22 @@ class SniMenuTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SmoothShapesTest(unittest.TestCase):
+    def test_shapes_render(self):
+        from npm import aa
+        if not aa.HAVE_PIL:
+            self.skipTest("Pillow no está")
+        try:
+            import tkinter as tk
+            root = tk.Tk()
+        except Exception:
+            self.skipTest("sin pantalla")
+        try:
+            img = aa.swatch(root, 30, "#3cc7c0", True, "#ffffff", "#14161b", "#888888")
+            self.assertEqual((img.width(), img.height()), (30, 30))
+            self.assertIs(aa.swatch(root, 30, "#3cc7c0", True, "#ffffff", "#14161b", "#888888"), img)
+            self.assertEqual(aa.key_shape(root, 60, 60, 8, "#222222", "#4cc38a", 2).width(), 60)
+        finally:
+            root.destroy()

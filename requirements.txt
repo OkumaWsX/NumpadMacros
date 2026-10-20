@@ -1,6 +1,6 @@
 # Icono en la bandeja del sistema (Windows y Linux)
 pystray>=0.19; sys_platform != "darwin"
-Pillow>=10; sys_platform != "darwin"
+Pillow>=10
 # Menú del icono de la bandeja en Linux (KDE, GNOME, XFCE…) por D-Bus
 jeepney>=0.8; sys_platform == "linux"
 # Botonera propia: mezcla, nivelación y compresor (todos los sistemas)
