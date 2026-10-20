@@ -61,7 +61,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           export NPT_ESTUDIO_DIR="$RUNNER_TEMP/estudio"
-          timeout 90 "tools/estudio/dist/Estudio de Temas.app/Contents/MacOS/EstudioTemas-NumpadMacros" --probar > out.txt 2>&1 || {
+          perl -e 'alarm 90; exec @ARGV' "tools/estudio/dist/Estudio de Temas.app/Contents/MacOS/EstudioTemas-NumpadMacros" --probar > out.txt 2>&1 || {
             cat out.txt "$NPT_ESTUDIO_DIR/error.log" 2>/dev/null | tail -25 | sed 's/^/::error::/'; exit 1; }
 
       - name: Probar el programa compilado (Windows)

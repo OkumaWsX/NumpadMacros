@@ -7,6 +7,7 @@ Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https:
 - **Estudio de Temas para descargar**: cada versión trae el Estudio listo para usar, sin instalar Python: instalador para Windows (no pide administrador), versión portátil, Linux y macOS. En Windows, los proyectos `.nptproj` se abren con doble clic.
 
 ### Corregido
+- Estudio de Temas: la versión compilada se cerraba apenas se abría (le faltaba una pieza para mostrar imágenes). Si algo falla al abrirse, ahora lo muestra en una ventana y lo anota en `error.log`.
 - Linux: el icono de la bandeja no mostraba opciones (en KDE / CachyOS, GNOME, XFCE…), así que no había cómo cerrar el programa. Ahora, con **clic derecho**, aparece el menú del escritorio con **Mostrar ventana, Pausar / Reanudar, Ayuda y soporte y Salir**; clic izquierdo muestra u oculta la ventana y clic central pausa o reanuda. En escritorios sin ese tipo de bandeja, el clic en el icono abre el mismo menú.
 - Al cerrar la ventana por primera vez, el programa pregunta si quieres **dejarlo en la bandeja o salir**, y puede recordar tu elección (se cambia en «Numpad y opciones» → «Al cerrar la ventana»).
 - La ventana podía dejar de responder (al numpad, al celular y a la bandeja) justo después de la búsqueda automática de actualizaciones al iniciar. Ya no pasa.

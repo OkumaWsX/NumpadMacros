@@ -15,7 +15,7 @@ except Exception:
 
 a = Analysis([os.path.join(HERE, "estudio.py")], pathex=[HERE, ROOT], datas=datas,
              hiddenimports=["tkinterdnd2", "logica", "claves", "vista", "npm.npt", "npm.config",
-                            "npm.desktop_linux", "PIL.ImageTk"],
+                            "npm.desktop_linux", "PIL.ImageTk", "PIL._tkinter_finder"],
              excludes=["numpy", "unittest", "pydoc"])
 pyz = PYZ(a.pure)
 icon = os.path.join(ROOT, "assets", "icon.ico" if sys.platform == "win32" else "icon.png")
