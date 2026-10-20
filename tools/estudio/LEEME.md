@@ -2,6 +2,17 @@
 
 Programa aparte para crear temas `.npt` (NumPad Theme) para Numpad Macros, en Windows, Linux y macOS.
 
+## Descargar
+
+Viene en cada [Release](https://github.com/OkumaWsX/NumpadMacros/releases/latest) de Numpad Macros:
+
+- **Windows**: `EstudioTemas-Windows-Setup.exe` (instalador, no pide administrador) o
+  `EstudioTemas-Windows-portable.zip`.
+- **Linux**: `EstudioTemas-Linux.tar.gz`. Descomprime y abre `EstudioTemas-NumpadMacros`; se agrega solo al
+  menú de aplicaciones.
+- **macOS**: `EstudioTemas-macOS.zip`. Muévelo a *Aplicaciones* y ábrelo con clic derecho → *Abrir* la
+  primera vez.
+
 ## Qué puedes hacer
 
 1. **Editar tema**: cambia las 22 capas de color, cada una con su propia transparencia, y la opacidad de la

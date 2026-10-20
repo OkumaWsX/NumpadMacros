@@ -89,6 +89,20 @@ En **[Releases](https://github.com/OkumaWsX/NumpadMacros/releases)** se publican
 | **Linux** | `NumpadMacros-Linux.tar.gz` | Descomprimir y ejecutar `./instalar_linux.sh` |
 | **macOS** | `NumpadMacros-macOS.zip` | Mover a *Aplicaciones* y abrir con clic derecho → *Abrir* |
 
+### Estudio de Temas (crear tus propios temas)
+
+Programa aparte para crear temas `.npt`: colores, transparencia, colores sacados de una imagen e imágenes.
+Viene en cada Release, junto a Numpad Macros.
+
+<p align="center"><a href="https://github.com/OkumaWsX/NumpadMacros/releases/latest/download/EstudioTemas-Windows-Setup.exe"><img src="https://img.shields.io/badge/%E2%AC%87%20Estudio%20de%20Temas-Windows-7e5fc4?style=for-the-badge&logo=windows" alt="Descargar el Estudio de Temas para Windows"></a></p>
+
+| Sistema | Archivo | Cómo se instala |
+|---|---|---|
+| **Windows 10/11** | `EstudioTemas-Windows-Setup.exe` | Asistente *Siguiente → Instalar* (no pide administrador) |
+| Windows (portátil) | `EstudioTemas-Windows-portable.zip` | Descomprimir y abrir `EstudioTemas-NumpadMacros.exe` |
+| **Linux** | `EstudioTemas-Linux.tar.gz` | Descomprimir y abrir `EstudioTemas-NumpadMacros` (se agrega solo al menú) |
+| **macOS** | `EstudioTemas-macOS.zip` | Mover a *Aplicaciones* y abrir con clic derecho → *Abrir* |
+
 ## Instalación
 
 <details open>

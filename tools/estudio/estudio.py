@@ -1311,8 +1311,11 @@ class App:
         path = filedialog.askopenfilename(parent=self.root, title="Abrir tema o proyecto", filetypes=[
             ("Temas y proyectos", "*.npt *" + L.PROJECT_EXT), ("Tema .npt", "*.npt"),
             ("Proyecto", "*" + L.PROJECT_EXT)])
-        if not path:
-            return
+        if path:
+            self.open_path(path)
+
+    def open_path(self, path):
+        """Abre un proyecto .nptproj o un tema .npt (también al abrir un archivo desde el sistema)."""
         if path.lower().endswith(L.PROJECT_EXT):
             try:
                 s = L.load_project(path)
@@ -1707,7 +1710,7 @@ def main():
     root.protocol("WM_DELETE_WINDOW", app.on_close)
     if len(sys.argv) > 1 and os.path.isfile(sys.argv[1]):
         p = sys.argv[1]
-        root.after(300, lambda: app.open_npt(p) if p.lower().endswith(".npt") else None)
+        root.after(300, lambda: app.open_path(p))
     root.mainloop()
 
 

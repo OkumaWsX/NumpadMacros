@@ -1,5 +1,6 @@
-# Compila el Estudio de Temas (programa aparte) para Windows, Linux y macOS.
-# Corre cuando cambia su código o el formato .npt, o a mano desde Actions.
+# Compila el Estudio de Temas (programa aparte) para Windows (instalador y portátil),
+# Linux y macOS. Corre cuando cambia su código o el formato .npt, a mano desde Actions,
+# y lo llama «Publicar versión» para incluirlo en cada Release.
 name: Compilar Estudio de Temas
 
 on:
@@ -8,6 +9,7 @@ on:
     paths: ["tools/estudio/**", "npm/npt.py", "npm/config.py", "npm/desktop_linux.py", "docs/temas/temas.json", "tests/test_npt.py",
             "tests/test_estudio.py", ".github/workflows/estudio.yml"]
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -47,10 +49,16 @@ jobs:
         working-directory: tools/estudio
         run: pyinstaller --noconfirm Estudio.spec
 
-      - name: Empaquetar (Windows)
+      - name: Instalador y portátil (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path tools/estudio/dist/EstudioTemas-NumpadMacros.exe, tools/estudio/LEEME.md -DestinationPath "${{ matrix.name }}.zip"
+        run: |
+          choco install innosetup -y --no-progress
+          $version = python -c "import re; t=open('tools/estudio/estudio.py', encoding='utf-8').read(); print(re.search('^VERSION = .(.+?).$', t, re.M).group(1))"
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q "/DAppVersion=$version" installer\EstudioTemas.iss
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Copy-Item "dist-installer\EstudioTemas-Setup-$version.exe" "${{ matrix.name }}-Setup.exe"
+          Compress-Archive -Path tools/estudio/dist/EstudioTemas-NumpadMacros.exe, tools/estudio/LEEME.md -DestinationPath "${{ matrix.name }}-portable.zip"
 
       - name: Empaquetar (Linux)
         if: runner.os == 'Linux'
@@ -70,6 +78,8 @@ jobs:
         with:
           name: ${{ matrix.name }}
           path: |
+            ${{ matrix.name }}-Setup.exe
+            ${{ matrix.name }}-portable.zip
             ${{ matrix.name }}.zip
             ${{ matrix.name }}.tar.gz
           if-no-files-found: error
