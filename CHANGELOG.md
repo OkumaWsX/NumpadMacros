@@ -3,6 +3,10 @@
 Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
+### Corregido
+- Linux: el icono de la bandeja no mostraba opciones (en KDE / CachyOS, GNOME, XFCE…), así que no había cómo cerrar el programa. Ahora, con **clic derecho**, aparece el menú del escritorio con **Mostrar ventana, Pausar / Reanudar, Ayuda y soporte y Salir**; clic izquierdo muestra u oculta la ventana y clic central pausa o reanuda. En escritorios sin ese tipo de bandeja, el clic en el icono abre el mismo menú.
+- Al cerrar la ventana por primera vez, el programa pregunta si quieres **dejarlo en la bandeja o salir**, y puede recordar tu elección (se cambia en «Numpad y opciones» → «Al cerrar la ventana»).
+- La ventana podía dejar de responder (al numpad, al celular y a la bandeja) justo después de la búsqueda automática de actualizaciones al iniciar. Ya no pasa.
 
 ## [3.4.0] - 2026-10-20
 ### Añadido
@@ -19,10 +23,6 @@ Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https:
 - La pestaña «Numpad y opciones» ahora se puede desplazar (ya no se cortan las últimas opciones).
 - **Creador y soporte** ya no es una pestaña: se abre con el botón «Creado por OkumaWsX · Soporte» de abajo (redes, actualizaciones y donaciones en una sola ventana).
 - **La ventana se adapta a tu pantalla**: el numpad y las teclas virtuales crecen o se achican al cambiar el tamaño de la ventana (más grandes en pantallas Full HD o 4K, y caben en laptops de 768 px de alto). Las letras de las teclas se ajustan a su tamaño.
-
-### Corregido
-- Linux: el icono de la bandeja no mostraba opciones (en KDE / CachyOS, GNOME, XFCE…), así que no había cómo cerrar el programa. Ahora, con **clic derecho**, aparece el menú del escritorio con **Mostrar ventana, Pausar / Reanudar, Ayuda y soporte y Salir**; clic izquierdo muestra u oculta la ventana y clic central pausa o reanuda. En escritorios sin ese tipo de bandeja, el clic en el icono abre el mismo menú.
-- Al cerrar la ventana por primera vez, el programa pregunta si quieres **dejarlo en la bandeja o salir**, y puede recordar tu elección (se cambia en «Numpad y opciones» → «Al cerrar la ventana»).
 
 ## [3.3.1] - 2026-10-19
 ### Añadido
