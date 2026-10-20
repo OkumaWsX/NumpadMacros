@@ -201,6 +201,7 @@ class App:
             self.root.withdraw()
         self._queue_loudness()
         self._setup_alpha()
+        self._setup_responsive()
         self.root.after(1200, self._startup_news)
         self.root.after(3000, lambda: self._check_updates(manual=False))
 
@@ -209,8 +210,11 @@ class App:
         r = self.root
         r.title("Numpad Macros")
         r.configure(bg=C["bg"])
-        r.geometry("1200x820")
-        r.minsize(1100, 760)
+        # tamaño inicial según la pantalla (laptops de 768 px de alto incluidas)
+        sw, sh = r.winfo_screenwidth(), r.winfo_screenheight()
+        w, h = min(1200, int(sw * .94)), min(820, int(sh * .88))
+        r.geometry(f"{w}x{h}+{max(0, (sw - w) // 2)}+{max(0, (sh - h) // 3)}")
+        r.minsize(min(980, sw - 40), min(640, sh - 80))
         s = ttk.Style(r)
         s.theme_use("clam")
         s.configure(".", background=C["bg"], foreground=C["text"], fieldbackground=C["panel2"],
@@ -382,7 +386,7 @@ class App:
         self.canvas = tk.Canvas(vn, width=w, height=h, bg=C["panel"], highlightthickness=0)
         self.canvas.pack(pady=(4, 8))
         self.canvas.bind("<Button-1>", self._on_canvas_click)
-        self.row_title = ttk.Label(vn, style="Muted.TLabel", wraplength=4 * self.UNIT + 3 * self.GAP)
+        self.row_title = ttk.Label(vn, style="Muted.TLabel", wraplength=280)
         self.row_title.pack(anchor="w", pady=(4, 0))
         rw = 6 * self.RUNIT + 5 * self.RGAP
         rh = 2 * self.RUNIT + self.RGAP
@@ -408,7 +412,7 @@ class App:
         self.virt_canvas = tk.Canvas(vv, width=vw, height=vh, bg=C["panel"], highlightthickness=0)
         self.virt_canvas.pack(pady=(8, 8))
         self.virt_canvas.bind("<Button-1>", self._on_virt_click)
-        ttk.Label(vv, style="Muted.TLabel", wraplength=vw, justify="left", text=(
+        ttk.Label(vv, style="Muted.TLabel", wraplength=300, justify="left", text=(
             "Solo se tocan en la app del celular: nunca interfieren con los teclados del equipo.")
         ).pack(anchor="w")
 
@@ -1749,6 +1753,62 @@ class App:
         layer = self.layer if layer is None else layer
         return self.cfg["global"] if layer == "global" else self.cfg["banks"][layer]["keys"]
 
+    # ---------------------------------------------------------------- tamaño adaptable
+    def _setup_responsive(self):
+        """Las teclas crecen o se achican con la ventana (y con la escala de la pantalla)."""
+        try:
+            self.dpi = max(1.0, self.root.winfo_fpixels("1i") / 96)
+        except tk.TclError:
+            self.dpi = 1.0
+        self._fit_job = None
+        self._fit_size = None
+        self.root.bind("<Configure>", self._on_configure, add="+")
+        self.root.after(60, self._fit_keys)
+
+    def _on_configure(self, ev):
+        if ev.widget is not self.root:
+            return
+        if self._fit_job:
+            self.root.after_cancel(self._fit_job)
+        self._fit_job = self.root.after(90, self._fit_keys)
+
+    def _fit_keys(self):
+        self._fit_job = None
+        W, H = self.root.winfo_width(), self.root.winfo_height()
+        if W < 50 or H < 50 or (W, H) == self._fit_size:
+            return
+        self._fit_size = (W, H)
+        d = self.dpi
+        # alto libre para el dibujo (cabecera, pestañas y pie fuera)
+        free = H - self.left_top_h()
+        width_cap = W * .40 - 40 * d
+        # numpad: 5 filas + fila de números (2/3 del tamaño) + títulos y botón
+        u = (free - 135 * d) / 6.5
+        u = min(u, (width_cap - 3 * 7) / 4, 110 * d)
+        self.UNIT = int(max(40 * d, u))
+        self.GAP = max(5, int(self.UNIT / 9))
+        self.RUNIT = int(self.UNIT * .66)
+        self.RGAP = max(4, int(self.GAP * .8))
+        v = (free - 90 * d) / 6.15
+        v = min(v, (width_cap - 4 * 8) / 5, 110 * d)
+        self.VUNIT = int(max(40 * d, v))
+        self.VGAP = max(5, int(self.VUNIT / 7))
+        self.canvas.configure(width=4 * self.UNIT + 3 * self.GAP, height=5 * self.UNIT + 4 * self.GAP)
+        self.row_canvas.configure(width=6 * self.RUNIT + 5 * self.RGAP, height=2 * self.RUNIT + self.RGAP)
+        self.virt_canvas.configure(width=VIRTUAL_COLS * self.VUNIT + (VIRTUAL_COLS - 1) * self.VGAP,
+                                   height=VIRTUAL_ROWS * self.VUNIT + (VIRTUAL_ROWS - 1) * self.VGAP)
+        self._redraw()
+
+    def left_top_h(self):
+        """Alto que ocupan la cabecera, las pestañas del panel y el pie de la ventana."""
+        try:
+            self.root.update_idletasks()
+            top = self.layer_cb.winfo_rooty() + self.layer_cb.winfo_height() - self.root.winfo_rooty()
+            foot = self.status.winfo_height() if hasattr(self, "status") else 30
+        except (tk.TclError, AttributeError):
+            top, foot = 200, 30
+        return top + foot + 50
+
     def _key_rect(self, kid):
         _, c, r, w, h = NUMPAD_LAYOUT[kid]
         u, g = self.UNIT, self.GAP
@@ -1785,31 +1845,42 @@ class App:
             fill = C["accent"]
         if kid == self.selected:
             line, lw = (C["text"] if col else C["accent"]), 3
-        r = 7 if size == "small" else 10
+        dpi = getattr(self, "dpi", 1.0)
+        k = min(x1 - x0, y1 - y0) / ((40 if size == "small" else 60) * dpi)    # escala de la tecla
+        f = lambda pt: (FONT, max(BASE - 4, round(pt * k)))
+        fb = lambda pt: (FONT, max(BASE - 3, round(pt * k)), "bold")
+        r = max(5, int((7 if size == "small" else 10) * k))
         self._round_rect(x0 + 1, y0 + 1, x1 - 1, y1 - 1, r, canvas=cv, fill=fill, outline=line, width=lw)
+        pad = 7 * k * dpi
         if size == "small":
-            cv.create_text(x0 + 7, y0 + 4, text=label, anchor="nw", fill=C["text"],
-                           font=(FONT, BASE + 1 if len(label) < 3 else BASE - 1, "bold"))
+            cv.create_text(x0 + pad, y0 + 4 * k, text=label, anchor="nw", fill=C["text"],
+                           font=fb(BASE + 1 if len(label) < 3 else BASE - 1))
         else:
-            big = BASE + 5 if len(label) <= 2 else BASE - 1
-            cv.create_text(x0 + 8, y0 + 7, text=label, anchor="nw", fill=C["text"], font=(FONT, big, "bold"))
-        narrow = (x1 - x0) < 100
+            cv.create_text(x0 + pad, y0 + pad, text=label, anchor="nw", fill=C["text"],
+                           font=fb(BASE + 5 if len(label) <= 2 else BASE - 1))
+        narrow = (x1 - x0) < 1.6 * (y1 - y0)
         if is_global:                       # marca «G» de la capa Global
-            gy = y0 + 5 if size == "small" or len(label) <= 2 else y0 + 24
-            cv.create_rectangle(x1 - 16, gy, x1 - 5, gy + 11, fill=line, outline="")
-            cv.create_text(x1 - 10.5, gy + 5.5, text="G", fill=C["bg"], font=(FONT, BASE - 4, "bold"))
+            gs = 11 * k * dpi
+            gy = y0 + 5 * k if size == "small" or len(label) <= 2 else y0 + 24 * k * dpi
+            cv.create_rectangle(x1 - gs - 5 * k, gy, x1 - 5 * k, gy + gs, fill=line, outline="")
+            cv.create_text(x1 - 5 * k - gs / 2, gy + gs / 2, text="G", fill=C["bg"], font=fb(BASE - 4))
         if not shown:
             return
         if size == "small":
             icon = {"file": "🔊", "keys": "⌨", "sound_stop": "■"}.get(shown.get("type"), "→")
-            cv.create_text(x1 - 5, y1 - 4, text=icon, anchor="se", fill=sub, font=(FONT, BASE - 2))
+            cv.create_text(x1 - 5 * k, y1 - 4 * k, text=icon, anchor="se", fill=sub, font=f(BASE - 2))
             return
-        cv.create_text((x0 + x1) / 2, y1 - 6, text=short_action(shown, narrow), anchor="s", fill=sub,
-                       font=(FONT, BASE - 2 if (x1 - x0) > 59 else BASE - 3), width=(x1 - x0) - 4,
-                       justify="center")
+        if shown.get("type") == "file":
+            title = shown.get("title") or title_of(shown.get("path", "")) or "?"
+            n = max(7, int(8 * k * (x1 - x0) / max(1, y1 - y0)))
+            txt = title if len(title) <= n else title[:n - 1] + "…"
+        else:
+            txt = short_action(shown, narrow)
+        cv.create_text((x0 + x1) / 2, y1 - 6 * k, text=txt, anchor="s", fill=sub,
+                       font=f(BASE - 2 if k >= 1 else BASE - 3), width=(x1 - x0) - 4, justify="center")
         if narrow and not is_global and shown.get("type") == "file":
             icon = "🔊" + MODE_ICON.get(shown.get("mode", "overlap"), "").strip()
-            cv.create_text(x1 - 5, y0 + 6, text=icon, anchor="ne", fill=sub, font=(FONT, BASE - 3))
+            cv.create_text(x1 - 5 * k, y0 + 6 * k, text=icon, anchor="ne", fill=sub, font=f(BASE - 3))
 
     def _redraw(self):
         layer = self._layer_dict()

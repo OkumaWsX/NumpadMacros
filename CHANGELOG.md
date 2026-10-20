@@ -15,7 +15,7 @@ Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https:
 - **F13–F24 ya no se usan como teclas de entrada**: las reemplazan las teclas virtuales. Lo que tenías asignado a F13–F24 se mueve solo a las primeras teclas virtuales libres del mismo banco. (Los atajos que *envían* F13–F24 a OBS u otros programas siguen igual.)
 - La pestaña «Numpad y opciones» ahora se puede desplazar (ya no se cortan las últimas opciones).
 - **Creador y soporte** ya no es una pestaña: se abre con el botón «Creado por OkumaWsX · Soporte» de abajo (redes, actualizaciones y donaciones en una sola ventana).
-- La ventana es un poco más ancha para que quepan todas las pestañas.
+- **La ventana se adapta a tu pantalla**: el numpad y las teclas virtuales crecen o se achican al cambiar el tamaño de la ventana (más grandes en pantallas Full HD o 4K, y caben en laptops de 768 px de alto). Las letras de las teclas se ajustan a su tamaño.
 
 ## [3.3.1] - 2026-10-19
 ### Añadido
