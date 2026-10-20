@@ -228,3 +228,20 @@ class PublicadorTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BetaHintTest(unittest.TestCase):
+    def test_beta_from_zip_name(self):
+        import zipfile
+        d = tempfile.mkdtemp()
+        for name, pre, want in (("NumpadMacros-codigo_3.4.0-beta.zip", "NumpadMacros-3.4.0-beta/", True),
+                                ("NumpadMacros-codigo_3.4.0.zip", "NumpadMacros-3.4.0/", False)):
+            path = os.path.join(d, name)
+            with zipfile.ZipFile(path, "w") as z:
+                z.writestr(pre + "npm/about.py", "x")
+            pkg = core.Package(path)
+            try:
+                self.assertEqual(pkg.beta_hint, want)
+                self.assertEqual(os.path.basename(pkg.root), pre.strip("/"))
+            finally:
+                pkg.cleanup()

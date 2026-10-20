@@ -80,6 +80,7 @@ jobs:
     uses: ./.github/workflows/compilar.yml
     with:
       preparado: true
+      beta: ${{ inputs.beta }}
 
   android:
     name: App Android

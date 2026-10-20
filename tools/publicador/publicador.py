@@ -536,7 +536,7 @@ class App:
         opt = tk.Frame(mid, bg=C["panel"])
         opt.grid(row=0, column=1, rowspan=4, sticky="nsew", padx=(18, 0))
         self._label(opt, "Opciones", bold=True).pack(anchor="w")
-        self.beta = tk.BooleanVar(value=False)
+        self.beta = tk.BooleanVar(value=bool(getattr(self.pkg, "beta_hint", False)))
         self.important = tk.BooleanVar(value=False)
         self.discord = tk.BooleanVar(value=self.settings.get("discord", True))
         for var, text, sub in ((self.beta, "Versión de prueba (beta)", "Solo la reciben quienes activaron las betas"),

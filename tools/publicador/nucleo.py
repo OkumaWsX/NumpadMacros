@@ -222,6 +222,9 @@ class Package:
             raise PubError("Arrastra el .zip con el código (NumpadMacros-codigo_X.Y.Z.zip) o su carpeta.")
         self.root = self._find_root(base)
         prefix = os.path.relpath(self.root, base).replace("\\", "/")
+        # «-beta» en el nombre del zip o de su carpeta: se sugiere publicar como beta
+        names = os.path.basename(os.path.normpath(path)) + "/" + prefix + "/" + os.path.basename(self.root)
+        self.beta_hint = "-beta" in names.lower()
         if prefix != ".":
             self.exec_bits = {p[len(prefix) + 1:] for p in self.exec_bits if p.startswith(prefix + "/")}
 

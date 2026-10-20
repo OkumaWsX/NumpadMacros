@@ -9,6 +9,10 @@ on:
         description: "Usar los archivos del paso «preparar» (al publicar una versión)"
         type: boolean
         default: false
+      beta:
+        description: "Versión de prueba: la carpeta de los paquetes lleva «-beta»"
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -63,6 +67,16 @@ jobs:
         shell: bash
         run: pyinstaller --noconfirm NumpadMacros.spec
 
+      # Al descomprimir, la carpeta dice la versión (y «-beta» si es de prueba)
+      - name: Nombre de la carpeta
+        shell: bash
+        run: |
+          v=$(python -c "import npm; print(npm.__version__)")
+          folder="NumpadMacros-$v"
+          if [ "${{ inputs.beta }}" = "true" ]; then folder="$folder-beta"; fi
+          echo "FOLDER=$folder" >> "$GITHUB_ENV"
+          echo "Carpeta: $folder"
+
       - name: Instalador (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -74,21 +88,26 @@ jobs:
           Copy-Item "dist-installer\NumpadMacros-Setup-$version.exe" "NumpadMacros-Windows-Setup.exe"
           # versión portátil (sin instalar), por si alguien la prefiere
           Copy-Item LEEME.md dist/NumpadMacros/
-          Compress-Archive -Path dist/NumpadMacros -DestinationPath "${{ matrix.name }}-portable.zip"
+          New-Item -ItemType Directory -Force pkg | Out-Null
+          Copy-Item -Recurse dist/NumpadMacros "pkg/$env:FOLDER"
+          Compress-Archive -Path "pkg/$env:FOLDER" -DestinationPath "${{ matrix.name }}-portable.zip"
 
       - name: Empaquetar (Linux)
         if: runner.os == 'Linux'
         run: |
-          mkdir -p pkg/NumpadMacros
-          cp dist/NumpadMacros instalar_linux.sh permisos_linux.sh LEEME.md assets/icon.png pkg/NumpadMacros/
-          chmod +x pkg/NumpadMacros/*.sh pkg/NumpadMacros/NumpadMacros
-          tar -C pkg -czf "${{ matrix.name }}.tar.gz" NumpadMacros
+          mkdir -p "pkg/$FOLDER"
+          cp dist/NumpadMacros instalar_linux.sh permisos_linux.sh LEEME.md assets/icon.png "pkg/$FOLDER/"
+          chmod +x "pkg/$FOLDER"/*.sh "pkg/$FOLDER/NumpadMacros"
+          tar -C pkg -czf "${{ matrix.name }}.tar.gz" "$FOLDER"
 
       - name: Empaquetar (macOS)
         if: runner.os == 'macOS'
         run: |
           codesign --force --deep --sign - "dist/Numpad Macros.app"
-          ditto -c -k --keepParent "dist/Numpad Macros.app" "${{ matrix.name }}.zip"
+          mkdir -p "pkg/$FOLDER"
+          ditto "dist/Numpad Macros.app" "pkg/$FOLDER/Numpad Macros.app"
+          cp LEEME.md "pkg/$FOLDER/"
+          ditto -c -k --keepParent "pkg/$FOLDER" "${{ matrix.name }}.zip"
 
       - uses: actions/upload-artifact@v4
         with:

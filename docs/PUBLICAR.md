@@ -66,3 +66,10 @@ esa versión. Para una versión ya publicada: *Actions → Capturas en una Relea
 
 Todas comparten el mismo identificador de app (`APP_ID` en `npm/about.py` y `AppId` del instalador): por eso
 cada versión se instala **encima** de la anterior y no como otra aplicación. No cambies ese identificador.
+
+## Nombre de la carpeta al descomprimir
+
+Los paquetes de cada versión (Windows portátil, Linux y macOS) y los zip de código que te entrego
+se descomprimen en una carpeta con la versión: `NumpadMacros-3.4.0`. Si la versión es de prueba,
+lleva además `-beta`: `NumpadMacros-3.4.0-beta`. Si el zip que arrastras al Publicador dice
+`-beta`, la casilla «Versión de prueba (beta)» aparece marcada (puedes cambiarla).
