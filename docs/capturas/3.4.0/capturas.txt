@@ -1,0 +1,8 @@
+# Capturas tomadas con Numpad Macros 3.4.0 (archivo | descripción).
+# El robot las agrega a las notas de la Release de esta versión.
+teclas-virtuales.png | Teclas virtuales: 30 teclas (5 × 6) con un color para cada botón
+temas.png | Pestaña Temas: 11 temas incluidos e importar temas .npt
+tema-claro.png | El mismo programa con el tema Claro
+tema-synthwave.png | …y con el tema Synthwave
+numpad.png | Numpad y fila 1–0 en su propia pestaña, con colores y la marca «G» de la capa Global
+celular.png | Pestaña Celular: Wi-Fi, cable USB o Bluetooth, con código QR

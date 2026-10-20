@@ -4,13 +4,18 @@ Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https:
 
 ## [Sin publicar]
 ### Añadido
-- **Teclas virtuales**: teclas que solo existen en la app del celular (12, 24, 36 o 48 por banco). Lanzan sonidos y atajos sin pasar por ningún teclado, así que nunca interfieren con los teclados físicos del equipo. Se editan en el PC (botón «Virtuales» bajo el dibujo) o desde el celular, y la cantidad se elige en el PC o en Ajustes de la app.
+- **Teclas virtuales**: 30 teclas por banco (5 × 6) que solo existen en la app del celular. Lanzan sonidos y atajos sin pasar por ningún teclado, así que nunca interfieren con los teclados físicos del equipo. Tienen su propia pestaña, «Teclas virtuales», junto al numpad, y también se editan desde el celular.
+- **Color para cada botón**: 12 colores para reconocer tus sonidos de un vistazo, en el PC y en el celular. Las teclas de la capa Global llevan una «G».
+- **Temas**: nueva pestaña **Temas** con 11 temas incluidos (Original, Medianoche, Bosque, Vino, Grafito, Synthwave, Océano, Claro, Papel, Nórdico y Atardecer), todos con el texto bien legible. Se pueden **importar y exportar temas .npt** (NumPad Theme): van cifrados, se revisa que no estén dañados ni modificados, y los temas oficiales vienen firmados por OkumaWsX. El tema elegido también se puede usar en el celular.
+- 🔍 Esta versión esconde algunas sorpresas. ¿Las encontrarás?
 - **App Android 1.2**: **temas** (los 11 del PC) en Ajustes → Apariencia, más **Alto contraste** y **Pantalla AMOLED / OLED** (negro puro); **12 colores** por botón más «sin color», y las teclas Global llevan una «G»; las teclas virtuales se ordenan en **5 × 6**; con el celular **acostado** los controles pasan a una barra lateral y la pantalla completa muestra solo las teclas con una píldora arriba. La app ya acepta el tema que le mande el PC.
 - **Modo «Solo celular»**: Numpad Macros funciona sin ningún teclado ni numpad conectado. Se activa en «Numpad y opciones»; no muestra avisos de captura y en vez del numpad dibuja las teclas virtuales.
 
 ### Cambiado
 - **F13–F24 ya no se usan como teclas de entrada**: las reemplazan las teclas virtuales. Lo que tenías asignado a F13–F24 se mueve solo a las primeras teclas virtuales libres del mismo banco. (Los atajos que *envían* F13–F24 a OBS u otros programas siguen igual.)
 - La pestaña «Numpad y opciones» ahora se puede desplazar (ya no se cortan las últimas opciones).
+- **Creador y soporte** ya no es una pestaña: se abre con el botón «Creado por OkumaWsX · Soporte» de abajo (redes, actualizaciones y donaciones en una sola ventana).
+- La ventana es un poco más ancha para que quepan todas las pestañas.
 
 ## [3.3.1] - 2026-10-19
 ### Añadido

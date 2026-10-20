@@ -24,6 +24,20 @@ Numpad Macros es una aplicación de escritorio **gratuita y de código abierto**
 
 Es independiente: trae su propia biblioteca y su propio reproductor de sonidos, así que **no necesita Soundpad** ni otro programa.
 
+## Novedades de la versión 3.4
+
+<sub>Capturas de la versión 3.4.0. Las de cada versión están en sus [Releases](https://github.com/OkumaWsX/NumpadMacros/releases).</sub>
+
+| Teclas virtuales y colores | Temas |
+|---|---|
+| <img src="docs/capturas/3.4.0/teclas-virtuales.png" alt="30 teclas virtuales con colores"> | <img src="docs/capturas/3.4.0/temas.png" alt="Pestaña Temas"> |
+| **30 teclas virtuales** (5 × 6) que se tocan desde la app del celular y nunca chocan con tus teclados. Cada botón puede tener **su propio color**. | **11 temas** incluidos y nuevos temas en archivos **.npt** (cifrados y protegidos contra daños). |
+| <img src="docs/capturas/3.4.0/tema-claro.png" alt="Tema Claro"> | <img src="docs/capturas/3.4.0/tema-synthwave.png" alt="Tema Synthwave"> |
+
+**App para Android:** lanza y edita tus sonidos desde el celular por Wi-Fi, cable USB o Bluetooth (pestaña **Celular**). Con el modo **Solo celular** el programa funciona sin ningún teclado.
+
+🔍 Esta versión esconde algunas sorpresas. ¿Las encontrarás?
+
 ## Novedades de la versión 3.3
 
 <sub>Capturas de la versión 3.3.0. Las de cada versión están en sus [Releases](https://github.com/OkumaWsX/NumpadMacros/releases).</sub>
@@ -173,10 +187,13 @@ NumpadMacros/
 │   ├── soundboard.py       # mezclador, reproductor y micrófono virtual
 │   ├── loudness.py         # medición LUFS y compresor
 │   ├── updater.py          # actualizaciones desde GitHub
+│   ├── remote.py           # conexión con la app del celular (Wi-Fi, USB, Bluetooth)
+│   ├── themes.py, npt.py   # temas y archivos de tema .npt
 │   └── library.py          # biblioteca de sonidos
+├── android/                # app para Android (Kotlin)
 ├── tests/                  # pruebas automáticas
 ├── installer/              # instalador de Windows (Inno Setup)
-├── tools/                  # publicar versiones (release.py y el Publicador)
+├── tools/                  # publicar versiones (release.py, el Publicador) y crear temas (crear_tema.py)
 ├── assets/                 # icono e imágenes
 ├── docs/                   # documentación y capturas
 └── NumpadMacros.spec       # empaquetado con PyInstaller

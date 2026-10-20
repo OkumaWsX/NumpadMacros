@@ -74,7 +74,7 @@ usuario.
 | `subir_ini`   | `name` (nombre de archivo), `size` (bytes), `title` | Empieza a subir un sonido (máx. 50 MB). El PC solo lee **.mp3 .wav .ogg .opus .flac .aiff**: el celular convierte lo demás (m4a, aac, 3gp, amr…) a WAV antes de subirlo, y graba directo en WAV |
 | `subir_parte` | `seq`, `data` (base64, ≤ 192 KB decodificados)  | Trozo del archivo |
 | `subir_fin`   | `sha256` (hex), opcional `assign` = {`layer`,`key`,`act`} | Termina; el PC lo guarda y lo agrega a la biblioteca |
-| `botones`     | `n` (12, 24, 36 o 48)                            | Cuántas teclas virtuales hay por banco |
+| `botones`     | `n`                                             | Ya no hace nada: siempre hay 30 teclas virtuales (el PC solo reenvía `estado`) |
 | `pedir`       | `what`: `"estado"` o `"biblioteca"`             | Pide que se reenvíe |
 | `ping`        | `n`                                             | El PC responde `{"t":"pong","n":…}` (para medir la demora) |
 
@@ -108,10 +108,10 @@ usuario.
 (la fila de números solo aparece si está activada en el PC). Una tecla de
 cualquier grupo se usa igual en `tecla` y `asignar`.
 
-El grupo `"celular"` («Virtuales», ids `"m1"` … `"m48"`, 4 columnas, siempre el
+El grupo `"celular"` («Virtuales», ids `"m1"` … `"m30"`, 5 columnas × 6 filas, siempre el
 primero) son las **teclas virtuales**: no corresponden a ninguna tecla física.
 (F13–F24 ya no son teclas de entrada desde 3.4.) `estado` trae además
-`"phone":{"count":24,"only":false,"counts":[12,24,36,48]}`. Con `only` = true
+`"phone":{"only":false,"counts":[30]}`. Con `only` = true
 (modo «Solo celular» del PC, sin teclado) `groups` trae **solo** el grupo `celular`.
 
 **biblioteca**: `{"t":"biblioteca","items":[{"lib":"a1b2c3d4e5","title":"Aplausos","lufs":-12.3}, …]}`
@@ -125,15 +125,15 @@ primero) son las **teclas virtuales**: no corresponden a ninguna tecla física.
 
 **aviso**: `{"t":"aviso","text":"…","bad":false}` (mensajes para mostrar).
 
-## Pendiente en el PC (lo programa el chat de escritorio)
-
-Ya hechos en el PC: colores 0–11 y teclas virtuales fijas en 30 (`m1`…`m30`, 5 × 6; la app las
-ordena sola en 6 × 5 con el celular acostado y ya no muestra los chips de cantidad).
-
-Falta el **mensaje nuevo PC → celular `tema`** (al conectar y cada vez que cambie, solo si en el PC
-está marcada «Usar también en el celular conectado»). La app 1.2 ya lo entiende:
+**tema** (PC → celular): al entrar y cada vez que cambia la casilla «Usar también en el celular
+conectado» de la pestaña Temas del PC. Cambiar de tema en el PC reinicia el programa, así que el
+celular se reconecta solo y recibe el tema nuevo al entrar.
 `{"t":"tema","nombre":"Océano","colores":{"bg":"#0c1719","panel":"#…", …}}`
-`colores` lleva las mismas claves de `docs/temas/temas.json` (bg, panel, panel2, line, text, muted,
-on_acc, acc, acc_dim, acc_bg, key, key_global, key_global_line, key_global_text, ok, on_ok, bad, warn).
-Si `nombre` es un tema de la lista, el celular usa el suyo; si no (un `.npt` propio), usa `colores`.
+`colores` lleva las mismas claves de `docs/temas/temas.json`. Si `nombre` es un tema de la lista, el
+celular usa el suyo; si no (un `.npt` importado), usa `colores`. Si la casilla está apagada llega
+`{"t":"tema","nombre":"","colores":{}}`: el celular vuelve a su propio tema.
 Alto contraste y AMOLED del celular mandan sobre el tema recibido y no se le avisan al PC.
+
+Colores de botón: `color` 0–11 en el mismo orden que `npm/theme.py` → `BUTTON_COLORS`
+(Naranja, Amarillo, Lima, Verde, Turquesa, Celeste, Azul, Morado, Rosa, Rojo, Café, Gris);
+sin `color` = sin color. Un valor fuera de rango se ignora.

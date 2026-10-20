@@ -53,7 +53,7 @@ class ThemesTab:
         head.grid(row=0, column=0, columnspan=2, sticky="ew")
         head.columnconfigure(0, weight=1)
         ttk.Label(head, text="Temas", style="H.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(head, style="Muted.TLabel", wraplength=330, justify="left", text=(
+        ttk.Label(head, style="Muted.TLabel", wraplength=250, justify="left", text=(
             "Cambia los colores del programa. Los temas nuevos vienen en archivos .npt (NumPad Theme), "
             "cifrados y protegidos contra daños.")).grid(row=1, column=0, sticky="w")
         ttk.Button(head, text="⬆ Importar tema (.npt)…", style="Accent.TButton",

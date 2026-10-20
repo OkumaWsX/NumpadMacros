@@ -25,7 +25,7 @@ Al pausar o cerrar la app, el numpad vuelve a funcionar como un numpad normal.
 - El volumen de cada tecla y el general se ven en **% y dB** mientras los mueves.
 
 ## Actualizaciones
-Desde la versión 3.3 la app revisa una vez al día si hay una versión nueva. Si la hay, aparece un aviso arriba: **Actualizar** muestra las novedades y, con **Actualizar ahora**, la descarga, comprueba que sea el archivo original y se instala sola (en Windows, Windows pide permiso una vez). Tu configuración, bancos y sonidos no se tocan. Puedes desactivarlo o buscar a mano en la pestaña **Creador**, y ver las novedades de tu versión con el botón **«Novedades»** de abajo.
+Desde la versión 3.3 la app revisa una vez al día si hay una versión nueva. Si la hay, aparece un aviso arriba: **Actualizar** muestra las novedades y, con **Actualizar ahora**, la descarga, comprueba que sea el archivo original y se instala sola (en Windows, Windows pide permiso una vez). Tu configuración, bancos y sonidos no se tocan. Puedes desactivarlo o buscar a mano en la ventana **Creador y soporte** (botón de abajo), y ver las novedades de tu versión con el botón **«Novedades»** de abajo.
 
 En macOS y en la versión portátil de Windows la app avisa y abre la página de descarga.
 
@@ -88,7 +88,7 @@ Para compilar desde el código, consulta la sección «Compilar desde el código
 La configuración se guarda en `%APPDATA%\NumpadMacros` (Windows), `~/.config/NumpadMacros` (Linux) o `~/Library/Application Support/NumpadMacros` (macOS). Si usabas la versión anterior con Soundpad, tus teclas se convierten solas a sonidos propios.
 
 ## Creador y soporte
-Numpad Macros es creado por **OkumaWsX**. En la app, el botón de abajo «Creado por OkumaWsX · Soporte» abre la pestaña **Creador**:
+Numpad Macros es creado por **OkumaWsX**. En la app, el botón de abajo «Creado por OkumaWsX · Soporte» abre la ventana **Creador y soporte**:
 - Instagram: <https://www.instagram.com/okumawsx>
 - Discord (comunidad y soporte): <https://discord.gg/hcutJcBx9>
 - Donaciones: <https://ceneka.net/OkumaWsX>
