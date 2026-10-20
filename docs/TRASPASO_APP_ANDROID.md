@@ -35,6 +35,10 @@ aparte. El programa de escritorio sigue en su propio chat. Fecha: 2026-10-20.
 - **1.0.0**: publicada dentro de la Release **v3.3.1** (19-10-2026).
 - **1.1.0** (versionCode 2): en `main`, **sin publicar**; va en la beta 3.4.0.
   Trae: grupo de teclas virtuales primero, elegir cuántas en Ajustes, versión desde BuildConfig.
+- **1.2.0** (versionCode 3): en `main`, **sin publicar**. Trae lo aprobado del punto 5: temas
+  (Ajustes → Apariencia), Alto contraste y AMOLED, 12 colores + «sin color» (mismo orden que el PC),
+  etiqueta «G» en las teclas Global, teclas virtuales en 5 × 6 (6 × 5 acostado), barra lateral y
+  pantalla completa con píldora en horizontal, y ya entiende el mensaje `tema` del PC.
 - Nada se ha probado todavía en un celular real (ni el Bluetooth del PC).
 
 ## 4. Lo que ya hace la app
@@ -48,7 +52,7 @@ aparte. El programa de escritorio sigue en su propio chat. Fecha: 2026-10-20.
   se convierte a WAV en el celular.
 - Ajustes, PCs guardados, Acerca de (Instagram, Discord, GitHub, Donar).
 
-## 5. Diseños APROBADOS que falta programar en la app
+## 5. Diseños APROBADOS (programados en la 1.2.0)
 Todos están en el lienzo de diseño (https://claude.ai/artifact/JZMYNqgdzLjMFWhNgm3eTL),
 páginas «App Android» y «Teclas virtuales (beta)».
 
