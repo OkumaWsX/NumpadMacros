@@ -26,10 +26,11 @@ class Meter(tk.Canvas):
         self.W, self.H = width, height
         gap = 2
         sw = (width - (self.SEGS - 1) * gap) / self.SEGS
+        self.off = mix(C["panel2"], C["bg"], .3)
         self.rects, self.thr = [], []
         for i in range(self.SEGS):
             x0 = i * (sw + gap)
-            self.rects.append(self.create_rectangle(x0, 0, x0 + sw, height, width=0, fill=C["panel2"]))
+            self.rects.append(self.create_rectangle(x0, 0, x0 + sw, height, width=0, fill=self.off))
             self.thr.append(FLOOR + (i + 1) * (-FLOOR) / self.SEGS)
         self.mark = self.create_rectangle(0, 0, 0, 0, width=0, fill=C["text"], state="hidden")
         self.shown = FLOOR
@@ -54,8 +55,8 @@ class Meter(tk.Canvas):
         lit = sum(1 for t in self.thr if self.shown >= t - (-FLOOR) / self.SEGS / 2) - 1
         if lit != self._lit:
             for i, r in enumerate(self.rects):
-                on, off = self._colors(self.thr[i])
-                self.itemconfigure(r, fill=on if i <= lit else off)
+                on, _off = self._colors(self.thr[i])
+                self.itemconfigure(r, fill=on if i <= lit else self.off)
             self._lit = lit
         if self.hold > FLOOR + 1:
             x = _db_x(self.hold, self.W)

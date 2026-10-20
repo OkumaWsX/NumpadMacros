@@ -8,6 +8,7 @@ import threading
 import traceback
 import time
 import tkinter as tk
+import tkinter.font as tkfont
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 from . import __version__, about, capture, config, library, sysutil, updater
@@ -77,16 +78,17 @@ class FlatButton(tk.Label):
         self.bind("<Button-1>", lambda e: self._cmd and self._cmd())
 
 
-def make_listbox(parent, height):
-    box = ttk.Frame(parent, style="Panel.TFrame")
+def make_listbox(parent, height, width=20):
+    box = tk.Frame(parent, bg=C["panel2"], highlightthickness=1, highlightbackground=C["line"],
+                   highlightcolor=C["line"])
     box.columnconfigure(0, weight=1)
     box.rowconfigure(0, weight=1)
-    lb = tk.Listbox(box, bg=C["panel2"], fg=C["text"], selectbackground=C["accent_dim"],
-                    selectforeground=C["text"], highlightthickness=0, bd=0, activestyle="none",
-                    font=(FONT, BASE), height=height, exportselection=False)
-    lb.grid(row=0, column=0, sticky="nsew")
+    lb = tk.Listbox(box, bg=C["panel2"], fg=C["text"], selectbackground=C["accent_bg"],
+                    selectforeground=C["accent"], highlightthickness=0, bd=0, activestyle="none",
+                    font=(FONT, BASE), height=height, exportselection=False, width=width)
+    lb.grid(row=0, column=0, sticky="nsew", padx=(8, 2), pady=6)
     sb = ttk.Scrollbar(box, orient="vertical", command=lb.yview)
-    sb.grid(row=0, column=1, sticky="ns")
+    sb.grid(row=0, column=1, sticky="ns", padx=(0, 3), pady=4)
     lb.configure(yscrollcommand=sb.set)
     return box, lb
 
@@ -133,6 +135,9 @@ def scroll_frame(parent):
     cv.bind("<Enter>", bind_all)
     cv.bind("<Leave>", unbind_all)
     return inner
+
+
+LBL_W = 10           # ancho (en letras) de la columna de nombres en el editor
 
 
 class App:
@@ -218,58 +223,133 @@ class App:
         r.minsize(min(980, sw - 40), min(640, sh - 80))
         s = ttk.Style(r)
         s.theme_use("clam")
+        flat = dict(lightcolor=C["panel2"], darkcolor=C["panel2"], bordercolor=C["line"])
         s.configure(".", background=C["bg"], foreground=C["text"], fieldbackground=C["panel2"],
                     bordercolor=C["line"], lightcolor=C["line"], darkcolor=C["line"],
-                    font=(FONT, BASE))
+                    troughcolor=C["panel2"], focuscolor=C["panel"], selectbackground=C["accent_bg"],
+                    selectforeground=C["text"], insertcolor=C["text"], font=(FONT, BASE))
+        s.configure("TFrame", background=C["bg"])
         s.configure("Panel.TFrame", background=C["panel"])
         s.configure("TLabel", background=C["bg"])
         s.configure("Panel.TLabel", background=C["panel"])
+        s.configure("Field.TLabel", background=C["panel"], foreground=C["muted"])
         s.configure("Muted.TLabel", background=C["panel"], foreground=C["muted"], font=(FONT, BASE - 1))
         s.configure("Warn.TLabel", background=C["panel"], foreground=C["warn"], font=(FONT, BASE - 1))
-        s.configure("H.TLabel", background=C["panel"], font=(FONT, BASE + 3, "bold"))
-        s.configure("Title.TLabel", background=C["bg"], font=(FONT, BASE + 6, "bold"))
-        s.configure("TButton", background=C["panel2"], foreground=C["text"], padding=(10, 5),
-                    borderwidth=1, focusthickness=0)
-        s.map("TButton", background=[("active", C["line"]), ("disabled", C["panel"])],
+        s.configure("H.TLabel", background=C["panel"], font=(FONT, BASE + 4, "bold"))
+        s.configure("Title.TLabel", background=C["bg"], font=(FONT, BASE + 7, "bold"))
+
+        # botones planos
+        s.configure("TButton", background=C["panel2"], foreground=C["text"], padding=(12, 6),
+                    borderwidth=1, relief="flat", focusthickness=0, **flat)
+        s.map("TButton", background=[("pressed", C["line"]), ("active", mix(C["panel2"], C["text"], .08)),
+                                     ("disabled", C["panel"])],
+              lightcolor=[("active", mix(C["panel2"], C["text"], .08))],
+              darkcolor=[("active", mix(C["panel2"], C["text"], .08))],
+              bordercolor=[("focus", C["muted"])],
               foreground=[("disabled", C["muted"])])
         s.configure("Accent.TButton", background=C["accent"], foreground=C["on_accent"],
+                    lightcolor=C["accent"], darkcolor=C["accent"], bordercolor=C["accent"],
                     font=(FONT, BASE, "bold"))
         s.map("Accent.TButton", background=[("active", C["accent_hover"]), ("disabled", C["panel2"])],
-              foreground=[("disabled", C["muted"])])
-        for w in ("TCheckbutton", "TRadiobutton"):
-            s.configure(w, background=C["panel"], foreground=C["text"])
-            s.map(w, background=[("active", C["panel"])],
-                  indicatorcolor=[("selected", C["accent"]), ("!selected", C["panel2"])])
-        s.configure("TCombobox", arrowcolor=C["text"], foreground=C["text"],
-                    selectbackground=C["panel2"], selectforeground=C["text"])
-        s.map("TCombobox", fieldbackground=[("readonly", C["panel2"])],
-              foreground=[("readonly", C["text"])])
+              lightcolor=[("active", C["accent_hover"])], darkcolor=[("active", C["accent_hover"])],
+              bordercolor=[("active", C["accent_hover"])], foreground=[("disabled", C["muted"])])
+
+        # campos: combobox, entry y spinbox planos (borde de color al tener el foco)
+        for w in ("TCombobox", "TEntry", "TSpinbox"):
+            s.configure(w, foreground=C["text"], fieldbackground=C["panel2"], background=C["panel2"],
+                        arrowcolor=C["muted"], arrowsize=13, padding=(8, 5), insertcolor=C["text"],
+                        selectbackground=C["panel2"], selectforeground=C["text"], **flat)
+            s.map(w, bordercolor=[("focus", C["accent"]), ("hover", C["muted"])],
+                  lightcolor=[("focus", C["panel2"])], darkcolor=[("focus", C["panel2"])],
+                  fieldbackground=[("readonly", C["panel2"]), ("disabled", C["panel"])],
+                  background=[("active", C["panel2"]), ("pressed", C["panel2"])],
+                  arrowcolor=[("active", C["text"])],
+                  foreground=[("readonly", C["text"]), ("disabled", C["muted"])])
+        s.configure("TEntry", selectbackground=C["accent_bg"])
         r.option_add("*TCombobox*Listbox.background", C["panel2"])
         r.option_add("*TCombobox*Listbox.foreground", C["text"])
-        r.option_add("*TCombobox*Listbox.selectBackground", C["accent_dim"])
-        s.configure("TNotebook", background=C["bg"], borderwidth=0)
-        s.configure("TNotebook.Tab", background=C["bg"], foreground=C["muted"],
-                    padding=(12, 7), borderwidth=0, font=(FONT, BASE, "bold"))
-        s.map("TNotebook.Tab", background=[("selected", C["panel"])],
-              foreground=[("selected", C["text"])])
-        s.configure("TEntry", foreground=C["text"], insertcolor=C["text"])
-        s.configure("TSpinbox", foreground=C["text"], arrowcolor=C["text"])
-        s.configure("Horizontal.TScale", background=C["panel"], troughcolor=C["panel2"])
+        r.option_add("*TCombobox*Listbox.selectBackground", C["accent_bg"])
+        r.option_add("*TCombobox*Listbox.selectForeground", C["text"])
+        r.option_add("*TCombobox*Listbox.font", (FONT, BASE))
+        r.option_add("*TCombobox*Listbox.borderWidth", 0)
+        r.option_add("*TCombobox*Listbox.highlightThickness", 0)
+
+        # pestañas
+        s.configure("TNotebook", background=C["bg"], borderwidth=1, bordercolor=C["line"],
+                    lightcolor=C["panel"], darkcolor=C["panel"], tabmargins=(0, 0, 0, 0))
+        s.configure("TNotebook.Tab", background=mix(C["bg"], C["panel"], .5), foreground=C["muted"],
+                    padding=(14, 7), borderwidth=1, bordercolor=C["line"],
+                    lightcolor=mix(C["bg"], C["panel"], .5), darkcolor=mix(C["bg"], C["panel"], .5),
+                    font=(FONT, BASE, "bold"))
+        s.map("TNotebook.Tab", background=[("selected", C["panel"]), ("active", C["panel"])],
+              lightcolor=[("selected", C["panel"])], darkcolor=[("selected", C["panel"])],
+              foreground=[("selected", C["text"]), ("active", C["text"])],
+              expand=[("selected", (0, 0, 0, 1))], padding=[("selected", (14, 7))])
+
         s.configure("Horizontal.TProgressbar", background=C["accent"], troughcolor=C["panel2"],
                     bordercolor=C["panel2"], lightcolor=C["accent"], darkcolor=C["accent"])
         s.configure("Banner.TFrame", background=C["accent_bg"])
         s.configure("Card.TFrame", background=C["panel2"])
         s.configure("Card.TLabel", background=C["panel2"])
         s.configure("CardMuted.TLabel", background=C["panel2"], foreground=C["muted"], font=(FONT, BASE - 1))
-        s.configure("Card.TCheckbutton", background=C["panel2"], foreground=C["text"])
-        s.map("Card.TCheckbutton", background=[("active", C["panel2"])],
-              indicatorcolor=[("selected", C["accent"]), ("!selected", C["panel"])])
-        s.configure("Card.TRadiobutton", background=C["panel2"], foreground=C["text"])
-        s.map("Card.TRadiobutton", background=[("active", C["panel2"])],
-              indicatorcolor=[("selected", C["accent"]), ("!selected", C["panel"])])
-        s.configure("Vertical.TScrollbar", background=C["line"], troughcolor=C["panel2"],
-                    arrowcolor=C["muted"], bordercolor=C["panel2"])
-        s.map("Vertical.TScrollbar", background=[("active", C["muted"])])
+
+        # casillas, opciones, deslizador y barra de desplazamiento con imágenes propias
+        self._make_control_images(s)
+        for w in ("TCheckbutton", "TRadiobutton"):
+            s.configure(w, background=C["panel"], foreground=C["text"], padding=(0, 2), focuscolor=C["panel"])
+            s.map(w, background=[("active", C["panel"])], foreground=[("disabled", C["muted"])])
+        for w in ("Card.TCheckbutton", "Card.TRadiobutton"):
+            s.configure(w, background=C["panel2"], foreground=C["text"], focuscolor=C["panel2"])
+            s.map(w, background=[("active", C["panel2"])])
+        s.configure("Horizontal.TScale", background=C["panel"])
+        s.configure("Card.Horizontal.TScale", background=C["panel2"])
+        s.configure("Vertical.TScrollbar", troughcolor=C["panel"], background=C["panel"],
+                    bordercolor=C["panel"], lightcolor=C["panel"], darkcolor=C["panel"])
+
+    def _make_control_images(self, s):
+        """Casillas y opciones redondeadas, deslizador con perilla y barras delgadas."""
+        from . import ui_images as ui
+        d = max(1.0, self.root.winfo_fpixels("1i") / 96)
+        n = int(round(16 * d))
+        img = {}
+
+        def mk(name, data):
+            img[name] = tk.PhotoImage(master=self.root, data=data)
+            return img[name]
+        try:
+            for kind, fn in (("check", ui.checkbox), ("radio", ui.radio)):
+                off, on = mk(kind + "0", fn(n, False, C)), mk(kind + "1", fn(n, True, C))
+                hoff, hon = mk(kind + "0h", fn(n, False, C, hover=True)), mk(kind + "1h", fn(n, True, C, hover=True))
+                doff, don = (mk(kind + "0d", fn(n, False, C, disabled=True)),
+                             mk(kind + "1d", fn(n, True, C, disabled=True)))
+                el = f"NM.{kind}.indicator"
+                s.element_create(el, "image", off,
+                                 ("disabled", "selected", don), ("disabled", doff),
+                                 ("active", "selected", hon), ("selected", on), ("active", hoff),
+                                 width=n + int(7 * d), sticky="w")
+                base = "Checkbutton" if kind == "check" else "Radiobutton"
+                s.layout("T" + base, [(base + ".padding", {"sticky": "nswe", "children": [
+                    (el, {"side": "left", "sticky": ""}),
+                    (base + ".label", {"side": "left", "sticky": "nswe"})]})])
+            k = int(round(18 * d))
+            knob, knob_h = mk("knob", ui.knob(k, C)), mk("knobh", ui.knob(k, C, hover=True))
+            trough = mk("track", ui.track(int(20 * d), k, max(3, int(4 * d)), C))
+            s.element_create("NM.Horizontal.Scale.trough", "image", trough,
+                             border=(int(6 * d), 0), sticky="ew")
+            s.element_create("NM.Horizontal.Scale.slider", "image", knob, ("active", knob_h),
+                             ("pressed", knob_h), sticky="")
+            s.layout("Horizontal.TScale", [("NM.Horizontal.Scale.trough", {"sticky": "nswe", "children": [
+                ("NM.Horizontal.Scale.slider", {"side": "left", "sticky": ""})]})])
+            bw = int(round(10 * d))
+            thumb = mk("thumb", ui.pill(bw, int(28 * d), C["line"]))
+            thumb_h = mk("thumbh", ui.pill(bw, int(28 * d), C["muted"]))
+            s.element_create("NM.Vertical.Scrollbar.thumb", "image", thumb, ("active", thumb_h),
+                             ("pressed", thumb_h), border=(0, int(8 * d)), sticky="ns")
+            s.layout("Vertical.TScrollbar", [("Vertical.Scrollbar.trough", {"sticky": "ns", "children": [
+                ("NM.Vertical.Scrollbar.thumb", {"expand": "1", "sticky": "nswe"})]})])
+        except tk.TclError:
+            pass                   # tema ya creado (otra ventana) o Tk sin PNG: quedan los de clam
+        self._ctl_img = img
 
     def _set_icon(self):
         path = sysutil.resource("assets", "icon.png")
@@ -469,7 +549,7 @@ class App:
 
         row = ttk.Frame(t, style="Panel.TFrame")
         row.grid(row=2, column=0, sticky="w")
-        ttk.Label(row, text="Acción", style="Panel.TLabel").pack(side="left", padx=(0, 10))
+        ttk.Label(row, text="Acción", style="Panel.TLabel", width=LBL_W).pack(side="left")
         self.type_cb = ttk.Combobox(row, state="readonly", width=34,
                                     values=[lbl for _, lbl in ACTION_TYPES])
         self.type_cb.pack(side="left")
@@ -477,24 +557,25 @@ class App:
 
         self.sub = ttk.Frame(t, style="Panel.TFrame")
         self.sub.grid(row=3, column=0, sticky="nsew", pady=(12, 0))
-        t.rowconfigure(3, weight=1)
 
         # color del botón (se ve igual en el PC y en el celular)
-        cc = ttk.Frame(t, style="Card.TFrame", padding=(14, 10))
-        cc.grid(row=4, column=0, sticky="ew", pady=(12, 0))
+        cc = ttk.Frame(t, style="Card.TFrame", padding=(16, 12))
+        cc.grid(row=4, column=0, sticky="w", pady=(16, 0))
+        t.rowconfigure(5, weight=1)                  # el espacio que sobra queda abajo
         self.color_card = cc
         head = ttk.Frame(cc, style="Card.TFrame")
         head.pack(fill="x")
         ttk.Label(head, text="Color del botón", style="Card.TLabel", font=(FONT, BASE, "bold")).pack(side="left")
         self.color_name = ttk.Label(head, style="CardMuted.TLabel")
         self.color_name.pack(side="left", padx=(10, 0))
-        ttk.Label(head, text="Se ve igual en el PC y en el celular", style="CardMuted.TLabel").pack(side="right")
+        ttk.Label(head, text="·  se ve igual en el PC y en el celular", style="CardMuted.TLabel").pack(
+            side="left", padx=(8, 0))
         sw = ttk.Frame(cc, style="Card.TFrame")
         sw.pack(anchor="w", pady=(8, 0))
         self.swatches = []
         for i in range(-1, len(BUTTON_COLORS)):
             cv = tk.Canvas(sw, width=30, height=30, bg=C["panel2"], highlightthickness=0, cursor="hand2")
-            cv.pack(side="left", padx=(0, 6))
+            cv.pack(side="left", padx=(0, 7))
             cv.bind("<Button-1>", lambda e, i=i: self._set_color(i))
             self.swatches.append((i, cv))
 
@@ -506,7 +587,6 @@ class App:
     def _build_file_sub(self, act):
         f = self.sub
         f.columnconfigure(0, weight=1)
-        f.rowconfigure(2, weight=1)
         top = ttk.Frame(f, style="Panel.TFrame")
         top.grid(row=0, column=0, sticky="ew")
         self.file_lbl = ttk.Label(top, style="Panel.TLabel", font=(FONT, BASE + 1, "bold"))
@@ -516,32 +596,33 @@ class App:
 
         srow = ttk.Frame(f, style="Panel.TFrame")
         srow.grid(row=1, column=0, sticky="ew", pady=(8, 6))
-        ttk.Label(srow, text="Buscar", style="Panel.TLabel").pack(side="left", padx=(0, 8))
+        ttk.Label(srow, text="Buscar", style="Panel.TLabel", width=LBL_W).pack(side="left")
         self.pick_q = tk.StringVar()
-        ttk.Entry(srow, textvariable=self.pick_q, width=26).pack(side="left")
+        ttk.Entry(srow, textvariable=self.pick_q, width=28).pack(side="left")
         self.pick_q.trace_add("write", lambda *_: self._fill_pick())
         ttk.Button(srow, text="＋ Agregar archivos…", command=self._add_files_for_key).pack(side="left", padx=8)
 
-        box, self.pick_lb = make_listbox(f, 7)
-        box.grid(row=2, column=0, sticky="nsew")
+        box, self.pick_lb = make_listbox(f, 7, width=58)
+        box.grid(row=2, column=0, sticky="w")
+        self._fit_pick_rows()
         self.pick_lb.bind("<<ListboxSelect>>", self._on_pick)
         self.pick_lb.bind("<Double-Button-1>", lambda e: self._test_action())
 
         opts = ttk.Frame(f, style="Panel.TFrame")
         opts.grid(row=3, column=0, sticky="ew", pady=(10, 0))
-        ttk.Label(opts, text="Al pulsar", style="Panel.TLabel").grid(row=0, column=0, sticky="w")
-        self.mode_cb = ttk.Combobox(opts, state="readonly", width=48, values=[m for _, m in PLAY_MODES])
+        ttk.Label(opts, text="Al pulsar", style="Panel.TLabel", width=LBL_W).grid(row=0, column=0, sticky="w")
+        self.mode_cb = ttk.Combobox(opts, state="readonly", width=44, values=[m for _, m in PLAY_MODES])
         self.mode_cb.set(MODE_LABEL.get(act.get("mode", "overlap")))
-        self.mode_cb.grid(row=0, column=1, sticky="w", padx=10)
+        self.mode_cb.grid(row=0, column=1, sticky="w")
         self.mode_cb.bind("<<ComboboxSelected>>", lambda e: self._on_file_opt())
         ttk.Label(opts, text="Volumen", style="Panel.TLabel").grid(row=1, column=0, sticky="nw", pady=(10, 0))
         vrow = ttk.Frame(opts, style="Panel.TFrame")
-        vrow.grid(row=1, column=1, sticky="w", padx=10, pady=(8, 0))
+        vrow.grid(row=1, column=1, sticky="w", pady=(8, 0))
         self.vol_var = tk.DoubleVar(value=round(float(act.get("volume", 1.0)) * 100))
         ttk.Scale(vrow, from_=0, to=150, variable=self.vol_var, length=300,
                   command=lambda _v: self._on_volume()).grid(row=0, column=0, sticky="w")
-        self.vol_lbl = tk.Label(vrow, bg=C["panel2"], fg=C["accent"], font=(FONT, BASE, "bold"),
-                                width=15, padx=6, pady=2)
+        self.vol_lbl = tk.Label(vrow, bg=C["panel"], fg=C["accent"], font=(FONT, BASE, "bold"),
+                                width=15, padx=6, pady=2, anchor="w")
         self.vol_lbl.grid(row=0, column=1, sticky="w", padx=(10, 0))
         marks = tk.Canvas(vrow, width=300, height=14, bg=C["panel"], highlightthickness=0)
         marks.grid(row=1, column=0, sticky="w")
@@ -553,7 +634,7 @@ class App:
         self.norm_lbl.grid(row=2, column=0, columnspan=2, sticky="w", pady=(2, 0))
 
         lines = ttk.Frame(f, style="Panel.TFrame")
-        lines.grid(row=4, column=0, sticky="ew", pady=(10, 0))
+        lines.grid(row=4, column=0, sticky="w", pady=(12, 0))
         self.spk_var = tk.BooleanVar(value=act.get("speakers", True))
         self.mic_var = tk.BooleanVar(value=act.get("mic", True))
         ttk.Checkbutton(lines, text="Por mis audífonos", variable=self.spk_var,
@@ -561,7 +642,7 @@ class App:
         ttk.Checkbutton(lines, text="Por el micrófono", variable=self.mic_var,
                         command=self._on_file_opt).pack(side="left", padx=16)
         ttk.Button(lines, text="▶ Probar", style="Accent.TButton",
-                   command=self._test_action).pack(side="right")
+                   command=self._test_action).pack(side="left", padx=(24, 0))
         self._refresh_file_header(act)
         self._fill_pick()
 
@@ -1186,7 +1267,7 @@ class App:
         trow = ttk.Frame(nf, style="Card.TFrame")
         trow.pack(anchor="w", pady=(2, 0))
         self.target_var = tk.DoubleVar(value=float(a.get("target_lufs", -16)))
-        ttk.Scale(trow, from_=-24, to=-10, variable=self.target_var, length=170,
+        ttk.Scale(trow, from_=-24, to=-10, variable=self.target_var, length=170, style="Card.Horizontal.TScale",
                   command=lambda _v: self._on_processing(save_later=True)).pack(side="left")
         self.target_lbl = ttk.Label(trow, style="Card.TLabel", width=9)
         self.target_lbl.pack(side="left", padx=8)
@@ -1218,7 +1299,7 @@ class App:
                                                  ("ceil", "Techo", -6, 0))):
             ttk.Label(self.custom, text=name, style="Card.TLabel").grid(row=i, column=0, sticky="w")
             v = tk.DoubleVar(value=float(comp.get(key, {"thr": -18, "ratio": 3, "ceil": -1}[key])))
-            ttk.Scale(self.custom, from_=lo, to=hi, variable=v, length=120,
+            ttk.Scale(self.custom, from_=lo, to=hi, variable=v, length=120, style="Card.Horizontal.TScale",
                       command=lambda _v: self._on_processing(save_later=True)).grid(row=i, column=1, padx=6)
             lbl = ttk.Label(self.custom, style="Card.TLabel", width=8)
             lbl.grid(row=i, column=2, sticky="w")
@@ -1790,23 +1871,41 @@ class App:
         d = self.dpi
         # alto libre para el dibujo (cabecera, pestañas y pie fuera)
         free = H - self.left_top_h()
-        width_cap = W * .40 - 40 * d
+        width_cap = W * .36 - 40 * d
         # numpad: 5 filas + fila de números (2/3 del tamaño) + títulos y botón
         u = (free - 135 * d) / 6.5
-        u = min(u, (width_cap - 3 * 7) / 4, 110 * d)
-        self.UNIT = int(max(40 * d, u))
-        self.GAP = max(5, int(self.UNIT / 9))
+        u = min(u, (width_cap - 3 * 7) / 4, 92 * d)
+        self.UNIT = int(max(44 * d, u))
+        self.GAP = max(6, int(self.UNIT / 9))
         self.RUNIT = int(self.UNIT * .66)
-        self.RGAP = max(4, int(self.GAP * .8))
+        self.RGAP = max(5, int(self.GAP * .8))
         v = (free - 90 * d) / 6.15
-        v = min(v, (width_cap - 4 * 8) / 5, 110 * d)
-        self.VUNIT = int(max(40 * d, v))
-        self.VGAP = max(5, int(self.VUNIT / 7))
+        v = min(v, (width_cap - 4 * 8) / 5, 88 * d)
+        self.VUNIT = int(max(44 * d, v))
+        self.VGAP = max(6, int(self.VUNIT / 8))
+        if hasattr(self, "pick_lb") and self.pick_lb is not None:
+            self._fit_pick_rows()
         self.canvas.configure(width=4 * self.UNIT + 3 * self.GAP, height=5 * self.UNIT + 4 * self.GAP)
         self.row_canvas.configure(width=6 * self.RUNIT + 5 * self.RGAP, height=2 * self.RUNIT + self.RGAP)
         self.virt_canvas.configure(width=VIRTUAL_COLS * self.VUNIT + (VIRTUAL_COLS - 1) * self.VGAP,
                                    height=VIRTUAL_ROWS * self.VUNIT + (VIRTUAL_ROWS - 1) * self.VGAP)
         self._redraw()
+
+    def _fit_pick_rows(self):
+        """Filas de la lista de sonidos según el alto de la ventana (sin empujar lo demás)."""
+        lb = getattr(self, "pick_lb", None)
+        if lb is None:
+            return
+        try:
+            H = self.root.winfo_height()
+            if H < 50:
+                return
+            ls = tkfont.Font(font=lb.cget("font")).metrics("linespace") + 1
+            d = getattr(self, "dpi", 1.0)
+            rows = int((H - 668 * d) / ls)
+            lb.configure(height=max(4, min(12, rows)))
+        except tk.TclError:
+            pass
 
     def left_top_h(self):
         """Alto que ocupan la cabecera, las pestañas del panel y el pie de la ventana."""
@@ -1836,16 +1935,53 @@ class App:
         x0, y0 = c * (u + g), r * (u + g)
         return x0, y0, x0 + u, y0 + u
 
+    def _key_font(self, px, bold=False):
+        """Fuente en píxeles (cacheada) para dibujar dentro de las teclas."""
+        cache = self.__dict__.setdefault("_kfonts", {})
+        key = (px, bold)
+        if key not in cache:
+            cache[key] = tkfont.Font(root=self.root, family=FONT, size=-px,
+                                     weight="bold" if bold else "normal")
+        return cache[key]
+
+    @staticmethod
+    def _wrap(text, font, width, lines=2):
+        """Parte el texto en hasta `lines` líneas que quepan en `width` (con «…» si sobra)."""
+        words, out, cur = text.split(), [], ""
+        for w in words:
+            test = f"{cur} {w}".strip()
+            if font.measure(test) <= width or not cur:
+                cur = test
+            else:
+                out.append(cur)
+                cur = w
+        if cur:
+            out.append(cur)
+        out = out or [""]
+        if len(out) > lines:
+            out = out[:lines]
+            out[-1] += "…"
+        fixed = []
+        for ln in out:                                 # una palabra muy larga: cortarla
+            if font.measure(ln) > width:
+                while len(ln) > 1 and font.measure(ln + "…") > width:
+                    ln = ln[:-1]
+                ln = ln.rstrip("…") + "…"
+            fixed.append(ln)
+        return "\n".join(fixed)
+
     def _draw_key(self, cv, rect, kid, label, act, gact, size="big"):
         """Dibuja una tecla: vacía, con acción, de la capa Global (marca «G») o con su color."""
         x0, y0, x1, y1 = rect
+        kw, kh = x1 - x0, y1 - y0
+        u = min(kw, kh)
         shown = gact or act
         is_global = bool(gact) or (self.layer == "global" and bool(act))
         col = button_color(shown)
-        fill, line, lw, sub = C["key"], C["line"], 1, C["muted"]
+        fill, line, lw, sub = C["key"], C["key"], 1, C["muted"]
         if shown:
             if col:
-                fill, line, lw, sub = mix(col, C["panel"], .78), col, 2, C["text"]
+                fill, line, lw, sub = mix(col, C["panel"], .80), col, 2, C["text"]
             elif is_global:
                 fill, line, sub = C["key_global"], C["key_global_line"], C["key_global_text"]
             else:
@@ -1853,43 +1989,56 @@ class App:
         if kid in self.flash:
             fill = C["accent"]
         if kid == self.selected:
-            line, lw = (C["text"] if col else C["accent"]), 3
-        dpi = getattr(self, "dpi", 1.0)
-        k = min(x1 - x0, y1 - y0) / ((40 if size == "small" else 60) * dpi)    # escala de la tecla
-        f = lambda pt: (FONT, max(BASE - 4, round(pt * k)))
-        fb = lambda pt: (FONT, max(BASE - 3, round(pt * k)), "bold")
-        r = max(5, int((7 if size == "small" else 10) * k))
-        self._round_rect(x0 + 1, y0 + 1, x1 - 1, y1 - 1, r, canvas=cv, fill=fill, outline=line, width=lw)
-        pad = 7 * k * dpi
-        if size == "small":
-            cv.create_text(x0 + pad, y0 + 4 * k, text=label, anchor="nw", fill=C["text"],
-                           font=fb(BASE + 1 if len(label) < 3 else BASE - 1))
-        else:
-            cv.create_text(x0 + pad, y0 + pad, text=label, anchor="nw", fill=C["text"],
-                           font=fb(BASE + 5 if len(label) <= 2 else BASE - 1))
-        narrow = (x1 - x0) < 1.6 * (y1 - y0)
+            line, lw = C["accent"], 3
+            if col and mix(col, C["accent"], .5) == col:
+                line = C["text"]
+        small = size == "small"
+        r = max(5, int(u * (.14 if small else .12)))
+        # borde y relleno como dos formas llenas (el contorno de Tk deja puntos en las esquinas)
+        self._round_rect(x0 + 1, y0 + 1, x1 - 1, y1 - 1, r, canvas=cv, fill=line, outline="")
+        self._round_rect(x0 + 1 + lw, y0 + 1 + lw, x1 - 1 - lw, y1 - 1 - lw, max(3, r - lw), canvas=cv,
+                         fill=fill, outline="")
+        pad = max(5, int(u * .13))
+        num_px = max(11, min(15, int(u * .30))) if small else max(13, min(22, int(u * .24)))
+        if len(label) > 2:
+            num_px = max(10, int(num_px * (.72 if small else .66)))
+            room = kw - 2 * pad - (max(11, int(u * .19)) + 3 if is_global else 0)
+            while num_px > 8 and self._key_font(num_px, True).measure(label) > room:
+                num_px -= 1
+        cv.create_text(x0 + pad, y0 + pad - 1, text=label, anchor="nw", fill=C["text"],
+                       font=self._key_font(num_px, True))
+        ico_px = max(9, min(13, int(u * .15)))
         if is_global:                       # marca «G» de la capa Global
-            gs = 11 * k * dpi
-            gy = y0 + 5 * k if size == "small" or len(label) <= 2 else y0 + 24 * k * dpi
-            cv.create_rectangle(x1 - gs - 5 * k, gy, x1 - 5 * k, gy + gs, fill=line, outline="")
-            cv.create_text(x1 - 5 * k - gs / 2, gy + gs / 2, text="G", fill=C["bg"], font=fb(BASE - 4))
+            gs = max(11, int(u * .19))
+            gx, gy = x1 - pad - gs + 2, y0 + pad - 1
+            gline = C["key_global_line"] if not col else col
+            cv.create_rectangle(gx, gy, gx + gs, gy + gs, fill=gline, outline="")
+            cv.create_text(gx + gs / 2, gy + gs / 2, text="G", fill=C["bg"],
+                           font=self._key_font(max(8, int(gs * .72)), True))
         if not shown:
             return
-        if size == "small":
-            icon = {"file": "🔊", "keys": "⌨", "sound_stop": "■"}.get(shown.get("type"), "→")
-            cv.create_text(x1 - 5 * k, y1 - 4 * k, text=icon, anchor="se", fill=sub, font=f(BASE - 2))
+        t = shown.get("type")
+        if small:
+            icon = {"file": "🔊", "keys": "⌨", "sound_stop": "■"}.get(t, "→")
+            cv.create_text(x1 - pad + 2, y1 - pad + 2, text=icon, anchor="se", fill=sub,
+                           font=self._key_font(ico_px))
             return
-        if shown.get("type") == "file":
-            title = shown.get("title") or title_of(shown.get("path", "")) or "?"
-            n = max(7, int(8 * k * (x1 - x0) / max(1, y1 - y0)))
-            txt = title if len(title) <= n else title[:n - 1] + "…"
+        if not is_global:                   # icono del tipo, arriba a la derecha
+            icon = {"file": "🔊", "keys": "⌨", "sound_stop": "■"}.get(t, "›")
+            if t == "file":
+                icon = (MODE_ICON.get(shown.get("mode", "overlap"), "").strip() + " 🔊").strip()
+            cv.create_text(x1 - pad + 2, y0 + pad, text=icon, anchor="ne", fill=sub,
+                           font=self._key_font(ico_px))
+        if t == "file":
+            txt = shown.get("title") or title_of(shown.get("path", "")) or "?"
         else:
-            txt = short_action(shown, narrow)
-        cv.create_text((x0 + x1) / 2, y1 - 6 * k, text=txt, anchor="s", fill=sub,
-                       font=f(BASE - 2 if k >= 1 else BASE - 3), width=(x1 - x0) - 4, justify="center")
-        if narrow and not is_global and shown.get("type") == "file":
-            icon = "🔊" + MODE_ICON.get(shown.get("mode", "overlap"), "").strip()
-            cv.create_text(x1 - 5 * k, y0 + 6 * k, text=icon, anchor="ne", fill=sub, font=f(BASE - 3))
+            txt = short_action(shown, False).replace("\n", " ").replace("+ ", "+")
+        lab_px = max(9, min(13, int(u * .155)))
+        font = self._key_font(lab_px, True)
+        lines = 2 if kh >= 52 else 1
+        txt = self._wrap(txt, font, kw - 2 * max(4, pad - 3), lines)
+        cv.create_text((x0 + x1) / 2, y1 - pad + 3, text=txt, anchor="s", fill=sub,
+                       font=font, justify="center")
 
     def _redraw(self):
         layer = self._layer_dict()

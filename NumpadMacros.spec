@@ -15,6 +15,7 @@ sys.path.insert(0, ROOT)
 from npm import __version__  # noqa: E402
 
 datas = [(os.path.join(ROOT, "assets", "icon.png"), "assets"),
+         (os.path.join(ROOT, "assets", "fonts"), os.path.join("assets", "fonts")),
          (os.path.join(ROOT, "CHANGELOG.md"), ".")]   # ventana de novedades
 binaries = []
 if IS_WIN and os.path.isfile(os.path.join(ROOT, "interception.dll")):

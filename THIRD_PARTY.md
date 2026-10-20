@@ -12,6 +12,7 @@ Numpad Macros usa o integra los siguientes componentes. Cada uno conserva su pro
 | [Inno Setup](https://jrsoftware.org/isinfo.php) | Instalador de Windows | Licencia de Inno Setup | Solo para compilar |
 | [pystray](https://github.com/moses-palmer/pystray) | Icono en la bandeja del sistema | LGPL-3.0 | Empaquetado (Windows y Linux) |
 | [Jeepney](https://gitlab.com/takluyver/jeepney) | Menú del icono de la bandeja (D-Bus) | MIT | Empaquetado (Linux) |
+| [Inter](https://rsms.me/inter/) (fuente) | Letra de toda la interfaz | SIL OFL 1.1 (`assets/fonts/OFL-Inter.txt`) | Incluida (todos los sistemas) |
 | [Pillow](https://python-pillow.org/) | Imágenes del icono | MIT-CMU (HPND) | Empaquetado (Windows y Linux) |
 | [NumPy](https://numpy.org/) | Mezcla, medición de volumen y compresor | BSD-3-Clause | Empaquetado (todos los sistemas) |
 | [python-sounddevice](https://github.com/spatialaudio/python-sounddevice) / PortAudio | Salida y entrada de audio | MIT | Empaquetado (Windows y macOS) |

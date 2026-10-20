@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 # Copyright (C) 2026 OkumaWsX
 """Colores, fuentes y nombres que comparten todas las ventanas."""
+from . import fonts as _fonts
 from .capture import PLATFORM
 
 IS_WIN, IS_MAC, IS_LINUX = PLATFORM == "win", PLATFORM == "mac", PLATFORM == "linux"
-FONT = {"win": "Segoe UI", "mac": "Helvetica Neue", "linux": "DejaVu Sans"}[PLATFORM]
+SYSTEM_FONT = {"win": "Segoe UI", "mac": "Helvetica Neue", "linux": "DejaVu Sans"}[PLATFORM]
+FONT = _fonts.load(SYSTEM_FONT)         # Inter incluida con la app (igual en todos los sistemas)
 BASE = 13 if IS_MAC else 10           # macOS dibuja las fuentes más chicas
 OS_NAME = {"win": "Windows", "mac": "macOS", "linux": "Linux"}[PLATFORM]
 MOD_LABEL = {"ctrl": "Ctrl", "shift": "Shift", "alt": "Option" if IS_MAC else "Alt",
