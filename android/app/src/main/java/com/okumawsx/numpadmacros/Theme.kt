@@ -41,17 +41,13 @@ object C {
     var light by mutableStateOf(false)
     val scrim = Color(0x9E050608)
 
-    /**
-     * Los 12 colores de los botones (+ «sin color» = -1). Los índices 0–5 son los mismos de antes
-     * (naranja, verde, celeste, morado, rojo, amarillo) para que las teclas ya pintadas no cambien.
-     */
+    /** Los 12 colores de los botones, en el mismo orden que el PC (`BUTTON_COLORS`); -1 = sin color. */
     val keyColors = listOf(
-        Color(0xFFF2A33A), Color(0xFF4CC38A), Color(0xFF6AA8FF), Color(0xFF9B7FE0), Color(0xFFE5534B), Color(0xFFE2C340),
-        Color(0xFF9BD14A), Color(0xFF3CC7C0), Color(0xFF4A6CF0), Color(0xFFE06FB8), Color(0xFFB07A4A), Color(0xFF8B909B),
+        Color(0xFFF2A33A), Color(0xFFE2C340), Color(0xFF9BD14A), Color(0xFF4CC38A), Color(0xFF3CC7C0), Color(0xFF6AA8FF),
+        Color(0xFF4A6CF0), Color(0xFF9B7FE0), Color(0xFFE06FB8), Color(0xFFE5534B), Color(0xFFB07A4A), Color(0xFF8B909B),
     )
-    val keyColorNames = listOf("Naranja", "Verde", "Celeste", "Morado", "Rojo", "Amarillo", "Lima", "Turquesa", "Azul", "Rosa", "Café", "Gris")
-    /** Orden en que se muestran en la hoja de edición (el del diseño aprobado). */
-    val keyColorOrder = listOf(0, 5, 6, 1, 7, 2, 8, 3, 9, 4, 10, 11)
+    val keyColorNames = listOf("Naranja", "Amarillo", "Lima", "Verde", "Turquesa", "Celeste", "Azul", "Morado", "Rosa", "Rojo", "Café", "Gris")
+    val keyColorOrder = keyColors.indices.toList()
     fun keyColor(i: Int): Color? = keyColors.getOrNull(i)
     fun keyColorName(i: Int): String = keyColorNames.getOrNull(i) ?: "Sin color"
 

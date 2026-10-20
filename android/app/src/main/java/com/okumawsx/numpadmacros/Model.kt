@@ -13,7 +13,7 @@ data class Act(
     val mode: String = "overlap",
     val volume: Double = 1.0,
     val lib: String = "",
-    val color: Int = 0,
+    val color: Int = -1,
     val combo: String = "",
     val bank: Int = 1,
 ) {
@@ -46,10 +46,12 @@ data class Act(
     fun toJson(): JSONObject {
         val o = JSONObject().put("type", type)
         when (type) {
-            "file" -> o.put("lib", lib).put("mode", mode).put("volume", volume).put("color", color)
+            "file" -> o.put("lib", lib).put("mode", mode).put("volume", volume)
             "keys" -> o.put("combo", combo)
             "bank_go" -> o.put("bank", bank)
         }
+        // 0–11 = uno de los 12 colores; sin la clave = sin color
+        if (color in 0..11) o.put("color", color)
         return o
     }
 
@@ -66,7 +68,7 @@ data class Act(
                 mode = o.optString("mode", "overlap"),
                 volume = o.optDouble("volume", 1.0).let { if (it.isNaN()) 1.0 else it },
                 lib = o.optString("lib", ""),
-                color = o.optInt("color", 0),
+                color = o.optInt("color", -1),
                 combo = o.optString("combo", ""),
                 bank = o.optInt("bank", 1),
             )

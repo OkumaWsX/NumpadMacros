@@ -86,8 +86,9 @@ usuario.
 {"type":"sound_stop"}
 {"type":"bank_next"} / {"type":"bank_prev"} / {"type":"bank_go","bank":2}
 ```
-`color` es solo para el celular: **0–11** (los 12 colores) o **-1** (sin color). La app 1.2 ya los usa;
-el PC 3.4 todavía recorta a 0–5 (ver «Pendiente en el PC» al final).
+`color` (cualquier tipo de acción) = **0–11**, en el orden de `BUTTON_COLORS` de `npm/theme.py`:
+0 naranja, 1 amarillo, 2 lima, 3 verde, 4 turquesa, 5 celeste, 6 azul, 7 morado, 8 rosa, 9 rojo,
+10 café, 11 gris. Sin la clave `color` = sin color.
 
 ## Mensajes del PC
 
@@ -126,17 +127,13 @@ primero) son las **teclas virtuales**: no corresponden a ninguna tecla física.
 
 ## Pendiente en el PC (lo programa el chat de escritorio)
 
-La app Android 1.2 ya está lista para esto; falta el lado del PC:
+Ya hechos en el PC: colores 0–11 y teclas virtuales fijas en 30 (`m1`…`m30`, 5 × 6; la app las
+ordena sola en 6 × 5 con el celular acostado y ya no muestra los chips de cantidad).
 
-1. **Colores 0–11 y -1.** En `npm/remote.py` (`asignar`) cambiar el recorte `max(0, min(5, color))`
-   por `max(-1, min(11, color))`. Índices: 0 naranja, 1 verde, 2 celeste, 3 morado, 4 rojo,
-   5 amarillo, 6 lima, 7 turquesa, 8 azul, 9 rosa, 10 café, 11 gris; -1 sin color.
-2. **30 teclas virtuales fijas.** El grupo `celular` debe traer `m1`…`m30`. La app las ordena sola en
-   5 × 6 (6 × 5 acostado) y ya no muestra los chips de cantidad, así que `botones` deja de usarse.
-3. **Mensaje nuevo PC → celular `tema`** (al conectar y cada vez que cambie, solo si en el PC está
-   marcada «Usar también en el celular conectado»):
-   `{"t":"tema","nombre":"Océano","colores":{"bg":"#0c1719","panel":"#…", …}}`
-   `colores` lleva las mismas claves de `docs/temas/temas.json` (bg, panel, panel2, line, text, muted,
-   on_acc, acc, acc_dim, acc_bg, key, key_global, key_global_line, key_global_text, ok, on_ok, bad, warn).
-   Si `nombre` es un tema de la lista, el celular usa el suyo; si no (un `.npt` propio), usa `colores`.
-   Alto contraste y AMOLED del celular mandan sobre el tema recibido y no se le avisan al PC.
+Falta el **mensaje nuevo PC → celular `tema`** (al conectar y cada vez que cambie, solo si en el PC
+está marcada «Usar también en el celular conectado»). La app 1.2 ya lo entiende:
+`{"t":"tema","nombre":"Océano","colores":{"bg":"#0c1719","panel":"#…", …}}`
+`colores` lleva las mismas claves de `docs/temas/temas.json` (bg, panel, panel2, line, text, muted,
+on_acc, acc, acc_dim, acc_bg, key, key_global, key_global_line, key_global_text, ok, on_ok, bad, warn).
+Si `nombre` es un tema de la lista, el celular usa el suyo; si no (un `.npt` propio), usa `colores`.
+Alto contraste y AMOLED del celular mandan sobre el tema recibido y no se le avisan al PC.

@@ -514,7 +514,7 @@ fun EditSheet(vm: AppVm, ed: EditTarget) {
     var lib by remember(ed) { mutableStateOf(layerAct?.lib ?: "") }
     var mode by remember(ed) { mutableStateOf(layerAct?.mode?.takeIf { layerAct.type == "file" } ?: "overlap") }
     var vol by remember(ed) { mutableStateOf((layerAct?.volume ?: 1.0).toFloat()) }
-    var color by remember(ed) { mutableStateOf(layerAct?.color ?: 0) }
+    var color by remember(ed) { mutableStateOf(layerAct?.color ?: -1) }
     var query by remember(ed) { mutableStateOf("") }
     // atajo
     val parts = (if (layerAct?.type == "keys") layerAct.combo else "").split("+").map { it.trim().lowercase() }.filter { it.isNotEmpty() }
@@ -607,7 +607,7 @@ fun EditSheet(vm: AppVm, ed: EditTarget) {
                     T("Asígnalo en OBS u otro programa pulsando este botón.", 12.sp, C.muted, align = TextAlign.Center)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    NButton("Guardar", { vm.assign(ed.layer, ed.key, Act("keys", combo = combo)); close() }, Modifier.weight(1f))
+                    NButton("Guardar", { vm.assign(ed.layer, ed.key, Act("keys", combo = combo, color = layerAct?.color ?: -1)); close() }, Modifier.weight(1f))
                     NButton("Quitar", { vm.assign(ed.layer, ed.key, null); close() }, kind = Kind.Danger)
                 }
             }
@@ -631,7 +631,7 @@ fun EditSheet(vm: AppVm, ed: EditTarget) {
                         T(n, 14.sp, weight = if (on) FontWeight.Bold else FontWeight.Medium)
                     }
                 }
-                NButton("Guardar", { vm.assign(ed.layer, ed.key, other); close() }, Modifier.fillMaxWidth())
+                NButton("Guardar", { vm.assign(ed.layer, ed.key, other?.copy(color = layerAct?.color ?: -1)); close() }, Modifier.fillMaxWidth())
             }
         }
     }
