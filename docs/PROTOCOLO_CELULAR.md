@@ -126,8 +126,8 @@ primero) son las **teclas virtuales**: no corresponden a ninguna tecla física.
 **aviso**: `{"t":"aviso","text":"…","bad":false}` (mensajes para mostrar).
 
 **tema** (PC → celular): al entrar y cada vez que cambia la casilla «Usar también en el celular
-conectado» de la pestaña Temas del PC. Cambiar de tema en el PC reinicia el programa, así que el
-celular se reconecta solo y recibe el tema nuevo al entrar.
+conectado» de la pestaña Temas del PC, y cada vez que se elige otro tema en el PC (desde 3.4.1 el tema
+se aplica al instante sin reiniciar, y el celular conectado lo recibe en el momento, sin reconectarse).
 `{"t":"tema","nombre":"Océano","colores":{"bg":"#0c1719","panel":"#…", …}}`
 `colores` lleva las mismas claves de `docs/temas/temas.json`. Si `nombre` es un tema de la lista, el
 celular usa el suyo; si no (un `.npt` importado), usa `colores`. Si la casilla está apagada llega

@@ -212,15 +212,16 @@ class App:
         self.root.after(3000, lambda: self._check_updates(manual=False))
 
     # ================================================================ estilo
-    def _style(self):
+    def _style(self, first=True):
         r = self.root
-        r.title("Numpad Macros")
         r.configure(bg=C["bg"])
-        # tamaño inicial según la pantalla (laptops de 768 px de alto incluidas)
-        sw, sh = r.winfo_screenwidth(), r.winfo_screenheight()
-        w, h = min(1200, int(sw * .94)), min(820, int(sh * .88))
-        r.geometry(f"{w}x{h}+{max(0, (sw - w) // 2)}+{max(0, (sh - h) // 3)}")
-        r.minsize(min(980, sw - 40), min(640, sh - 80))
+        if first:
+            r.title("Numpad Macros")
+            # tamaño inicial según la pantalla (laptops de 768 px de alto incluidas)
+            sw, sh = r.winfo_screenwidth(), r.winfo_screenheight()
+            w, h = min(1200, int(sw * .94)), min(820, int(sh * .88))
+            r.geometry(f"{w}x{h}+{max(0, (sw - w) // 2)}+{max(0, (sh - h) // 3)}")
+            r.minsize(min(980, sw - 40), min(640, sh - 80))
         s = ttk.Style(r)
         s.theme_use("clam")
         flat = dict(lightcolor=C["panel2"], darkcolor=C["panel2"], bordercolor=C["line"])
@@ -311,11 +312,31 @@ class App:
         from . import ui_images as ui
         d = max(1.0, self.root.winfo_fpixels("1i") / 96)
         n = int(round(16 * d))
-        img = {}
+        old = getattr(self, "_ctl_img", None)
+        img = old if old else {}
 
         def mk(name, data):
-            img[name] = tk.PhotoImage(master=self.root, data=data)
+            if name in img:                   # cambio de tema: misma imagen, colores nuevos
+                img[name].configure(data=data)
+            else:
+                img[name] = tk.PhotoImage(master=self.root, data=data)
             return img[name]
+        if old:                               # los elementos ttk ya existen y usan estas imágenes
+            for kind, fn in (("check", ui.checkbox), ("radio", ui.radio)):
+                mk(kind + "0", fn(n, False, C))
+                mk(kind + "1", fn(n, True, C))
+                mk(kind + "0h", fn(n, False, C, hover=True))
+                mk(kind + "1h", fn(n, True, C, hover=True))
+                mk(kind + "0d", fn(n, False, C, disabled=True))
+                mk(kind + "1d", fn(n, True, C, disabled=True))
+            k = int(round(18 * d))
+            mk("knob", ui.knob(k, C))
+            mk("knobh", ui.knob(k, C, hover=True))
+            mk("track", ui.track(int(20 * d), k, max(3, int(4 * d)), C))
+            bw = int(round(10 * d))
+            mk("thumb", ui.pill(bw, int(28 * d), C["line"]))
+            mk("thumbh", ui.pill(bw, int(28 * d), C["muted"]))
+            return
         try:
             for kind, fn in (("check", ui.checkbox), ("radio", ui.radio)):
                 off, on = mk(kind + "0", fn(n, False, C)), mk(kind + "1", fn(n, True, C))
@@ -2767,14 +2788,69 @@ class App:
         if getattr(self, "remote", None):
             self.remote.theme_changed()
 
-    def _restart(self):
-        """Cierra y vuelve a abrir el programa (para aplicar un tema)."""
-        if getattr(sys, "frozen", False):
-            self.relaunch = [sys.executable]
-        else:
-            self.relaunch = [sys.executable, os.path.join(os.path.dirname(os.path.dirname(
-                os.path.abspath(__file__))), "NumpadMacros.pyw")]
-        self._quit()
+    def apply_theme_live(self, theme):
+        """Cambia el tema al instante: vuelve a armar la ventana con los colores nuevos sin
+        reiniciar el programa (el numpad, el audio y los celulares siguen conectados)."""
+        r = self.root
+        keep = dict(selected=self.selected, layer=self.layer, view=self.left_view,
+                    tab=self.nb.index("current"), status=getattr(self, "_status_last", None),
+                    banner=bool(self.update_rel) and self.banner.winfo_ismapped(),
+                    theme_sel=getattr(self.themestab, "sel", None))
+        for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            r.unbind_all(seq)                    # ruedas de listas que se van a borrar
+        for job in ("_fit_job", "_dev_refresh_job"):
+            j = getattr(self, job, None)
+            if j:
+                try:
+                    r.after_cancel(j)
+                except tk.TclError:
+                    pass
+                setattr(self, job, None)
+        for w in list(r.winfo_children()):
+            try:
+                w.destroy()
+            except tk.TclError:
+                pass
+        self.toast = None
+        self.pick_lb = None
+        self._upd_dialog = None
+        self.__dict__.pop("_kfonts", None)
+
+        self.theme = theme
+        apply_theme(theme["colors"])
+        self._style(first=False)
+        self._build()
+        self.layer = keep["layer"]
+        self._refresh_layer_combo()
+        self.left_view, self.selected = keep["view"], keep["selected"]
+        self._apply_phone_only()
+        self._apply_view()
+        self._update_device_ui()
+        self._update_board_ui()
+        self._paint_active()
+        self._paint_row()
+        try:
+            self.devtab.refresh()
+        except Exception:
+            pass
+        self._redraw()
+        self._load_editor()
+        self._update_bank_label()
+        if keep["banner"]:
+            self._paint_banner(self.update_rel)
+        if keep["status"]:
+            self._set_status(*keep["status"])
+        try:
+            self.nb.select(keep["tab"])
+        except tk.TclError:
+            pass
+        if keep["theme_sel"] is not None:
+            self.themestab.sel = keep["theme_sel"]
+            self.themestab.refresh()
+        self._apply_alpha()
+        self._fit_size = None
+        self._fit_keys()
+        self._send_theme()
 
     def _remote_state(self):
         if getattr(self, "remote", None):
@@ -2899,13 +2975,16 @@ class App:
             return
         self.update_rel = rel
         self._upd_text(f"Hay una versión nueva: {rel.version}")
+        self._paint_banner(rel)
+        if manual:
+            self._open_update()
+
+    def _paint_banner(self, rel):
         extra = " · importante" if rel.important else (" · beta" if rel.prerelease else "")
         self.banner_lbl.configure(text=f"Hay una nueva versión: {rel.version}{extra}   (tienes {__version__})")
         self.banner.grid()
         if rel.important:
             self.banner_later.grid_remove()
-        if manual:
-            self._open_update()
 
     def _hide_banner(self):
         self.banner.grid_remove()
@@ -2943,6 +3022,7 @@ class App:
             dialog.fail(str(e))
 
     def _set_status(self, msg, bad=False):
+        self._status_last = (msg, bad)
         self.status.configure(text=msg, fg=C["bad"] if bad else C["muted"])
 
     def _show_toast(self, text):
@@ -3191,7 +3271,7 @@ def main():
     root = tk.Tk(className="NumpadMacros")
     app = App(root, start_minimized=minimized)
     root.mainloop()
-    if app.relaunch:                        # versión recién instalada (Linux) o cambio de tema
+    if app.relaunch:                        # versión recién instalada (Linux)
         import subprocess
         sysutil.release_instance()
         cmd = app.relaunch if isinstance(app.relaunch, list) else [app.relaunch]

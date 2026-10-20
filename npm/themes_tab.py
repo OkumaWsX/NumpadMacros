@@ -219,15 +219,7 @@ class ThemesTab:
 
     # ------------------------------------------------------------ acciones
     def _use(self):
-        th = self.sel
-        if not messagebox.askyesno(
-                "Usar tema", f"Para aplicar «{th['name']}», Numpad Macros se reiniciará (tarda un par de "
-                "segundos). ¿Continuar?", parent=self.t):
-            return
-        with self.app.engine.lock:
-            self.app.cfg["theme"].update(name=th["name"], file=th.get("file", ""))
-        self.app._save()
-        self.app._restart()
+        self._use_now(self.sel)
 
     def _on_phone(self):
         with self.app.engine.lock:
@@ -264,7 +256,8 @@ class ThemesTab:
         with self.app.engine.lock:
             self.app.cfg["theme"].update(name=th["name"], file=th.get("file", ""))
         self.app._save()
-        self.app._restart()
+        # se aplica al instante (después de que termine el clic en el botón, que se va a borrar)
+        self.app.root.after(10, lambda: self.app.apply_theme_live(th))
 
     def _export(self):
         th = self.sel
