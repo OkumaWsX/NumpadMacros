@@ -3,6 +3,8 @@
 Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
+
+## [3.4.0] - 2026-10-20
 ### Añadido
 - **Teclas virtuales**: 30 teclas por banco (5 × 6) que solo existen en la app del celular. Lanzan sonidos y atajos sin pasar por ningún teclado, así que nunca interfieren con los teclados físicos del equipo. Tienen su propia pestaña, «Teclas virtuales», junto al numpad, y también se editan desde el celular.
 - **Color para cada botón**: 12 colores para reconocer tus sonidos de un vistazo, en el PC y en el celular. Las teclas de la capa Global llevan una «G».
@@ -88,6 +90,7 @@ Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https:
 ### Añadido
 - Primera versión para Windows: numpad como panel de sonidos de Soundpad y atajos, con bancos.
 
+[3.4.0]: https://github.com/OkumaWsX/NumpadMacros/releases/tag/v3.4.0
 [3.3.1]: https://github.com/OkumaWsX/NumpadMacros/releases/tag/v3.3.1
 [3.3.0]: https://github.com/OkumaWsX/NumpadMacros/releases/tag/v3.3.0
 [3.2.1]: https://github.com/OkumaWsX/NumpadMacros/releases/tag/v3.2.1
