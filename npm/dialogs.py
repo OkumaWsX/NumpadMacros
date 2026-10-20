@@ -151,7 +151,7 @@ class NewsDialog(tk.Toplevel):
         self.date_lbl.configure(text=f"Publicada el {v['date']}" if v.get("date") else "")
         for ver, b in self.chips:
             on = ver is v
-            b.configure(bg=C["accent"] if on else C["panel2"], fg="#1a1306" if on else C["text"])
+            b.configure(bg=C["accent"] if on else C["panel2"], fg=C["on_accent"] if on else C["text"])
         _fill_notes(self.txt, v["groups"])
 
 
@@ -211,7 +211,7 @@ class UpdateDialog(tk.Toplevel):
             "manual": "En esta instalación la actualización no puede hacerse sola: se abrirá la página "
                       "de descarga. Tu configuración, bancos y sonidos se mantienen.",
         }[self.kind]
-        tk.Label(f, text=info, bg=C["panel2"], fg="#b9bdc6", font=(FONT, BASE - 1), justify="left",
+        tk.Label(f, text=info, bg=C["panel2"], fg=C["muted"], font=(FONT, BASE - 1), justify="left",
                  wraplength=520, padx=12, pady=10, anchor="w").grid(row=4, column=0, sticky="ew", pady=(12, 0))
         btns = tk.Frame(f, bg=C["panel"])
         btns.grid(row=5, column=0, sticky="ew", pady=(14, 0))

@@ -56,8 +56,9 @@ DEFAULT = {
     },
     "last_dir": "",
     "library": [],                   # biblioteca de sonidos: [{"path", "title"}]
-    "phone": {"count": 24,           # teclas virtuales de la app del celular
-              "only": False},        # True = sin teclado: solo se usa el celular
+    "phone": {"only": False},        # True = sin teclado: solo se usa la app del celular
+    "theme": {"name": "Original", "file": "", "phone": True},   # tema de colores
+    "ui": {},                        # preferencias de la ventana
     "row_mode": {                    # fila de números del teclado principal
         "enabled": True,
         "toggle": "ctrl+alt+m",      # combinación que activa/desactiva el modo macros
@@ -99,6 +100,13 @@ def load(path: str | None = None) -> dict:
     cfg["phone"] = ph
     cfg.pop("fkeys", None)
     migrate_fkeys(cfg)
+    migrate_virtual(cfg)
+    cfg["phone"].pop("count", None)
+    th = copy.deepcopy(DEFAULT["theme"])
+    th.update(cfg.get("theme") or {})
+    cfg["theme"] = th
+    if not isinstance(cfg.get("ui"), dict):
+        cfg["ui"] = {}
     upd = copy.deepcopy(DEFAULT["updates"])
     upd.update(cfg.get("updates") or {})
     cfg["updates"] = upd
@@ -121,10 +129,10 @@ def load(path: str | None = None) -> dict:
 
 def migrate_fkeys(cfg: dict) -> int:
     """En 3.3.1 F13–F24 servían como teclas de entrada. Ahora las reemplazan las
-    teclas virtuales del celular: lo asignado a "f13"… pasa a la primera tecla
-    virtual libre de la misma capa (y se agranda la cantidad si hace falta)."""
-    from .keys import PHONE_COUNTS
-    moved, top = 0, 0
+    teclas virtuales: lo asignado a "f13"… pasa a la primera tecla virtual libre
+    de la misma capa."""
+    from .keys import VIRTUAL_COUNT
+    moved = 0
     for layer in [cfg["global"]] + [b["keys"] for b in cfg["banks"]]:
         old = sorted((k for k in layer if k.startswith("f") and k[1:].isdigit() and 13 <= int(k[1:]) <= 24),
                      key=lambda k: int(k[1:]))
@@ -132,18 +140,27 @@ def migrate_fkeys(cfg: dict) -> int:
             act = layer.pop(kid)
             if not act or act.get("type", "none") == "none":
                 continue
-            i = 1
-            while f"m{i}" in layer and i < PHONE_COUNTS[-1]:
-                i += 1
-            if f"m{i}" in layer:
-                continue                                   # no queda espacio: se descarta
-            layer[f"m{i}"] = act
-            top = max(top, i)
-            moved += 1
-    if top:
-        ph = cfg["phone"]
-        if int(ph.get("count", 24)) < top:
-            ph["count"] = next(n for n in PHONE_COUNTS if n >= top)
+            free = next((f"m{i}" for i in range(1, VIRTUAL_COUNT + 1) if f"m{i}" not in layer), None)
+            if free:
+                layer[free] = act
+                moved += 1
+    return moved
+
+
+def migrate_virtual(cfg: dict) -> int:
+    """Las versiones de prueba tenían hasta 48 teclas virtuales; ahora son 30.
+    Lo que estaba más allá de la 30 pasa a la primera tecla virtual libre."""
+    from .keys import VIRTUAL_COUNT
+    moved = 0
+    for layer in [cfg["global"]] + [b["keys"] for b in cfg["banks"]]:
+        extra = sorted((k for k in layer if k.startswith("m") and k[1:].isdigit()
+                        and int(k[1:]) > VIRTUAL_COUNT), key=lambda k: int(k[1:]))
+        for kid in extra:
+            act = layer.pop(kid)
+            free = next((f"m{i}" for i in range(1, VIRTUAL_COUNT + 1) if f"m{i}" not in layer), None)
+            if free and act and act.get("type", "none") != "none":
+                layer[free] = act
+                moved += 1
     return moved
 
 

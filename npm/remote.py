@@ -26,7 +26,8 @@ import time
 
 from . import __version__
 from .soundboard import AUDIO_EXT
-from .keys import (NUMPAD_LAYOUT, PHONE_COUNTS, PHONE_IDS, ROW_LAYOUT, phone_count,
+from .theme import BUTTON_COLORS
+from .keys import (VIRTUAL_COLS, VIRTUAL_ROWS, NUMPAD_LAYOUT, PHONE_COUNTS, PHONE_IDS, ROW_LAYOUT, phone_count,
                    phone_layout)
 
 TCP_PORT = 47800
@@ -297,16 +298,9 @@ class Session:
         if path:
             self.server.engine.preview(path)
 
-    def _m_botones(self, msg):
-        """Cuántos botones propios tiene el celular (12, 24, 36 o 48)."""
-        n = int(msg.get("n", 24))
-        if n not in PHONE_COUNTS:
-            return
-        with self.server.engine.lock:
-            self.server.cfg.setdefault("phone", {})["count"] = n
-        self.server.save()
-        self.server._changed("phone")
-        self.server.broadcast(self.server.state())
+    def _m_botones(self, _msg):
+        """Antes se podía elegir cuántas teclas virtuales había; ahora son siempre 30."""
+        self.send(self.server.state())
 
     def _m_asignar(self, msg):
         err = self.server.assign(msg.get("layer"), str(msg.get("key", "")), msg.get("act"))
@@ -502,8 +496,8 @@ class RemoteServer:
         """Grupos de teclas que el celular puede mostrar: las teclas virtuales (solo
         ellas en el modo «solo celular»), el numpad y la fila de números."""
         n = phone_count(self.cfg)
-        cel = {"id": "celular", "name": "Virtuales", "cols": 4, "rows": -(-n // 4),
-               "keys": [[k, v[0], v[1], v[2], 1, 1] for k, v in phone_layout(n, 4).items()]}
+        cel = {"id": "celular", "name": "Virtuales", "cols": VIRTUAL_COLS, "rows": VIRTUAL_ROWS,
+               "keys": [[k, v[0], v[1], v[2], 1, 1] for k, v in phone_layout(n).items()]}
         if self.cfg.get("phone", {}).get("only"):
             return [cel]
         g = [cel, {"id": "numpad", "name": "Numpad", "cols": 4, "rows": 5,
@@ -578,8 +572,8 @@ class RemoteServer:
                     new["combo"] = combo
                 elif t == "bank_go":
                     new["bank"] = max(1, int(act.get("bank", 1)))
-                if isinstance(act.get("color"), int):
-                    new["color"] = max(0, min(5, act["color"]))
+                if isinstance(act.get("color"), int) and 0 <= act["color"] < len(BUTTON_COLORS):
+                    new["color"] = act["color"]
                 target[kid] = new
         self.save()
         self._changed("keys", layer, kid)

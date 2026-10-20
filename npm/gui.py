@@ -16,14 +16,14 @@ from .engine import Engine
 from .dialogs import NewsDialog, UpdateDialog
 from .devices_tab import DevicesTab
 from .remote import RemoteServer
-from .keys import (PHONE_COUNTS, PHONE_IDS, phone_count, phone_layout, KEY_CHOICES, MODIFIER_KEYSYMS, MODIFIERS, NUMPAD_IDS, NUMPAD_LAYOUT, ROW_IDS,
+from .keys import (PHONE_IDS, VIRTUAL_COLS, VIRTUAL_COUNT, VIRTUAL_ROWS, phone_layout, KEY_CHOICES, MODIFIER_KEYSYMS, MODIFIERS, NUMPAD_IDS, NUMPAD_LAYOUT, ROW_IDS,
                    ROW_LAYOUT, TOGGLE_CHOICES, busy_reason, combo_text, join_combo, key_label,
                    keysym_to_key, parse_combo, parse_toggle)
 from .senders import make_sender
 from .soundboard import AUDIO_EXT, PLAY_MODES, clean_env, make_soundboard, title_of
 from .widgets import CompCurve, Meter
 
-from .theme import BASE, C, FONT, IS_LINUX, IS_MAC, IS_WIN, MOD_LABEL, OS_NAME
+from .theme import BASE, BUTTON_COLORS, C, FONT, IS_LINUX, IS_MAC, IS_WIN, MOD_LABEL, OS_NAME, button_color, mix
 
 ACTION_TYPES = [
     ("none", "— Sin acción —"),
@@ -79,7 +79,7 @@ def make_listbox(parent, height):
     box.columnconfigure(0, weight=1)
     box.rowconfigure(0, weight=1)
     lb = tk.Listbox(box, bg=C["panel2"], fg=C["text"], selectbackground=C["accent_dim"],
-                    selectforeground="#fff", highlightthickness=0, bd=0, activestyle="none",
+                    selectforeground=C["text"], highlightthickness=0, bd=0, activestyle="none",
                     font=(FONT, BASE), height=height, exportselection=False)
     lb.grid(row=0, column=0, sticky="nsew")
     sb = ttk.Scrollbar(box, orient="vertical", command=lb.yview)
@@ -135,6 +135,7 @@ def scroll_frame(parent):
 class App:
     UNIT, GAP = 60, 7
     RUNIT, RGAP = 40, 6         # teclas de la fila de números
+    VUNIT, VGAP = 58, 8         # teclas virtuales
 
     def __init__(self, root: tk.Tk, start_minimized=False):
         self.root = root
@@ -221,9 +222,9 @@ class App:
                     borderwidth=1, focusthickness=0)
         s.map("TButton", background=[("active", C["line"]), ("disabled", C["panel"])],
               foreground=[("disabled", C["muted"])])
-        s.configure("Accent.TButton", background=C["accent"], foreground="#1a1306",
+        s.configure("Accent.TButton", background=C["accent"], foreground=C["on_accent"],
                     font=(FONT, BASE, "bold"))
-        s.map("Accent.TButton", background=[("active", "#ffb855"), ("disabled", C["panel2"])],
+        s.map("Accent.TButton", background=[("active", C["accent_hover"]), ("disabled", C["panel2"])],
               foreground=[("disabled", C["muted"])])
         for w in ("TCheckbutton", "TRadiobutton"):
             s.configure(w, background=C["panel"], foreground=C["text"])
@@ -246,7 +247,7 @@ class App:
         s.configure("Horizontal.TScale", background=C["panel"], troughcolor=C["panel2"])
         s.configure("Horizontal.TProgressbar", background=C["accent"], troughcolor=C["panel2"],
                     bordercolor=C["panel2"], lightcolor=C["accent"], darkcolor=C["accent"])
-        s.configure("Banner.TFrame", background="#3a2c14")
+        s.configure("Banner.TFrame", background=C["accent_bg"])
         s.configure("Card.TFrame", background=C["panel2"])
         s.configure("Card.TLabel", background=C["panel2"])
         s.configure("CardMuted.TLabel", background=C["panel2"], foreground=C["muted"], font=(FONT, BASE - 1))
@@ -324,24 +325,39 @@ class App:
             self.meters[key] = (m, val)
 
         # aviso de versión nueva (oculto hasta que haya una)
-        self.banner = tk.Frame(head, bg="#3a2c14", highlightbackground=C["accent_dim"], highlightthickness=1)
+        self.banner = tk.Frame(head, bg=C["accent_bg"], highlightbackground=C["accent_dim"], highlightthickness=1)
         self.banner.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(10, 0))
         self.banner.columnconfigure(1, weight=1)
-        self.banner_icon = tk.Label(self.banner, text="⬇", bg="#3a2c14", fg=C["accent"], font=(FONT, BASE + 3, "bold"))
+        self.banner_icon = tk.Label(self.banner, text="⬇", bg=C["accent_bg"], fg=C["accent"], font=(FONT, BASE + 3, "bold"))
         self.banner_icon.grid(row=0, column=0, padx=(12, 8), pady=6)
-        self.banner_lbl = tk.Label(self.banner, bg="#3a2c14", fg=C["text"], font=(FONT, BASE, "bold"), anchor="w")
+        self.banner_lbl = tk.Label(self.banner, bg=C["accent_bg"], fg=C["text"], font=(FONT, BASE, "bold"), anchor="w")
         self.banner_lbl.grid(row=0, column=1, sticky="ew")
         self.banner_btn = FlatButton(self.banner, text="Actualizar", command=self._open_update,
-                                     bg=C["accent"], fg="#1a1306", font=(FONT, BASE - 1, "bold"), padx=14, pady=4)
+                                     bg=C["accent"], fg=C["on_accent"], font=(FONT, BASE - 1, "bold"), padx=14, pady=4)
         self.banner_btn.grid(row=0, column=2, padx=6, pady=6)
         self.banner_later = FlatButton(self.banner, text="Más tarde", command=self._hide_banner,
-                                       bg="#3a2c14", fg=C["text"], font=(FONT, BASE - 1), padx=10, pady=4)
+                                       bg=C["accent_bg"], fg=C["text"], font=(FONT, BASE - 1), padx=10, pady=4)
         self.banner_later.grid(row=0, column=3, padx=(0, 10))
         self.banner.grid_remove()
 
         # ---------- izquierda: numpad
         left = ttk.Frame(r, style="Panel.TFrame", padding=16)
         left.grid(row=1, column=0, sticky="ns", padx=(18, 8), pady=(0, 8))
+
+        # dos pestañas: el numpad (y la fila 1–0) o las teclas virtuales del celular
+        self.left_view = "virt" if self._phone_only() else "numpad"
+        lt = tk.Frame(left, bg=C["panel"])
+        lt.pack(fill="x", pady=(0, 10))
+        self.lt_tabs = {}
+        for vid, text in (("numpad", "⌨  Numpad y fila 1–0"), ("virt", "▦  Teclas virtuales")):
+            box = tk.Frame(lt, bg=C["panel"])
+            box.pack(side="left", fill="x", expand=True, padx=(0, 4))
+            b = FlatButton(box, text=text, command=lambda v=vid: self._set_view(v),
+                           font=(FONT, BASE, "bold"), padx=8, pady=6)
+            b.pack(fill="x")
+            bar = tk.Frame(box, height=3, bg=C["line"])
+            bar.pack(fill="x")
+            self.lt_tabs[vid] = (box, b, bar)
 
         ttk.Label(left, text="Capa que estás editando", style="Muted.TLabel").pack(anchor="w")
         lrow = ttk.Frame(left, style="Panel.TFrame")
@@ -353,41 +369,43 @@ class App:
         ttk.Button(lrow, text="✎", width=3, command=self._rename_bank).pack(side="left", padx=(4, 0))
         ttk.Button(lrow, text="✕", width=3, command=self._delete_bank).pack(side="left", padx=(4, 0))
 
+        # ---- vista numpad
+        vn = ttk.Frame(left, style="Panel.TFrame")
+        self.view_numpad = vn
         w = 4 * self.UNIT + 3 * self.GAP
         h = 5 * self.UNIT + 4 * self.GAP
-        self.canvas = tk.Canvas(left, width=w, height=h, bg=C["panel"], highlightthickness=0)
+        self.canvas = tk.Canvas(vn, width=w, height=h, bg=C["panel"], highlightthickness=0)
         self.canvas.pack(pady=(4, 8))
         self.canvas.bind("<Button-1>", self._on_canvas_click)
-
-        # teclas virtuales y fila de números comparten el mismo espacio (se elige con los botones)
-        self.small_group = "cel"
-        self.cel_page = 0
-        sg = ttk.Frame(left, style="Panel.TFrame")
-        sg.pack(fill="x")
-        self.sg_frame = sg
-        self.sg_btns = {}
-        for gid, text in (("cel", "Virtuales"), ("row", "Fila 1–0")):
-            b = FlatButton(sg, text=text, command=lambda g=gid: self._set_group(g),
-                           font=(FONT, BASE - 1, "bold"), padx=8, pady=2)
-            b.pack(side="left", padx=(0, 5))
-            self.sg_btns[gid] = b
-        self.pg_next = FlatButton(sg, text="▶", command=lambda: self._cel_page_step(1), bg=C["panel2"],
-                                  fg=C["text"], font=(FONT, BASE - 1, "bold"), padx=6, pady=2)
-        self.pg_lbl = tk.Label(sg, bg=C["panel"], fg=C["muted"], font=(FONT, BASE - 2))
-        self.pg_prev = FlatButton(sg, text="◀", command=lambda: self._cel_page_step(-1), bg=C["panel2"],
-                                  fg=C["text"], font=(FONT, BASE - 1, "bold"), padx=6, pady=2)
-        self.row_title = ttk.Label(left, style="Muted.TLabel", wraplength=4 * self.UNIT + 3 * self.GAP)
+        self.row_title = ttk.Label(vn, style="Muted.TLabel", wraplength=4 * self.UNIT + 3 * self.GAP)
         self.row_title.pack(anchor="w", pady=(4, 0))
         rw = 6 * self.RUNIT + 5 * self.RGAP
         rh = 2 * self.RUNIT + self.RGAP
-        self.row_canvas = tk.Canvas(left, width=rw, height=rh, bg=C["panel"], highlightthickness=0)
+        self.row_canvas = tk.Canvas(vn, width=rw, height=rh, bg=C["panel"], highlightthickness=0)
         self.row_canvas.pack(pady=(4, 8))
         self.row_canvas.bind("<Button-1>", self._on_row_click)
-
-        self.extra_frame = ttk.Frame(left, style="Panel.TFrame")
+        self.extra_frame = ttk.Frame(vn, style="Panel.TFrame")
         self.extra_frame.pack(fill="x")
-        self.btn_capture = ttk.Button(left, text="Capturar tecla física", command=self._capture_key)
+        self.btn_capture = ttk.Button(vn, text="Capturar tecla física", command=self._capture_key)
         self.btn_capture.pack(fill="x", pady=(6, 0))
+
+        # ---- vista teclas virtuales (5 × 6)
+        vv = ttk.Frame(left, style="Panel.TFrame")
+        self.view_virt = vv
+        top = ttk.Frame(vv, style="Panel.TFrame")
+        top.pack(fill="x")
+        ttk.Label(top, text=f"Teclas virtuales · {VIRTUAL_COUNT}", style="Panel.TLabel",
+                  font=(FONT, BASE, "bold")).pack(side="left")
+        ttk.Label(top, text=f"{VIRTUAL_COLS} columnas × {VIRTUAL_ROWS} filas · G = Global",
+                  style="Muted.TLabel").pack(side="right")
+        vw = VIRTUAL_COLS * self.VUNIT + (VIRTUAL_COLS - 1) * self.VGAP
+        vh = VIRTUAL_ROWS * self.VUNIT + (VIRTUAL_ROWS - 1) * self.VGAP
+        self.virt_canvas = tk.Canvas(vv, width=vw, height=vh, bg=C["panel"], highlightthickness=0)
+        self.virt_canvas.pack(pady=(8, 8))
+        self.virt_canvas.bind("<Button-1>", self._on_virt_click)
+        ttk.Label(vv, style="Muted.TLabel", wraplength=vw, justify="left", text=(
+            "Solo se tocan en la app del celular: nunca interfieren con los teclados del equipo.")
+        ).pack(anchor="w")
 
         # ---------- derecha: pestañas
         nb = ttk.Notebook(r)
@@ -426,7 +444,7 @@ class App:
                    bg=C["panel2"], fg=C["text"], font=(FONT, BASE - 1), padx=12, pady=4).grid(
             row=0, column=2, padx=(6, 6))
         FlatButton(foot, text="♥ Donar", command=lambda: self._open(about.DONATE),
-                   bg=C["accent"], fg="#1a1306", font=(FONT, BASE - 1, "bold"), padx=12, pady=4).grid(
+                   bg=C["accent"], fg=C["on_accent"], font=(FONT, BASE - 1, "bold"), padx=12, pady=4).grid(
             row=0, column=3)
         self._refresh_layer_combo()
 
@@ -450,6 +468,25 @@ class App:
         self.sub = ttk.Frame(t, style="Panel.TFrame")
         self.sub.grid(row=3, column=0, sticky="nsew", pady=(12, 0))
         t.rowconfigure(3, weight=1)
+
+        # color del botón (se ve igual en el PC y en el celular)
+        cc = ttk.Frame(t, style="Card.TFrame", padding=(14, 10))
+        cc.grid(row=4, column=0, sticky="ew", pady=(12, 0))
+        self.color_card = cc
+        head = ttk.Frame(cc, style="Card.TFrame")
+        head.pack(fill="x")
+        ttk.Label(head, text="Color del botón", style="Card.TLabel", font=(FONT, BASE, "bold")).pack(side="left")
+        self.color_name = ttk.Label(head, style="CardMuted.TLabel")
+        self.color_name.pack(side="left", padx=(10, 0))
+        ttk.Label(head, text="Se ve igual en el PC y en el celular", style="CardMuted.TLabel").pack(side="right")
+        sw = ttk.Frame(cc, style="Card.TFrame")
+        sw.pack(anchor="w", pady=(8, 0))
+        self.swatches = []
+        for i in range(-1, len(BUTTON_COLORS)):
+            cv = tk.Canvas(sw, width=30, height=30, bg=C["panel2"], highlightthickness=0, cursor="hand2")
+            cv.pack(side="left", padx=(0, 6))
+            cv.bind("<Button-1>", lambda e, i=i: self._set_color(i))
+            self.swatches.append((i, cv))
 
     def _clear_sub(self):
         for wdg in self.sub.winfo_children():
@@ -692,7 +729,7 @@ class App:
                  wraplength=340, justify="left").grid(
             row=1, column=0, sticky="w", padx=16, pady=(2, 12))
         FlatButton(don, text="♥  Donar", command=lambda: self._open(about.DONATE), bg=C["accent"],
-                   fg="#1a1306", font=(FONT, BASE + 1, "bold"), padx=22, pady=8).grid(
+                   fg=C["on_accent"], font=(FONT, BASE + 1, "bold"), padx=22, pady=8).grid(
             row=0, column=1, rowspan=2, padx=16, pady=12)
 
     def _link_card(self, parent, name, sub, url):
@@ -805,18 +842,11 @@ class App:
         ttk.Checkbutton(ph, text="Usar solo la app del celular (no buscar numpad ni teclados)",
                         variable=self.only_var, command=self._on_phone_opts).pack(side="left")
         r += 1
-        pc = ttk.Frame(t, style="Panel.TFrame")
-        pc.grid(row=r, column=0, sticky="w", pady=(6, 0))
-        ttk.Label(pc, text="Teclas virtuales por banco", style="Panel.TLabel").pack(side="left", padx=(0, 10))
-        self.phone_count_cb = ttk.Combobox(pc, state="readonly", width=5, values=[str(n) for n in PHONE_COUNTS])
-        self.phone_count_cb.set(str(phone_count(self.cfg)))
-        self.phone_count_cb.pack(side="left")
-        self.phone_count_cb.bind("<<ComboboxSelected>>", lambda e: self._on_phone_opts())
-        r += 1
         ttk.Label(t, style="Muted.TLabel", wraplength=520, justify="left", text=(
-            "Las teclas virtuales no son teclas físicas: solo se tocan en la app del celular, así que "
-            "nunca interfieren con los teclados del equipo. Con «solo celular» el programa no necesita "
-            "ningún teclado conectado y en vez del numpad dibuja las teclas virtuales para editarlas aquí.")
+            f"Cada banco tiene {VIRTUAL_COUNT} teclas virtuales ({VIRTUAL_COLS} × {VIRTUAL_ROWS}). No son teclas "
+            "físicas: solo se tocan en la app del celular, así que nunca interfieren con los teclados del "
+            "equipo. Con «solo celular» el programa no necesita ningún teclado conectado y solo muestra "
+            "la pestaña «Teclas virtuales».")
         ).grid(row=r, column=0, sticky="w", pady=(4, 0))
 
         r += 1
@@ -852,19 +882,19 @@ class App:
 
         # falta el micrófono virtual (Windows: VB-Cable, macOS: BlackHole)
         r += 1
-        self.vmic_card = tk.Frame(t, bg="#3a2c14", highlightbackground=C["accent_dim"], highlightthickness=1)
+        self.vmic_card = tk.Frame(t, bg=C["accent_bg"], highlightbackground=C["accent_dim"], highlightthickness=1)
         self.vmic_card.grid(row=r, column=0, columnspan=2, sticky="ew", pady=(0, 8))
         self.vmic_card.columnconfigure(0, weight=1)
         need = "VB-Cable" if IS_WIN else "BlackHole 2ch"
-        tk.Label(self.vmic_card, text=f"No se encontró el micrófono virtual ({need})", bg="#3a2c14",
+        tk.Label(self.vmic_card, text=f"No se encontró el micrófono virtual ({need})", bg=C["accent_bg"],
                  fg=C["text"], font=(FONT, BASE, "bold"), anchor="w").grid(row=0, column=0, sticky="ew", padx=12, pady=(8, 0))
-        self.vmic_lbl = tk.Label(self.vmic_card, bg="#3a2c14", fg="#c9b48f", font=(FONT, BASE - 1), anchor="w",
+        self.vmic_lbl = tk.Label(self.vmic_card, bg=C["accent_bg"], fg=C["muted"], font=(FONT, BASE - 1), anchor="w",
                                  justify="left", wraplength=470, text=(
                                      "Sin él los sonidos solo se escuchan en tus audífonos: nadie te oye en "
                                      "Discord, OBS o el juego. Es gratis y se instala una sola vez."))
         self.vmic_lbl.grid(row=1, column=0, sticky="ew", padx=12, pady=(0, 8))
         self.vmic_btn = FlatButton(self.vmic_card, text="Instalar VB-Cable" if IS_WIN else "Descargar BlackHole ↗",
-                                   command=self._install_vmic, bg=C["accent"], fg="#1a1306",
+                                   command=self._install_vmic, bg=C["accent"], fg=C["on_accent"],
                                    font=(FONT, BASE - 1, "bold"), padx=14, pady=5)
         self.vmic_btn.grid(row=0, column=1, rowspan=2, padx=12)
         self.vmic_card.grid_remove()
@@ -1520,37 +1550,75 @@ class App:
         x0, y0 = c * (u + g), r * (u + g)
         return x0, y0, x0 + w * u + (w - 1) * g, y0 + h * u + (h - 1) * g
 
+    def _row_rect(self, kid):
+        _, c, r = ROW_LAYOUT[kid]
+        u, g = self.RUNIT, self.RGAP
+        x0, y0 = c * (u + g), r * (u + g)
+        return x0, y0, x0 + u, y0 + u
+
+    def _virt_rect(self, kid):
+        _, c, r = phone_layout()[kid]
+        u, g = self.VUNIT, self.VGAP
+        x0, y0 = c * (u + g), r * (u + g)
+        return x0, y0, x0 + u, y0 + u
+
+    def _draw_key(self, cv, rect, kid, label, act, gact, size="big"):
+        """Dibuja una tecla: vacía, con acción, de la capa Global (marca «G») o con su color."""
+        x0, y0, x1, y1 = rect
+        shown = gact or act
+        is_global = bool(gact) or (self.layer == "global" and bool(act))
+        col = button_color(shown)
+        fill, line, lw, sub = C["key"], C["line"], 1, C["muted"]
+        if shown:
+            if col:
+                fill, line, lw, sub = mix(col, C["panel"], .78), col, 2, C["text"]
+            elif is_global:
+                fill, line, sub = C["key_global"], C["key_global_line"], C["key_global_text"]
+            else:
+                fill, line, sub = C["key_set"], C["key_set_line"], C["key_set_text"]
+        if kid in self.flash:
+            fill = C["accent"]
+        if kid == self.selected:
+            line, lw = (C["text"] if col else C["accent"]), 3
+        r = 7 if size == "small" else 10
+        self._round_rect(x0 + 1, y0 + 1, x1 - 1, y1 - 1, r, canvas=cv, fill=fill, outline=line, width=lw)
+        if size == "small":
+            cv.create_text(x0 + 7, y0 + 4, text=label, anchor="nw", fill=C["text"],
+                           font=(FONT, BASE + 1 if len(label) < 3 else BASE - 1, "bold"))
+        else:
+            big = BASE + 5 if len(label) <= 2 else BASE - 1
+            cv.create_text(x0 + 8, y0 + 7, text=label, anchor="nw", fill=C["text"], font=(FONT, big, "bold"))
+        narrow = (x1 - x0) < 100
+        if is_global:
+            cv.create_rectangle(x1 - 16, y0 + 5, x1 - 5, y0 + 16, fill=line, outline="")
+            cv.create_text(x1 - 10.5, y0 + 10.5, text="G", fill=C["bg"], font=(FONT, BASE - 4, "bold"))
+        if not shown:
+            return
+        if size == "small":
+            icon = {"file": "🔊", "keys": "⌨", "sound_stop": "■"}.get(shown.get("type"), "→")
+            cv.create_text(x1 - 5, y1 - 4, text=icon, anchor="se", fill=sub, font=(FONT, BASE - 2))
+            return
+        cv.create_text((x0 + x1) / 2, y1 - 6, text=short_action(shown, narrow), anchor="s", fill=sub,
+                       font=(FONT, BASE - 2 if (x1 - x0) > 59 else BASE - 3), width=(x1 - x0) - 4,
+                       justify="center")
+        if narrow and not is_global and shown.get("type") == "file":
+            icon = "🔊" + MODE_ICON.get(shown.get("mode", "overlap"), "").strip()
+            cv.create_text(x1 - 5, y0 + 6, text=icon, anchor="ne", fill=sub, font=(FONT, BASE - 3))
+
     def _redraw(self):
+        layer = self._layer_dict()
+        glob = (lambda k: self.cfg["global"].get(k)) if self.layer != "global" else (lambda k: None)
+        self._paint_view_tabs()
+        if self.left_view == "virt":
+            cv = self.virt_canvas
+            cv.delete("all")
+            for kid, (label, _c, _r) in phone_layout().items():
+                self._draw_key(cv, self._virt_rect(kid), kid, label, layer.get(kid), glob(kid))
+            return
         cv = self.canvas
         cv.delete("all")
-        layer = self._layer_dict()
-        for kid, (label, _c, _r, kw, _kh) in NUMPAD_LAYOUT.items():
-            x0, y0, x1, y1 = self._key_rect(kid)
-            narrow = kw == 1
-            act = layer.get(kid)
-            gact = self.cfg["global"].get(kid) if self.layer != "global" else None
-            fill, line, txt, sub_col = C["key"], C["line"], "", C["muted"]
-            if act:
-                fill, line, txt, sub_col = C["key_set"], C["key_set_line"], short_action(act, narrow), "#bfe0ff"
-            if gact:
-                fill, line = C["key_global"], C["key_global_line"]
-                txt, sub_col = ("🌐 " if not narrow else "") + short_action(gact, narrow), "#d9c9ff"
-            if kid in self.flash:
-                fill = C["accent"]
-            width = 1
-            if kid == self.selected:
-                line, width = C["accent"], 3
-            self._round_rect(x0 + 1, y0 + 1, x1 - 1, y1 - 1, 10, fill=fill, outline=line, width=width)
-            big = BASE + 5 if len(label) <= 2 else BASE
-            cv.create_text(x0 + 10, y0 + 8, text=label, anchor="nw", fill=C["text"],
-                           font=(FONT, big, "bold"))
-            if txt:
-                cv.create_text((x0 + x1) / 2, y1 - 6, text=txt, anchor="s", fill=sub_col,
-                               font=(FONT, BASE - 2), width=(x1 - x0) - 6, justify="center")
-            shown = gact or act
-            if narrow and shown and shown.get("type") == "file":
-                icon = "🔊" + MODE_ICON.get(shown.get("mode", "overlap"), "").strip()
-                cv.create_text(x1 - 5, y0 + 6, text=icon, anchor="ne", fill=sub_col, font=(FONT, BASE - 3))
+        for kid, (label, *_rest) in NUMPAD_LAYOUT.items():
+            self._draw_key(cv, self._key_rect(kid), kid, label, layer.get(kid), glob(kid))
         self._draw_row()
         self._draw_extras()
 
@@ -1562,101 +1630,66 @@ class App:
     def _phone_only(self):
         return bool(self.cfg.get("phone", {}).get("only"))
 
-    def _cel_rows(self):
-        """Filas visibles de botones del celular (más si no se dibuja el numpad)."""
-        return 8 if self._phone_only() else 2
+    def _set_view(self, view):
+        if self._phone_only():
+            view = "virt"
+        self.left_view = view
+        self._apply_view()
+        if view == "virt" and self.selected not in PHONE_IDS:
+            self._select("m1")
+        elif view == "numpad" and self.selected in PHONE_IDS:
+            self._select("47")
+        else:
+            self._redraw()
 
-    def _cel_pages(self):
-        per = 6 * self._cel_rows()
-        return max(1, -(-phone_count(self.cfg) // per))
+    def _apply_view(self):
+        """Muestra el numpad o las teclas virtuales (en «solo celular», solo las virtuales)."""
+        only = self._phone_only()
+        box = self.lt_tabs["numpad"][0]
+        if only:
+            box.pack_forget()
+        elif not box.winfo_ismapped():
+            box.pack(side="left", fill="x", expand=True, padx=(0, 4), before=self.lt_tabs["virt"][0])
+        if self.left_view == "virt":
+            self.view_numpad.pack_forget()
+            self.view_virt.pack(fill="x")
+        else:
+            self.view_virt.pack_forget()
+            self.view_numpad.pack(fill="x")
+        self._paint_view_tabs()
 
-    def _cel_page_step(self, d):
-        self.cel_page = (self.cel_page + d) % self._cel_pages()
-        self._redraw()
-
-    def _small_layout(self):
-        if self.small_group == "cel":
-            per = 6 * self._cel_rows()
-            self.cel_page = min(self.cel_page, self._cel_pages() - 1)
-            first = self.cel_page * per
-            out = {}
-            for kid, (label, c, r) in phone_layout(phone_count(self.cfg), 6).items():
-                i = int(kid[1:]) - 1
-                if first <= i < first + per:
-                    out[kid] = (label, c, r - first // 6)
-            return out
-        return ROW_LAYOUT
-
-    def _set_group(self, gid):
-        self.small_group = gid
-        self._redraw()
-
-    def _row_rect(self, kid):
-        _, c, r = self._small_layout()[kid]
-        u, g = self.RUNIT, self.RGAP
-        x0, y0 = c * (u + g), r * (u + g)
-        return x0, y0, x0 + u, y0 + u
+    def _paint_view_tabs(self):
+        for vid, (_box, b, bar) in self.lt_tabs.items():
+            on = vid == self.left_view
+            b.configure(bg=C["panel2"] if on else C["panel"], fg=C["text"] if on else C["muted"])
+            bar.configure(bg=C["accent"] if on else C["line"])
 
     def _draw_row(self):
         cv = self.row_canvas
         cv.delete("all")
-        for gid, b in self.sg_btns.items():
-            on = gid == self.small_group
-            b.configure(bg=C["accent"] if on else C["panel2"], fg="#1a1306" if on else C["muted"])
-        lay = self._small_layout()
-        rows = max((v[2] for v in lay.values()), default=0) + 1
-        cv.configure(height=rows * (self.RUNIT + self.RGAP) - self.RGAP)
-        multi = self.small_group == "cel" and self._cel_pages() > 1
-        for w in (self.pg_next, self.pg_lbl, self.pg_prev):
-            if multi:
-                w.pack(side="right", padx=(2, 0))
-            else:
-                w.pack_forget()
-        if multi:
-            self.pg_lbl.configure(text=f"{self.cel_page + 1}/{self._cel_pages()}")
-        if self.small_group == "cel":
-            enabled = True
-            self.row_title.configure(text=(
-                f"Teclas virtuales ({phone_count(self.cfg)}) · se tocan en la app del celular "
-                "y nunca interfieren con tus teclados"))
-        else:
-            enabled = self.cfg["row_mode"].get("enabled", True)
-            try:
-                toggle = self._combo_text(self.cfg["row_mode"]["toggle"])
-            except Exception:
-                toggle = "?"
-            self.row_title.configure(
-                text=(f"Fila de números · modo macros ({toggle})" if enabled
-                      else "Fila de números · desactivada (ver «Numpad y opciones»)"))
+        enabled = self.cfg["row_mode"].get("enabled", True)
+        try:
+            toggle = self._combo_text(self.cfg["row_mode"]["toggle"])
+        except Exception:
+            toggle = "?"
+        self.row_title.configure(
+            text=(f"Fila de números · modo macros ({toggle})" if enabled
+                  else "Fila de números · desactivada (ver «Numpad y opciones»)"))
         layer = self._layer_dict()
-        for kid, (label, *_r) in lay.items():
-            x0, y0, x1, y1 = self._row_rect(kid)
-            act = layer.get(kid)
+        for kid, (label, *_r) in ROW_LAYOUT.items():
             gact = self.cfg["global"].get(kid) if self.layer != "global" else None
-            fill, line = C["key"], C["line"]
-            if act:
-                fill, line = C["key_set"], C["key_set_line"]
-            if gact:
-                fill, line = C["key_global"], C["key_global_line"]
-            if kid in self.flash:
-                fill = C["accent"]
-            width = 3 if kid == self.selected else 1
-            if kid == self.selected:
-                line = C["accent"]
-            self._round_rect(x0 + 1, y0 + 1, x1 - 1, y1 - 1, 7, canvas=cv, fill=fill,
-                             outline=line, width=width)
-            fg = C["text"] if enabled else C["muted"]
-            cv.create_text(x0 + 7, y0 + 4, text=label, anchor="nw", fill=fg,
-                           font=(FONT, BASE + 1 if len(label) < 3 else BASE - 1, "bold"))
-            a = gact or act
-            if a:
-                icon = {"file": "🔊", "keys": "⌨", "sound_stop": "■"}.get(a.get("type"), "→")
-                cv.create_text(x1 - 5, y1 - 4, text=icon, anchor="se", fill="#bfe0ff",
-                               font=(FONT, BASE - 2))
+            self._draw_key(cv, self._row_rect(kid), kid, label, layer.get(kid), gact, size="small")
 
     def _on_row_click(self, ev):
-        for kid in self._small_layout():
+        for kid in ROW_LAYOUT:
             x0, y0, x1, y1 = self._row_rect(kid)
+            if x0 <= ev.x <= x1 and y0 <= ev.y <= y1:
+                self._select(kid)
+                return
+
+    def _on_virt_click(self, ev):
+        for kid in phone_layout():
+            x0, y0, x1, y1 = self._virt_rect(kid)
             if x0 <= ev.x <= x1 and y0 <= ev.y <= y1:
                 self._select(kid)
                 return
@@ -1666,8 +1699,6 @@ class App:
             wdg.destroy()
         extras = [k for k in self.cfg.get("extra_keys", [])
                   if k not in NUMPAD_IDS and k not in ROW_IDS and k not in PHONE_IDS]
-        if self._phone_only():
-            extras = []
         if not extras:
             return
         ttk.Label(self.extra_frame, text="Teclas extra de tu numpad",
@@ -1678,7 +1709,9 @@ class App:
         for kid in extras:
             act = layer.get(kid) or (self.cfg["global"].get(kid) if self.layer != "global" else None)
             txt = key_label(kid) + (f"\n{short_action(act)}" if act else "")
-            bg = C["accent"] if kid in self.flash else (C["key_set"] if act else C["key"])
+            col = button_color(act)
+            bg = C["accent"] if kid in self.flash else (mix(col, C["panel"], .78) if col else
+                                                        (C["key_set"] if act else C["key"]))
             b = FlatButton(row, text=txt, bg=bg, fg=C["text"], font=(FONT, BASE - 2), padx=8, pady=4,
                            highlightthickness=2, highlightbackground=C["accent"] if kid == self.selected else bg,
                            command=lambda k=kid: self._select(k))
@@ -1693,11 +1726,10 @@ class App:
 
     def _select(self, kid):
         self.selected = kid
-        if kid in ROW_IDS:
-            self.small_group = "row"
-        elif kid in PHONE_IDS:
-            self.small_group = "cel"
-            self.cel_page = (int(kid[1:]) - 1) // (6 * self._cel_rows())
+        want = "virt" if kid in PHONE_IDS else "numpad"
+        if want != self.left_view and not (self._phone_only() and want == "numpad"):
+            self.left_view = want
+            self._apply_view()
         self._redraw()
         self._load_editor()
         self._update_assign_label()
@@ -1822,6 +1854,43 @@ class App:
             self._build_info_sub("Vuelve al banco anterior.")
         else:
             self._build_info_sub("Elige qué hará esta tecla.")
+        self._paint_color()
+
+    def _paint_color(self):
+        act = self._current_action()
+        if not act or act.get("type", "none") == "none":
+            self.color_card.grid_remove()
+            return
+        self.color_card.grid()
+        cur = act.get("color", -1) if isinstance(act.get("color"), int) else -1
+        for i, cv in self.swatches:
+            cv.delete("all")
+            on = i == cur
+            if on:
+                cv.create_oval(1, 1, 29, 29, outline=C["text"], width=2)
+            if i < 0:
+                cv.create_oval(5, 5, 25, 25, outline=C["muted"], dash=(3, 2), width=2)
+                cv.create_text(15, 15, text="✕", fill=C["muted"], font=(FONT, BASE - 2))
+            else:
+                cv.create_oval(5, 5, 25, 25, fill=BUTTON_COLORS[i][1], outline="")
+                if on:
+                    cv.create_text(15, 15, text="✓", fill="#14161b", font=(FONT, BASE - 1, "bold"))
+        self.color_name.configure(text=("Sin color" if cur < 0 else BUTTON_COLORS[cur][0]))
+
+    def _set_color(self, i):
+        act = self._current_action()
+        if not act:
+            return
+        new = dict(act)
+        if i < 0:
+            new.pop("color", None)
+        else:
+            new["color"] = i
+        with self.engine.lock:
+            self._layer_dict()[self.selected] = new
+        self._save()
+        self._redraw()
+        self._paint_color()
 
     # ================================================================ editor: cambios
     def _current_action(self):
@@ -1833,6 +1902,9 @@ class App:
             if not act or act.get("type") == "none":
                 d.pop(self.selected, None)
             else:
+                old = d.get(self.selected) or {}
+                if "color" in old and "color" not in act:      # cambiar la acción no borra el color
+                    act = dict(act, color=old["color"])
                 d[self.selected] = act
         self._save()
         if redraw:
@@ -2023,7 +2095,7 @@ class App:
             return
         tog = self._combo_text(rm.get("toggle", ""))
         if self.engine.row_mode:
-            self.chip_row.configure(text=f"⌨ Modo macros ACTIVO ({tog})", bg=C["accent"], fg="#1a1306")
+            self.chip_row.configure(text=f"⌨ Modo macros ACTIVO ({tog})", bg=C["accent"], fg=C["on_accent"])
         else:
             self.chip_row.configure(text=f"⌨ Modo macros apagado ({tog})", bg=C["panel2"], fg=C["muted"])
 
@@ -2056,28 +2128,20 @@ class App:
             ph = self.cfg.setdefault("phone", {})
             changed = bool(ph.get("only")) != only
             ph["only"] = only
-            ph["count"] = int(self.phone_count_cb.get())
         self._save()
         if changed:
-            self.small_group = "cel"
             self._apply_phone_only()
             self._start_backend()
-        self.cel_page = 0
         self._redraw()
         self._load_editor()
 
     def _apply_phone_only(self):
-        """En «solo celular» no se dibuja el numpad (los botones del celular ocupan su lugar)."""
+        """En «solo celular» solo se muestran las teclas virtuales."""
         if self._phone_only():
-            self.canvas.pack_forget()
-            self.btn_capture.pack_forget()
-        else:
-            if not self.canvas.winfo_ismapped():
-                self.canvas.pack(pady=(4, 8), before=self.sg_frame)
-            if not self.btn_capture.winfo_ismapped():
-                self.btn_capture.pack(fill="x", pady=(6, 0))
-        if self._phone_only() and self.selected not in PHONE_IDS:
-            self.selected = "m1"
+            self.left_view = "virt"
+            if self.selected not in PHONE_IDS:
+                self.selected = "m1"
+        self._apply_view()
 
     # ================================================================ activo / pausa
     def _paint_tog_warn(self, combo):
@@ -2102,7 +2166,7 @@ class App:
 
     def _paint_active(self):
         if self.engine.active:
-            self.btn_active.configure(text="●  ACTIVO", bg=C["ok"], fg="#06210f")
+            self.btn_active.configure(text="●  ACTIVO", bg=C["ok"], fg=C["on_ok"])
         else:
             self.btn_active.configure(text="❚❚  PAUSADO", bg=C["panel2"], fg=C["muted"])
         if self.tray:

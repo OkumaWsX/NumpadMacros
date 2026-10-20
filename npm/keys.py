@@ -46,19 +46,20 @@ ROW_LAYOUT = {
 ROW_IDS = frozenset(ROW_LAYOUT)
 
 # Teclas virtuales: no corresponden a ninguna tecla física, solo se tocan en la app del
-# celular, así nunca interfieren con los teclados del equipo
-PHONE_COUNTS = (12, 24, 36, 48)
-PHONE_IDS = frozenset(f"m{i}" for i in range(1, PHONE_COUNTS[-1] + 1))
+# celular, así nunca interfieren con los teclados del equipo. Siempre 30 (5 × 6).
+VIRTUAL_COLS, VIRTUAL_ROWS = 5, 6
+VIRTUAL_COUNT = VIRTUAL_COLS * VIRTUAL_ROWS
+PHONE_COUNTS = (VIRTUAL_COUNT,)
+PHONE_IDS = frozenset(f"m{i}" for i in range(1, VIRTUAL_COUNT + 1))
 
 
-def phone_layout(count: int, cols: int = 6) -> dict:
-    """id -> (etiqueta, columna, fila) de las primeras `count` teclas virtuales."""
+def phone_layout(count: int = VIRTUAL_COUNT, cols: int = VIRTUAL_COLS) -> dict:
+    """id -> (etiqueta, columna, fila) de las teclas virtuales."""
     return {f"m{i}": (str(i), (i - 1) % cols, (i - 1) // cols) for i in range(1, count + 1)}
 
 
-def phone_count(cfg: dict) -> int:
-    n = int((cfg.get("phone") or {}).get("count", 24))
-    return n if n in PHONE_COUNTS else 24
+def phone_count(cfg: dict | None = None) -> int:
+    return VIRTUAL_COUNT
 
 # Modificadores (scancode) -> nombre
 MOD_KIDS = {"1d": "ctrl", "e0:1d": "ctrl", "38": "alt", "e0:38": "alt",

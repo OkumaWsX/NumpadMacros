@@ -225,27 +225,30 @@ class RemoteTest(unittest.TestCase):
         self.assertFalse(ph.recv("subida")["ok"])
         ph.close()
 
-    def test_phone_buttons_and_only_mode(self):
+    def test_virtual_keys_and_only_mode(self):
         ph, _ = self.pair()
         st = ph.recv("estado")
         cel = st["groups"][0]
-        self.assertEqual((cel["id"], cel["cols"], cel["rows"], len(cel["keys"])), ("celular", 4, 6, 24))
-        self.assertEqual(st["phone"]["count"], 24)
-        ph.send(t="botones", n=48)
+        self.assertEqual((cel["id"], cel["cols"], cel["rows"], len(cel["keys"])), ("celular", 5, 6, 30))
+        self.assertEqual(cel["keys"][6], ["m7", "7", 1, 1, 1, 1])        # fila 2, columna 2
+        ph.send(t="botones", n=48)                        # ya no se puede cambiar: reenvía el estado
         st = ph.recv("estado")
-        self.assertEqual((st["phone"]["count"], len(st["groups"][0]["keys"])), (48, 48))
-        ph.send(t="botones", n=7)                         # no válido: no cambia
-        ph.send(t="asignar", layer=0, key="m40", act={"type": "sound_stop"})
+        self.assertEqual(len(st["groups"][0]["keys"]), 30)
+        ph.send(t="asignar", layer=0, key="m30", act={"type": "sound_stop", "color": 11})
         st = ph.recv("estado")
-        self.assertEqual(st["banks"][0]["keys"]["m40"], {"type": "sound_stop"})
-        ph.send(t="tecla", key="m40", down=True)
-        ph.send(t="tecla", key="m40", down=False)
+        self.assertEqual(st["banks"][0]["keys"]["m30"], {"type": "sound_stop", "color": 11})
+        ph.send(t="asignar", layer=0, key="m31", act={"type": "sound_stop"})
+        self.assertTrue(ph.recv("aviso")["bad"])          # no existe la tecla 31
+        ph.send(t="asignar", layer=0, key="m29", act={"type": "sound_stop", "color": 12})
+        st = ph.recv("estado")
+        self.assertNotIn("color", st["banks"][0]["keys"]["m29"])   # color fuera de rango: se ignora
+        ph.send(t="tecla", key="m30", down=True)
+        ph.send(t="tecla", key="m30", down=False)
         time.sleep(0.2)
         self.assertIn("STOP", self.board.played)
-        self.cfg["phone"] = {"count": 12, "only": True}
+        self.cfg["phone"] = {"only": True}
         st = self.srv.state()
         self.assertEqual([g["id"] for g in st["groups"]], ["celular"])
-        self.assertEqual(st["groups"][0]["rows"], 3)
         self.assertTrue(st["phone"]["only"])
         ph.close()
 
@@ -317,8 +320,20 @@ class VirtualKeysTest(unittest.TestCase):
         self.assertEqual(keys0["m3"]["combo"], "ctrl+f16")         # F14 -> la siguiente
         self.assertFalse(any(k.startswith("f") for k in keys0))
         self.assertEqual(cfg["global"]["m1"], {"type": "bank_next"})
-        self.assertIn("m31", cfg["banks"][1]["keys"])
-        self.assertEqual(cfg["phone"]["count"], 36)                # se agranda para que se vea
+        self.assertNotIn("f20", cfg["banks"][1]["keys"])           # sin espacio libre: se descarta
+        self.assertEqual(len(cfg["banks"][1]["keys"]), 30)
+
+    def test_migrate_extra_virtual(self):
+        path = os.path.join(tempfile.mkdtemp(), "config.json")
+        old = copy.deepcopy(config.DEFAULT)
+        old["phone"] = {"count": 48, "only": False}
+        old["banks"][0]["keys"] = {"m1": {"type": "sound_stop"}, "m35": {"type": "keys", "combo": "ctrl+f16"}}
+        with open(path, "w") as f:
+            json.dump(old, f)
+        cfg = config.load(path)
+        self.assertEqual(cfg["banks"][0]["keys"]["m2"]["combo"], "ctrl+f16")
+        self.assertNotIn("m35", cfg["banks"][0]["keys"])
+        self.assertNotIn("count", cfg["phone"])
 
     def test_remote_key_works_when_paused(self):
         e, cfg = self.make()

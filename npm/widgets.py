@@ -6,7 +6,7 @@ import time
 import tkinter as tk
 
 from . import loudness as ld
-from .theme import BASE, C, FONT
+from .theme import BASE, C, FONT, mix
 
 FLOOR = -60.0          # dB que se ven como medidor vacío
 
@@ -39,10 +39,10 @@ class Meter(tk.Canvas):
     @staticmethod
     def _colors(db):
         if db >= -6:
-            return "#e5534b", "#3a1c1c"
+            return C["bad"], mix(C["bad"], C["panel2"], .8)
         if db >= -18:
-            return "#e2b340", "#33301c"
-        return "#4cc38a", "#1a3027"
+            return C["warn"], mix(C["warn"], C["panel2"], .8)
+        return C["ok"], mix(C["ok"], C["panel2"], .8)
 
     def set(self, peak_db):
         """Llamar ~20 veces por segundo con el pico actual (dB, −inf = silencio)."""
