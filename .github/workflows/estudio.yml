@@ -49,6 +49,28 @@ jobs:
         working-directory: tools/estudio
         run: pyinstaller --noconfirm Estudio.spec
 
+      - name: Probar el programa compilado (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y -qq xvfb >/dev/null
+          export NPT_ESTUDIO_DIR="$RUNNER_TEMP/estudio"
+          xvfb-run -a timeout 90 tools/estudio/dist/EstudioTemas-NumpadMacros --probar || { cat "$NPT_ESTUDIO_DIR/error.log" 2>/dev/null; exit 1; }
+
+      - name: Probar el programa compilado (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          export NPT_ESTUDIO_DIR="$RUNNER_TEMP/estudio"
+          timeout 90 "tools/estudio/dist/Estudio de Temas.app/Contents/MacOS/EstudioTemas-NumpadMacros" --probar || { cat "$NPT_ESTUDIO_DIR/error.log" 2>/dev/null; exit 1; }
+
+      - name: Probar el programa compilado (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:NPT_ESTUDIO_DIR = "$env:RUNNER_TEMP\estudio"
+          $p = Start-Process -FilePath "tools\estudio\dist\EstudioTemas-NumpadMacros.exe" -ArgumentList "--probar" -PassThru
+          if (-not $p.WaitForExit(90000)) { $p.Kill(); Write-Error "El programa no se cerró solo"; exit 1 }
+          if ($p.ExitCode -ne 0) { Get-Content "$env:NPT_ESTUDIO_DIR\error.log" -ErrorAction SilentlyContinue; exit 1 }
+
       - name: Instalador y portátil (Windows)
         if: runner.os == 'Windows'
         shell: pwsh

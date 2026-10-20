@@ -17,20 +17,71 @@ from tkinter import colorchooser, filedialog, messagebox, ttk
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-import logica as L  # noqa: E402
-import claves as K  # noqa: E402
-import vista as V  # noqa: E402
-from logica import npt  # noqa: E402
 
-from PIL import Image, ImageTk  # noqa: E402
+
+def _log_path() -> str:
+    """Archivo donde se anota un error que cierra el programa (sin depender de nada más)."""
+    d = os.environ.get("NPT_ESTUDIO_DIR")
+    if not d:
+        if sys.platform == "win32":
+            base = os.environ.get("APPDATA") or os.path.expanduser("~")
+        elif sys.platform == "darwin":
+            base = os.path.expanduser("~/Library/Application Support")
+        else:
+            base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+        d = os.path.join(base, "NumpadMacros", "estudio")
+    return os.path.join(d, "error.log")
+
+
+def _fatal(text: str) -> None:
+    """Anota el error, lo muestra en una ventana (si se puede) y cierra con código 1."""
+    path = _log_path()
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+    except OSError:
+        path = ""
+    try:
+        sys.stderr.write(text)
+    except Exception:
+        pass
+    if "--probar" in sys.argv:            # prueba automática: sin ventanas que esperen un clic
+        sys.exit(1)
+    try:
+        from tkinter import messagebox as mb
+        r = tk.Tk()
+        r.withdraw()
+        mb.showerror("Estudio de Temas", "El Estudio de Temas no pudo abrirse.\n\n"
+                     + text.strip().splitlines()[-1][:300]
+                     + (f"\n\nEl detalle quedó en:\n{path}\nEnvíalo en el Discord de soporte." if path else ""),
+                     parent=r)
+        r.destroy()
+    except Exception:
+        pass
+    sys.exit(1)
+
+
+_IMPORT_ERROR = ""
+try:
+    import logica as L  # noqa: E402
+    import claves as K  # noqa: E402
+    import vista as V  # noqa: E402
+    from logica import npt  # noqa: E402
+    from PIL import Image, ImageTk  # noqa: E402
+except Exception:
+    import traceback
+    _IMPORT_ERROR = traceback.format_exc()
 
 try:
     from tkinterdnd2 import DND_FILES, TkinterDnD
 except Exception:          # sin la librería se elige la imagen con un botón
     TkinterDnD = None
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 APP = "Estudio de Temas"
+if _IMPORT_ERROR:
+    _fatal(_IMPORT_ERROR)
 FONT = V.FONT
 BASE = 13 if sys.platform == "darwin" else 10
 MONO = "Menlo" if sys.platform == "darwin" else ("Consolas" if sys.platform == "win32" else "DejaVu Sans Mono")
@@ -1695,9 +1746,42 @@ def _integrate_linux(icon):
     threading.Thread(target=job, daemon=True).start()
 
 
+def _make_root(cls):
+    """Ventana principal. Si arrastrar y soltar (tkdnd) no carga en este sistema, se usa sin él."""
+    global TkinterDnD
+    if TkinterDnD:
+        try:
+            return TkinterDnD.Tk(className=cls)
+        except Exception:
+            TkinterDnD = None
+    return tk.Tk(className=cls)
+
+
+def _callback_error(exc, val, tb):
+    """Un error dentro de la ventana: se anota y se avisa, pero el programa sigue abierto."""
+    import traceback
+    text = "".join(traceback.format_exception(exc, val, tb))
+    try:
+        sys.stderr.write(text)
+        os.makedirs(os.path.dirname(_log_path()), exist_ok=True)
+        with open(_log_path(), "a", encoding="utf-8") as f:
+            f.write(text + "\n")
+    except Exception:
+        pass
+    if "--probar" in sys.argv:
+        return
+    try:
+        messagebox.showerror(APP, f"Algo salió mal:\n{val}\n\nEl detalle quedó en:\n{_log_path()}")
+    except Exception:
+        pass
+
+
 def main():
+    probe = "--probar" in sys.argv          # prueba automática: abre todo y se cierra sola
+    argv = [a for a in sys.argv[1:] if a != "--probar"]
     cls = "EstudioTemasNumpadMacros"
-    root = TkinterDnD.Tk(className=cls) if TkinterDnD else tk.Tk(className=cls)
+    root = _make_root(cls)
+    root.report_callback_exception = _callback_error
     root.title(APP)
     icon = _icon_path()
     try:
@@ -1706,13 +1790,36 @@ def main():
     except tk.TclError:
         pass
     _integrate_linux(icon)
+    if probe:
+        App.startup = lambda self: None
     app = App(root)
     root.protocol("WM_DELETE_WINDOW", app.on_close)
-    if len(sys.argv) > 1 and os.path.isfile(sys.argv[1]):
-        p = sys.argv[1]
+    if probe:
+        errors = []
+        root.report_callback_exception = lambda *e: (_callback_error(*e), errors.append(e))
+        def run(steps=("img", "exp", "key", "edit")):
+            if steps:
+                app.show(steps[0])
+                root.after(400, lambda: run(steps[1:]))
+            else:
+                app.apply_palette()
+                root.update()
+                root.destroy()
+                if errors:
+                    sys.exit(1)
+                print("Estudio de Temas: prueba OK")
+        root.after(800, run)
+    elif argv and os.path.isfile(argv[0]):
+        p = argv[0]
         root.after(300, lambda: app.open_path(p))
     root.mainloop()
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except BaseException:
+        import traceback
+        _fatal(traceback.format_exc())
