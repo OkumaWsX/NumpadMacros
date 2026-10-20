@@ -5,6 +5,7 @@ Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https:
 ## [Sin publicar]
 ### Añadido
 - **Teclas virtuales**: teclas que solo existen en la app del celular (12, 24, 36 o 48 por banco). Lanzan sonidos y atajos sin pasar por ningún teclado, así que nunca interfieren con los teclados físicos del equipo. Se editan en el PC (botón «Virtuales» bajo el dibujo) o desde el celular, y la cantidad se elige en el PC o en Ajustes de la app.
+- **App Android 1.2**: **temas** (los 11 del PC) en Ajustes → Apariencia, más **Alto contraste** y **Pantalla AMOLED / OLED** (negro puro); **12 colores** por botón más «sin color», y las teclas Global llevan una «G»; las teclas virtuales se ordenan en **5 × 6**; con el celular **acostado** los controles pasan a una barra lateral y la pantalla completa muestra solo las teclas con una píldora arriba. La app ya acepta el tema que le mande el PC.
 - **Modo «Solo celular»**: Numpad Macros funciona sin ningún teclado ni numpad conectado. Se activa en «Numpad y opciones»; no muestra avisos de captura y en vez del numpad dibuja las teclas virtuales.
 
 ### Cambiado

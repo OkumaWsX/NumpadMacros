@@ -285,7 +285,7 @@ fun UsbScreen(vm: AppVm) {
                     Box(Modifier.size(30.dp).clip(CircleShape).background(C.panel2), contentAlignment = Alignment.Center) {
                         T("${i + 1}", weight = FontWeight.ExtraBold, color = C.acc)
                     }
-                    T(s, 14.sp, Color(0xFFD6D8DD), lh = 21.sp, modifier = Modifier.weight(1f))
+                    T(s, 14.sp, C.text, lh = 21.sp, modifier = Modifier.weight(1f))
                 }
             }
             NButton("Abrir «Conexión compartida»", {

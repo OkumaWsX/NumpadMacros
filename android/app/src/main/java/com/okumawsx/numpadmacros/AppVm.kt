@@ -89,6 +89,15 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     var keepOn by mutableStateOf(store.keepOn)
     var autoReconnect by mutableStateOf(store.autoReconnect)
     var meter by mutableStateOf(store.meter)
+    var tema by mutableStateOf(store.tema)
+    var especial by mutableStateOf(store.especial)
+    private var temaPropio: Map<String, Long>? = try {
+        store.temaPc.takeIf { it.isNotBlank() }?.let { Themes.fromJson(JSONObject(it)) }
+    } catch (_: Exception) { null }
+
+    init {
+        Themes.apply(tema, especial, temaPropio)
+    }
 
     // ---------------------------------------------------------------- edición
     var group by mutableStateOf("")          // "" = el primer grupo que mande el PC
@@ -401,6 +410,7 @@ class AppVm(app: Application) : AndroidViewModel(app) {
             }
             "subida" -> onUploadMsg(m)
             "aviso" -> toast = m.optString("text") to m.optBoolean("bad")
+            "tema" -> onThemeFromPc(m)
             "pong" -> {
                 val sent = pings.remove(m.optInt("n", -1))
                 if (sent != null) latency = ((System.nanoTime() - sent) / 1_000_000).toInt()
@@ -567,6 +577,38 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     fun setKeepOnPref(v: Boolean) { keepOn = v; store.keepOn = v }
     fun setAutoPref(v: Boolean) { autoReconnect = v; store.autoReconnect = v }
     fun setMeterPref(v: Boolean) { meter = v; store.meter = v }
+
+    /** Elegir un tema de la lista (no se puede mientras Alto contraste o AMOLED están activos). */
+    fun setTemaPref(name: String) {
+        if (especial.isNotBlank()) return
+        tema = name; store.tema = name
+        temaPropio = null; store.temaPc = ""
+        Themes.apply(tema, especial, null)
+    }
+
+    /** Alto contraste o AMOLED: solo una a la vez; "" vuelve al tema elegido. */
+    fun setEspecialPref(v: String) {
+        especial = v; store.especial = v
+        Themes.apply(tema, especial, temaPropio)
+    }
+
+    /**
+     * El PC manda su tema (casilla «Usar también en el celular conectado»):
+     * {"t":"tema","nombre":"Océano","colores":{...}}. Si el nombre es de la lista se usa ese;
+     * si no (un tema .npt propio), se usan los colores. Alto contraste y AMOLED mandan sobre él.
+     */
+    private fun onThemeFromPc(m: JSONObject) {
+        val name = m.optString("nombre")
+        if (name in Themes.list) {
+            tema = name; store.tema = name
+            temaPropio = null; store.temaPc = ""
+        } else {
+            val cols = Themes.fromJson(m.optJSONObject("colores")) ?: return
+            tema = name.ifBlank { "Tema del PC" }; store.tema = tema
+            temaPropio = cols; store.temaPc = m.optJSONObject("colores").toString()
+        }
+        Themes.apply(tema, especial, temaPropio)
+    }
 
     fun finishWelcome() {
         store.welcomed = true

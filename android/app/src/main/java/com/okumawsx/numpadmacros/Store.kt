@@ -65,4 +65,19 @@ class Store(ctx: Context) {
     var meter: Boolean
         get() = p.getBoolean("meter", true)
         set(v) = p.edit().putBoolean("meter", v).apply()
+
+    /** Tema elegido (nombre de la lista de temas). */
+    var tema: String
+        get() = p.getString("tema", "Original") ?: "Original"
+        set(v) = p.edit().putString("tema", v).apply()
+
+    /** Opción especial: "" (ninguna), "contraste" o "amoled". */
+    var especial: String
+        get() = p.getString("especial", "") ?: ""
+        set(v) = p.edit().putString("especial", v).apply()
+
+    /** Colores de un tema propio que mandó el PC (JSON), o "" si el tema es de la lista. */
+    var temaPc: String
+        get() = p.getString("temaPc", "") ?: ""
+        set(v) = p.edit().putString("temaPc", v).apply()
 }

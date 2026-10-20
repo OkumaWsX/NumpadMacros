@@ -74,7 +74,7 @@ fun NButton(
         Kind.Ghost -> Triple(C.panel2, C.text, C.line)
         Kind.Danger -> Triple(Color.Transparent, C.badText, C.badLine)
         Kind.Link -> Triple(Color.Transparent, C.acc, Color.Transparent)
-        Kind.Ok -> Triple(C.ok, Color(0xFF06210F), Color.Transparent)
+        Kind.Ok -> Triple(C.ok, C.onOk, Color.Transparent)
     }
     val shape = RoundedCornerShape(14.dp)
     Row(
@@ -123,7 +123,7 @@ fun Chip(text: String, on: Boolean, onClick: () -> Unit, modifier: Modifier = Mo
 @Composable
 fun Toggle(on: Boolean) {
     Box(
-        Modifier.size(46.dp, 28.dp).clip(RoundedCornerShape(14.dp)).background(if (on) C.acc else Color(0xFF3A3F4A)),
+        Modifier.size(46.dp, 28.dp).clip(RoundedCornerShape(14.dp)).background(if (on) C.acc else C.line),
     ) {
         Box(
             Modifier.align(if (on) Alignment.CenterEnd else Alignment.CenterStart).padding(3.dp)
@@ -148,7 +148,7 @@ fun Logo(size: Dp = 32.dp) {
             for (r in 0 until 3) Row(horizontalArrangement = Arrangement.spacedBy(size / 16)) {
                 for (c in 0 until 3) {
                     val i = r * 3 + c
-                    Box(Modifier.size(cell).clip(RoundedCornerShape(2.dp)).background(if (i == 0 || i == 5 || i == 8) C.acc else Color(0xFF8B909B)))
+                    Box(Modifier.size(cell).clip(RoundedCornerShape(2.dp)).background(if (i == 0 || i == 5 || i == 8) C.acc else C.muted))
                 }
             }
         }
@@ -242,7 +242,7 @@ fun Sheet(title: String, sub: String, onClose: () -> Unit, content: @Composable 
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
                 .padding(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 16.dp),
         ) {
-            Box(Modifier.align(Alignment.CenterHorizontally).size(44.dp, 5.dp).clip(RoundedCornerShape(3.dp)).background(Color(0xFF3A3F4A)))
+            Box(Modifier.align(Alignment.CenterHorizontally).size(44.dp, 5.dp).clip(RoundedCornerShape(3.dp)).background(C.line))
             Spacer(Modifier.height(12.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {

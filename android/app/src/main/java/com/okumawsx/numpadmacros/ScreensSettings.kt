@@ -11,6 +11,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.draw.alpha
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -39,18 +43,14 @@ fun SettingsTab(vm: AppVm) {
             T("Mis PCs", 13.sp, C.acc, FontWeight.Bold)
             NIcon("chev", 20.dp, C.muted)
         }
+        SectionLabel("Apariencia")
+        Appearance(vm)
         SectionLabel("Botonera")
         Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(C.panel).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             T("Diseño de los botones", 13.sp, C.muted)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 for ((id, n) in listOf("numpad" to "Forma de numpad", "cuadricula" to "Cuadrícula", "grandes" to "Grandes")) {
                     Chip(n, vm.layout == id, { vm.setLayoutPref(id) }, Modifier.weight(1f))
-                }
-            }
-            T("Teclas virtuales por banco (no usan ningún teclado)", 13.sp, C.muted)
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (n in vm.state.phoneCounts) {
-                    Chip("$n", vm.state.phoneCount == n, { vm.setPhoneCount(n) }, Modifier.weight(1f))
                 }
             }
         }
@@ -61,6 +61,70 @@ fun SettingsTab(vm: AppVm) {
             SetRow("Mostrar medidor del PC", "Nivel de lo que suena", vm.meter) { vm.setMeterPref(!vm.meter) }
         }
         RowItem("info", "Acerca de y soporte", "Versión $APP_VERSION · OkumaWsX", { vm.screen = Screen.About }) { NIcon("chev", 20.dp, C.muted) }
+    }
+}
+
+@Composable
+private fun Appearance(vm: AppVm) {
+    val special = vm.especial
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(C.panel).padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (special.isNotBlank()) {
+            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.accSoft).border(1.dp, C.accLine, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 9.dp)) {
+                T("${if (special == "amoled") "AMOLED / OLED" else "Alto contraste"} está activo. Desactívalo para elegir un tema.", 12.5.sp, C.acc)
+            }
+        }
+        T("Tema · ${if (special == "amoled") "AMOLED / OLED" else if (special == "contraste") "Alto contraste" else vm.tema}", 13.sp, C.muted)
+        val names = Themes.list.keys.toList()
+        Column(Modifier.alpha(if (special.isNotBlank()) 0.38f else 1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            for (row in names.chunked(4)) {
+                Row(Modifier.fillMaxWidth()) {
+                    for (n in row) {
+                        val c = Themes.list.getValue(n)
+                        val on = n == vm.tema
+                        Column(
+                            Modifier.weight(1f).clip(RoundedCornerShape(12.dp))
+                                .clickable(enabled = special.isBlank(), role = Role.RadioButton) { vm.setTemaPref(n) }
+                                .semantics { contentDescription = "Tema $n" + if (on) ", elegido" else "" }
+                                .padding(vertical = 4.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Box(Modifier.size(52.dp).clip(CircleShape).border(3.dp, if (on) C.acc else Color.Transparent, CircleShape), contentAlignment = Alignment.Center) {
+                                Box(
+                                    Modifier.size(40.dp).clip(CircleShape).background(Color(c.getValue("bg"))).border(1.dp, Color(c.getValue("line")), CircleShape),
+                                    contentAlignment = Alignment.Center,
+                                ) { Box(Modifier.size(16.dp).clip(CircleShape).background(Color(c.getValue("acc")))) }
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            T(n, 11.sp, if (on) C.text else C.muted, if (on) FontWeight.ExtraBold else FontWeight.Medium, lines = 1)
+                        }
+                    }
+                    repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(C.line))
+        for ((id, title, sub) in listOf(
+            Triple("contraste", "Alto contraste", "Negro y amarillo, texto más fuerte"),
+            Triple("amoled", "Pantalla AMOLED / OLED", "Negro puro: ahorra batería"),
+        )) {
+            val on = special == id
+            Row(
+                Modifier.fillMaxWidth().clickable(role = Role.Switch) { vm.setEspecialPref(if (on) "" else id) }.padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    Modifier.size(30.dp).clip(CircleShape).background(Color.Black).border(1.dp, C.line, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) { Box(Modifier.size(12.dp).clip(CircleShape).background(if (id == "contraste") Color(0xFFFFD400) else Color(0xFFF2F2F2))) }
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    T(title, 14.5.sp, weight = FontWeight.Bold)
+                    T(sub, 12.5.sp, C.muted)
+                }
+                Toggle(on)
+            }
+        }
+        T("Si en el PC marcas «Usar también en el celular conectado», el tema del PC se aplica aquí solo. Alto contraste y AMOLED no se mandan al PC.", 12.sp, C.muted, lh = 17.sp)
     }
 }
 

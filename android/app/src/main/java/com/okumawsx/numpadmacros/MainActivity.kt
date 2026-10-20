@@ -43,6 +43,13 @@ class MainActivity : ComponentActivity() {
             MaterialTheme(colorScheme = darkColorScheme(primary = C.acc, background = C.bg, surface = C.panel)) {
                 Root(vm)
             }
+            // Íconos de la barra de estado oscuros en los temas claros (Claro, Papel)
+            val light = C.light
+            LaunchedEffect(light) {
+                val c = WindowCompat.getInsetsController(window, window.decorView)
+                c.isAppearanceLightStatusBars = light
+                c.isAppearanceLightNavigationBars = light
+            }
             // Pantalla siempre encendida y pantalla completa
             val keep = vm.keepOn && vm.st == St.Online && vm.screen == Screen.Main && vm.tab == Tab.Pads
             LaunchedEffect(keep) {
@@ -104,7 +111,9 @@ fun Root(vm: AppVm) {
                         }
                     }
                 }
-                if (!(vm.fullscreen && vm.tab == Tab.Pads)) BottomNav(vm)
+                // acostado, la botonera trae su propio menú en la barra lateral
+                val sideMenu = isLandscape() && !(vm.st == St.Idle && vm.state.banks.isEmpty())
+                if (!(vm.tab == Tab.Pads && (vm.fullscreen || sideMenu))) BottomNav(vm)
             }
         }
         vm.editing?.let { ed -> if (vm.screen == Screen.Main) EditSheet(vm, ed) }

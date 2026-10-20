@@ -25,6 +25,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -41,8 +43,32 @@ import kotlin.math.log10
 private val NUMPAD_ORDER = listOf("47", "48", "49", "4b", "4c", "4d", "4f", "50", "51", "52", "53", "4e", "45", "e0:35", "37", "4a", "e0:1c")
 
 // ==================================================================== pestaña Botonera
+/** true si el celular está acostado (horizontal). */
+@Composable
+fun isLandscape(): Boolean {
+    val c = LocalConfiguration.current
+    return c.screenWidthDp > c.screenHeightDp
+}
+
+/**
+ * Grupo a dibujar. Las teclas virtuales («celular») se ordenan siempre en 5 columnas
+ * (6 × 5 con el celular acostado), venga como venga del PC: 30 teclas = 5 × 6.
+ */
+fun shownGroup(vm: AppVm, land: Boolean): KeyGroup {
+    val g = vm.state.group(vm.group)
+    if (g.id != "celular") return g
+    val cols = if (land) 6 else 5
+    val order = g.keys.sortedWith(compareBy({ it.row }, { it.col }))
+    val keys = order.mapIndexed { i, k -> k.copy(col = i % cols, row = i / cols, w = 1, h = 1) }
+    return g.copy(cols = cols, rows = (keys.size + cols - 1) / cols, keys = keys)
+}
+
 @Composable
 fun PadsTab(vm: AppVm) {
+    if (isLandscape() && !(vm.st == St.Idle && vm.state.banks.isEmpty())) {
+        PadsLandscape(vm)
+        return
+    }
     val online = vm.online
     Column(Modifier.fillMaxSize()) {
         if (!vm.fullscreen) {
@@ -56,27 +82,11 @@ fun PadsTab(vm: AppVm) {
             return@Column
         }
         if (vm.meter && online && !vm.fullscreen) Meter(vm.level)
-        if (vm.editMode) {
-            Row(
-                Modifier.padding(start = 14.dp, end = 14.dp, bottom = 10.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp))
-                    .background(C.accSoft).border(1.dp, C.accLine, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                NIcon("edit", 16.dp, C.acc)
-                Spacer(Modifier.width(8.dp))
-                T("Toca un botón para cambiarlo. Se guarda en tu PC al instante.", 12.5.sp, Color(0xFFF2D3A3))
-            }
-        }
+        if (vm.editMode) EditNotice()
         BankRow(vm)
         if (vm.state.groups.size > 1) GroupRow(vm)
         Box(Modifier.weight(1f).fillMaxWidth().alpha(if (online) 1f else 0.35f)) {
-            val g = vm.state.group(vm.group)
-            when {
-                vm.layout == "numpad" && g.rows <= 6 -> ShapeGrid(vm, g)
-                vm.layout == "numpad" -> ListGrid(vm, g, 4, 78.dp, onlyAssigned = false)
-                vm.layout == "grandes" -> ListGrid(vm, g, 2, 150.dp, onlyAssigned = true)
-                else -> ListGrid(vm, g, 4, 78.dp, onlyAssigned = false)
-            }
+            PadsArea(vm, shownGroup(vm, false), land = false)
         }
         if (vm.st == St.Lost) {
             Row(Modifier.padding(14.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -90,6 +100,168 @@ fun PadsTab(vm: AppVm) {
                 }
             } else BottomControls(vm)
         } else Spacer(Modifier.height(12.dp))
+    }
+}
+
+@Composable
+private fun EditNotice(modifier: Modifier = Modifier.padding(start = 14.dp, end = 14.dp, bottom = 10.dp)) {
+    Row(
+        modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+            .background(C.accSoft).border(1.dp, C.accLine, RoundedCornerShape(12.dp)).padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        NIcon("edit", 16.dp, C.acc)
+        Spacer(Modifier.width(8.dp))
+        T("Toca un botón para cambiarlo. Se guarda en tu PC al instante.", 12.5.sp, C.text)
+    }
+}
+
+/** Las teclas, según el diseño elegido en Ajustes. */
+@Composable
+private fun PadsArea(vm: AppVm, g: KeyGroup, land: Boolean) {
+    val virt = g.id == "celular"
+    when {
+        vm.layout == "numpad" && g.rows <= 6 -> ShapeGrid(vm, g, center = land && !virt, gap = if (land) 7.dp else 8.dp)
+        vm.layout == "numpad" -> ListGrid(vm, g, if (virt) g.cols else 4, if (land) 64.dp else 78.dp, onlyAssigned = false)
+        vm.layout == "grandes" -> ListGrid(vm, g, if (land) 4 else 2, if (land) 110.dp else 150.dp, onlyAssigned = true)
+        else -> ListGrid(vm, g, if (land) 6 else 4, if (land) 64.dp else 78.dp, onlyAssigned = false)
+    }
+}
+
+// ---------------------------------------------------------------- celular acostado
+@Composable
+private fun PadsLandscape(vm: AppVm) {
+    val online = vm.online
+    Row(Modifier.fillMaxSize()) {
+        if (!vm.fullscreen) SideBar(vm)
+        Box(Modifier.weight(1f).fillMaxHeight()) {
+            Column(Modifier.fillMaxSize().padding(top = if (vm.fullscreen) 40.dp else 10.dp, bottom = 10.dp)) {
+                if (vm.st == St.Lost) LostBanner(vm)
+                if (vm.editMode) EditNotice(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 8.dp))
+                Box(Modifier.weight(1f).fillMaxWidth().alpha(if (online) 1f else 0.35f)) {
+                    PadsArea(vm, shownGroup(vm, true), land = true)
+                }
+                if (vm.st == St.Lost) {
+                    Row(Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        NButton("Reintentar ahora", { vm.retryNow() }, Modifier.weight(1f), icon = "refresh", height = 44.dp, fontSize = 14.sp)
+                        NButton("Cambiar PC", { vm.disconnect(); vm.tab = Tab.Conn }, kind = Kind.Ghost, height = 44.dp, fontSize = 14.sp)
+                    }
+                }
+            }
+            if (vm.fullscreen) FullPill(vm, Modifier.align(Alignment.TopEnd).padding(top = 6.dp, end = 10.dp))
+        }
+    }
+}
+
+/** Barra lateral izquierda: estado, grupos, bancos, Detener, Editar, pantalla completa, volumen y menú. */
+@Composable
+private fun SideBar(vm: AppVm) {
+    val online = vm.online
+    val (txt, col) = statusLine(vm)
+    Column(
+        Modifier.width(210.dp).fillMaxHeight().background(C.panel).padding(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Logo(26.dp)
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
+                T("Numpad Macros", 13.sp, weight = FontWeight.ExtraBold, lines = 1)
+                T("● " + txt, 10.5.sp, col, lines = 1)
+            }
+        }
+        if (vm.meter && online) {
+            val f = ((vm.level + 60f) / 60f).coerceIn(0f, 1f)
+            Box(Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)).background(C.panel2)) {
+                Box(Modifier.fillMaxHeight().fillMaxWidth(f).background(if (vm.level > -6f) C.warn else C.ok))
+            }
+        }
+        if (vm.state.groups.size > 1) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                for (g in vm.state.groups) {
+                    val on = g.id == vm.state.group(vm.group).id
+                    Box(
+                        Modifier.weight(1f).height(30.dp).clip(RoundedCornerShape(8.dp)).background(if (on) C.panel2 else Color.Transparent)
+                            .border(1.dp, if (on) C.acc else C.line, RoundedCornerShape(8.dp)).clickable(role = Role.Tab) { vm.group = g.id },
+                        contentAlignment = Alignment.Center,
+                    ) { T(g.name.substringBefore(" "), 11.sp, if (on) C.text else C.muted, if (on) FontWeight.ExtraBold else FontWeight.Medium, lines = 1) }
+                }
+            }
+        }
+        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            vm.state.banks.forEachIndexed { i, b ->
+                val on = i == vm.state.active
+                Box(
+                    Modifier.fillMaxWidth().heightIn(min = 34.dp).clip(RoundedCornerShape(10.dp)).background(if (on) C.acc else C.panel2)
+                        .border(1.dp, if (on) Color.Transparent else C.line, RoundedCornerShape(10.dp))
+                        .clickable(role = Role.Button) { vm.selectBank(i) }.padding(horizontal = 10.dp),
+                    contentAlignment = Alignment.CenterStart,
+                ) { T("${i + 1} · ${b.name}", 12.5.sp, if (on) C.accDark else C.text, if (on) FontWeight.ExtraBold else FontWeight.SemiBold, lines = 1) }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(
+                Modifier.weight(1f).height(38.dp).clip(RoundedCornerShape(10.dp)).background(C.badSoft).border(1.dp, C.badLine, RoundedCornerShape(10.dp))
+                    .clickable(role = Role.Button) { vm.stopAll() },
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
+            ) {
+                NIcon("stop", 14.dp, C.badText)
+                Spacer(Modifier.width(5.dp))
+                T("Detener", 12.5.sp, C.badText, FontWeight.ExtraBold)
+            }
+            if (online) {
+                if (vm.editMode) IconBtn("check", "Listo", { vm.editMode = false }, C.ok, C.onOk, 38.dp)
+                else IconBtn("edit", "Editar", { vm.editMode = true; vm.refresh() }, C.accSoft, C.acc, 38.dp)
+                IconBtn("full", "Pantalla completa", { vm.fullscreen = true; vm.editMode = false }, C.panel2, C.text, 38.dp)
+            }
+        }
+        Column {
+            Row {
+                T("Volumen", 10.5.sp, C.muted, modifier = Modifier.weight(1f))
+                T("${Math.round(vm.volume * 100)} %", 10.5.sp, C.acc, FontWeight.Bold)
+            }
+            NSlider(vm.volume / 2f, { vm.setVol((it * 2f * 20).let { r -> Math.round(r) / 20f }) }, { vm.volDone() })
+        }
+        Box(Modifier.fillMaxWidth().height(1.dp).background(C.line))
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            for ((tab, icon, name) in listOf(Triple(Tab.Pads, "grid", "Botonera"), Triple(Tab.Conn, "link", "Conexión"), Triple(Tab.Settings, "gear", "Ajustes"))) {
+                val on = vm.tab == tab
+                Box(
+                    Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(10.dp)).background(if (on) C.accSoft else Color.Transparent)
+                        .clickable(role = Role.Tab) { vm.tab = tab }.semantics { contentDescription = name },
+                    contentAlignment = Alignment.Center,
+                ) { NIcon(icon, 19.dp, if (on) C.acc else C.muted) }
+            }
+        }
+    }
+}
+
+/** Pantalla completa acostada: solo las teclas y una píldora arriba a la derecha. */
+@Composable
+private fun FullPill(vm: AppVm, modifier: Modifier) {
+    val (txt, col) = statusLine(vm)
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            Modifier.height(30.dp).clip(RoundedCornerShape(15.dp)).background(C.bg.copy(alpha = 0.9f)).border(1.dp, C.line, RoundedCornerShape(15.dp))
+                .clickable(role = Role.Button) { if (vm.state.banks.isNotEmpty()) vm.selectBank((vm.state.active + 1) % vm.state.banks.size) }
+                .semantics { contentDescription = "Banco ${vm.state.banks.getOrNull(vm.state.active)?.name ?: ""}. Toca para pasar al siguiente" }
+                .padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            T(vm.state.banks.getOrNull(vm.state.active)?.name ?: "", 11.sp, C.acc, FontWeight.ExtraBold, lines = 1)
+            Spacer(Modifier.width(6.dp))
+            T(if (vm.latency >= 0 && vm.online) "● ${vm.latency} ms" else "● " + txt.take(12), 11.sp, col, lines = 1)
+        }
+        Box(
+            Modifier.size(30.dp).clip(CircleShape).background(C.badSoft).border(1.dp, C.badLine, CircleShape)
+                .clickable(role = Role.Button) { vm.stopAll() }.semantics { contentDescription = "Detener todo" },
+            contentAlignment = Alignment.Center,
+        ) { NIcon("stop", 13.dp, C.badText) }
+        Box(
+            Modifier.size(30.dp).clip(CircleShape).background(C.bg.copy(alpha = 0.9f)).border(1.dp, C.line, CircleShape)
+                .clickable(role = Role.Button) { vm.fullscreen = false }.semantics { contentDescription = "Salir de pantalla completa" },
+            contentAlignment = Alignment.Center,
+        ) { NIcon("full", 13.dp, C.text) }
     }
 }
 
@@ -117,7 +289,7 @@ private fun LostBanner(vm: AppVm) {
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             T("Se perdió la conexión con ${vm.pcName.ifBlank { "tu PC" }}", 13.sp, weight = FontWeight.Bold)
-            T("¿El PC está encendido y con la app abierta?", 13.sp, Color(0xFFE6C48C))
+            T("¿El PC está encendido y con la app abierta?", 13.sp, C.muted)
         }
     }
 }
@@ -129,7 +301,7 @@ private fun Meter(level: Float) {
         Spacer(Modifier.width(8.dp))
         val f = ((level + 60f) / 60f).coerceIn(0f, 1f)
         Box(Modifier.weight(1f).height(6.dp).clip(RoundedCornerShape(3.dp)).background(C.panel2)) {
-            Box(Modifier.fillMaxHeight().fillMaxWidth(f).background(if (level > -6f) Color(0xFFE2B340) else C.ok))
+            Box(Modifier.fillMaxHeight().fillMaxWidth(f).background(if (level > -6f) C.warn else C.ok))
         }
         Spacer(Modifier.width(8.dp))
         T(if (level > -59f) "${level.toInt()} dB".replace("-", "−") else "—", 11.sp, C.muted, modifier = Modifier.widthIn(min = 44.dp), align = TextAlign.End)
@@ -158,9 +330,9 @@ private fun BankRow(vm: AppVm) {
                     Modifier.height(36.dp).clip(RoundedCornerShape(18.dp)).background(C.ok).clickable(role = Role.Button) { vm.editMode = false }.padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    NIcon("check", 15.dp, Color(0xFF06210F), 2.4f)
+                    NIcon("check", 15.dp, C.onOk, 2.4f)
                     Spacer(Modifier.width(6.dp))
-                    T("Listo", 13.sp, Color(0xFF06210F), FontWeight.ExtraBold)
+                    T("Listo", 13.sp, C.onOk, FontWeight.ExtraBold)
                 }
             } else {
                 Row(
@@ -196,18 +368,18 @@ private fun GroupRow(vm: AppVm) {
 
 /** Botonera con la forma real (virtuales, numpad, fila 1–0), según las posiciones que manda el PC. */
 @Composable
-private fun ShapeGrid(vm: AppVm, g: KeyGroup) {
-    BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {
-        val gap = 8.dp
-        val cw = (maxWidth - gap * (g.cols - 1)) / g.cols
+private fun ShapeGrid(vm: AppVm, g: KeyGroup, center: Boolean = false, gap: Dp = 8.dp) {
+    BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = if (center) 12.dp else 14.dp)) {
+        val cwFit = (maxWidth - gap * (g.cols - 1)) / g.cols
         val chFit = (maxHeight - gap * (g.rows - 1)) / g.rows
-        val ch = min(chFit, cw * 1.25f)
-        val totalH = ch * g.rows + gap * (g.rows - 1)
-        val top = ((maxHeight - totalH) / 2).coerceAtLeast(0.dp) * 0f
+        // acostado, el numpad se ajusta al alto y queda centrado
+        val cw = if (center) min(cwFit, chFit * 1.15f) else cwFit
+        val ch = if (center) chFit else min(chFit, cw * 1.25f)
+        val left = if (center) ((maxWidth - (cw * g.cols + gap * (g.cols - 1))) / 2).coerceAtLeast(0.dp) else 0.dp
         for (k in g.keys) {
             Pad(
                 vm, k,
-                Modifier.offset(x = (cw + gap) * k.col, y = top + (ch + gap) * k.row)
+                Modifier.offset(x = left + (cw + gap) * k.col, y = (ch + gap) * k.row)
                     .size(cw * k.w + gap * (k.w - 1), ch * k.h + gap * (k.h - 1)),
                 big = false,
             )
@@ -238,27 +410,24 @@ private fun Pad(vm: AppVm, k: KeyPos, modifier: Modifier, big: Boolean) {
     val prog = vm.playing[k.id]
     var pressed by remember { mutableStateOf(false) }
     val view = LocalView.current
-    val color = when {
-        isGlobal -> C.purple
-        act != null -> C.keyColor(act.color)
-        else -> C.muted
-    }
+    // color propio de la tecla (null = «sin color»)
+    val own = act?.let { C.keyColor(it.color) }
+    val color = own ?: if (act != null) C.text else C.muted
     val shape = RoundedCornerShape(16.dp)
     val bg = when {
         pressed -> color.copy(alpha = 0.32f)
         prog != null -> color.copy(alpha = 0.18f)
-        isGlobal -> C.globalBg
         act != null -> C.padBg
         else -> C.padEmpty
     }
     val border = when {
         prog != null || pressed -> color
-        isGlobal -> C.globalLine
-        act != null -> color.copy(alpha = 0.44f)
-        vm.editMode -> Color(0xFF4A505C)
+        own != null -> own.copy(alpha = 0.44f)
+        act != null -> C.line
+        vm.editMode -> C.line
         else -> C.padEmptyLine
     }
-    val desc = "Tecla ${k.label}: " + (act?.label() ?: "sin acción")
+    val desc = "Tecla ${k.label}: " + (act?.label() ?: "sin acción") + if (isGlobal) " (Global)" else ""
     val gesture = if (vm.editMode) {
         Modifier.clickable(role = Role.Button) {
             vm.editing = EditTarget(if (isGlobal) "global" else vm.state.active, k.id, k.label)
@@ -280,7 +449,7 @@ private fun Pad(vm: AppVm, k: KeyPos, modifier: Modifier, big: Boolean) {
         modifier.clip(shape).background(bg).border(if (prog != null) 2.dp else 1.dp, border, shape)
             .semantics { contentDescription = desc }.then(gesture),
     ) {
-        T(k.label, 11.sp, Color(0x8CE9E9EC), modifier = Modifier.align(Alignment.TopStart).padding(start = 10.dp, top = 7.dp))
+        T(k.label, 11.sp, C.text.copy(alpha = 0.55f), modifier = Modifier.align(Alignment.TopStart).padding(start = 10.dp, top = 7.dp))
         if (act != null) {
             Box(Modifier.align(Alignment.TopEnd).padding(top = 7.dp, end = 8.dp)) { NIcon(act.icon(), 13.dp, color) }
             val name = act.label()
@@ -299,10 +468,15 @@ private fun Pad(vm: AppVm, k: KeyPos, modifier: Modifier, big: Boolean) {
         if (prog != null) {
             Box(Modifier.align(Alignment.BottomStart).fillMaxWidth(prog.coerceIn(0f, 1f)).height(4.dp).background(color))
         }
-        if (vm.editMode) {
-            Box(Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 6.dp)) {
-                if (isGlobal) T("Global", 10.sp, Color(0xFFA99BE0)) else if (act != null) NIcon("edit", 14.dp, C.acc)
-            }
+        if (isGlobal) {
+            // las teclas Global (todos los bancos) llevan una «G»
+            Box(
+                Modifier.align(Alignment.BottomEnd).padding(end = 6.dp, bottom = 6.dp).size(18.dp).clip(RoundedCornerShape(5.dp))
+                    .background(C.globalBg).border(1.dp, C.globalLine, RoundedCornerShape(5.dp)),
+                contentAlignment = Alignment.Center,
+            ) { T("G", 10.5.sp, C.globalText, FontWeight.ExtraBold) }
+        } else if (vm.editMode && act != null) {
+            Box(Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 6.dp)) { NIcon("edit", 14.dp, C.acc) }
         }
     }
 }
@@ -393,15 +567,11 @@ fun EditSheet(vm: AppVm, ed: EditTarget) {
                     T(pctDb(vol), 12.sp, C.acc, FontWeight.Bold)
                 }
                 NSlider(vol / 2f, { vol = Math.round(it * 2f * 20) / 20f })
-                T("COLOR EN EL CELULAR", 12.sp, C.muted, FontWeight.Bold)
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    C.keyColors.forEachIndexed { i, c ->
-                        Box(
-                            Modifier.size(36.dp).clip(CircleShape).background(c).border(3.dp, if (i == color) C.text else Color.Transparent, CircleShape)
-                                .clickable(role = Role.RadioButton) { color = i }.semantics { contentDescription = "Color ${i + 1}" },
-                        )
-                    }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    T("COLOR DEL BOTÓN", 12.sp, C.muted, FontWeight.Bold, Modifier.weight(1f))
+                    T(C.keyColorName(color), 12.5.sp, C.keyColor(color) ?: C.muted, FontWeight.Bold)
                 }
+                ColorPicker(color) { color = it }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     NButton("Guardar", { vm.assign(ed.layer, ed.key, soundAct()); close() }, Modifier.weight(1f), enabled = lib.isNotBlank())
                     NButton("Quitar", { vm.assign(ed.layer, ed.key, null); close() }, kind = Kind.Danger)
@@ -462,6 +632,32 @@ fun EditSheet(vm: AppVm, ed: EditTarget) {
                     }
                 }
                 NButton("Guardar", { vm.assign(ed.layer, ed.key, other); close() }, Modifier.fillMaxWidth())
+            }
+        }
+    }
+}
+
+/** Sin color + los 12 colores, en dos filas de 7 círculos grandes. */
+@Composable
+private fun ColorPicker(sel: Int, onPick: (Int) -> Unit) {
+    val items = listOf(-1) + C.keyColorOrder
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        for (row in items.chunked(7)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                for (i in row) {
+                    val on = i == sel || (i == -1 && C.keyColor(sel) == null)
+                    val c = C.keyColor(i)
+                    Box(
+                        Modifier.size(40.dp).clip(CircleShape).border(3.dp, if (on) C.text else Color.Transparent, CircleShape)
+                            .clickable(role = Role.RadioButton) { onPick(i) }
+                            .semantics { contentDescription = C.keyColorName(i) + if (on) ", elegido" else "" },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (c != null) Box(Modifier.size(30.dp).clip(CircleShape).background(c))
+                        else Box(Modifier.size(30.dp).clip(CircleShape).border(2.dp, C.line, CircleShape), contentAlignment = Alignment.Center) { NIcon("x", 14.dp, C.muted) }
+                    }
+                }
+                repeat(7 - row.size) { Spacer(Modifier.size(40.dp)) }
             }
         }
     }
