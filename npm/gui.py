@@ -14,7 +14,9 @@ from . import loudness as ld
 from .capture import PLATFORM, BackendError, describe_device
 from .engine import Engine
 from .dialogs import NewsDialog, UpdateDialog
+from . import themes
 from .devices_tab import DevicesTab
+from .themes_tab import ThemesTab
 from .remote import RemoteServer
 from .keys import (PHONE_IDS, VIRTUAL_COLS, VIRTUAL_COUNT, VIRTUAL_ROWS, phone_layout, KEY_CHOICES, MODIFIER_KEYSYMS, MODIFIERS, NUMPAD_IDS, NUMPAD_LAYOUT, ROW_IDS,
                    ROW_LAYOUT, TOGGLE_CHOICES, busy_reason, combo_text, join_combo, key_label,
@@ -23,7 +25,7 @@ from .senders import make_sender
 from .soundboard import AUDIO_EXT, PLAY_MODES, clean_env, make_soundboard, title_of
 from .widgets import CompCurve, Meter
 
-from .theme import BASE, BUTTON_COLORS, C, FONT, IS_LINUX, IS_MAC, IS_WIN, MOD_LABEL, OS_NAME, button_color, mix
+from .theme import BASE, BUTTON_COLORS, C, apply_theme, FONT, IS_LINUX, IS_MAC, IS_WIN, MOD_LABEL, OS_NAME, button_color, mix
 
 ACTION_TYPES = [
     ("none", "— Sin acción —"),
@@ -141,6 +143,8 @@ class App:
         self.root = root
         self.first_run = not os.path.exists(config.config_path())
         self.cfg = config.load()
+        self.theme = themes.current(self.cfg)
+        apply_theme(self.theme["colors"])           # antes de crear cualquier ventana
         self.uiq: queue.Queue = queue.Queue()     # mensajes de otros hilos -> GUI
         self.sender, self.sender_err = make_sender()
         self.board = make_soundboard(self.cfg["audio"])
@@ -204,8 +208,8 @@ class App:
         r = self.root
         r.title("Numpad Macros")
         r.configure(bg=C["bg"])
-        r.geometry("1120x820")
-        r.minsize(1020, 760)
+        r.geometry("1200x820")
+        r.minsize(1100, 760)
         s = ttk.Style(r)
         s.theme_use("clam")
         s.configure(".", background=C["bg"], foreground=C["text"], fieldbackground=C["panel2"],
@@ -239,7 +243,7 @@ class App:
         r.option_add("*TCombobox*Listbox.selectBackground", C["accent_dim"])
         s.configure("TNotebook", background=C["bg"], borderwidth=0)
         s.configure("TNotebook.Tab", background=C["bg"], foreground=C["muted"],
-                    padding=(16, 7), borderwidth=0, font=(FONT, BASE, "bold"))
+                    padding=(12, 7), borderwidth=0, font=(FONT, BASE, "bold"))
         s.map("TNotebook.Tab", background=[("selected", C["panel"])],
               foreground=[("selected", C["text"])])
         s.configure("TEntry", foreground=C["text"], insertcolor=C["text"])
@@ -417,11 +421,13 @@ class App:
         self.tab_audio = ttk.Frame(nb, style="Panel.TFrame", padding=18)
         self.tab_about = ttk.Frame(nb, style="Panel.TFrame", padding=24)
         self.tab_dev = ttk.Frame(nb, style="Panel.TFrame", padding=18)
+        self.tab_themes = ttk.Frame(nb, style="Panel.TFrame", padding=18)
         nb.add(self.tab_key, text="Tecla")
         nb.add(self.tab_lib, text="Sonidos")
         nb.add(self.tab_cap, text="Numpad y opciones")
         nb.add(self.tab_audio, text="Audio")
         nb.add(self.tab_dev, text="Celular")
+        nb.add(self.tab_themes, text="Temas")
         nb.add(self.tab_about, text="Creador")
         nb.bind("<<NotebookTabChanged>>", lambda e: self._on_tab())
         self._build_editor()
@@ -429,6 +435,7 @@ class App:
         self._build_capture_tab()
         self._build_audio_tab()
         self.devtab = DevicesTab(self.tab_dev, self)
+        self.themestab = ThemesTab(self.tab_themes, self)
         self._build_about_tab()
 
         # ---------- barra de estado
@@ -1589,9 +1596,10 @@ class App:
             big = BASE + 5 if len(label) <= 2 else BASE - 1
             cv.create_text(x0 + 8, y0 + 7, text=label, anchor="nw", fill=C["text"], font=(FONT, big, "bold"))
         narrow = (x1 - x0) < 100
-        if is_global:
-            cv.create_rectangle(x1 - 16, y0 + 5, x1 - 5, y0 + 16, fill=line, outline="")
-            cv.create_text(x1 - 10.5, y0 + 10.5, text="G", fill=C["bg"], font=(FONT, BASE - 4, "bold"))
+        if is_global:                       # marca «G» de la capa Global
+            gy = y0 + 5 if size == "small" or len(label) <= 2 else y0 + 24
+            cv.create_rectangle(x1 - 16, gy, x1 - 5, gy + 11, fill=line, outline="")
+            cv.create_text(x1 - 10.5, gy + 5.5, text="G", fill=C["bg"], font=(FONT, BASE - 4, "bold"))
         if not shown:
             return
         if size == "small":
@@ -2301,6 +2309,19 @@ class App:
         except Exception:
             pass
 
+    def _send_theme(self):
+        if getattr(self, "remote", None):
+            self.remote.theme_changed()
+
+    def _restart(self):
+        """Cierra y vuelve a abrir el programa (para aplicar un tema)."""
+        if getattr(sys, "frozen", False):
+            self.relaunch = [sys.executable]
+        else:
+            self.relaunch = [sys.executable, os.path.join(os.path.dirname(os.path.dirname(
+                os.path.abspath(__file__))), "NumpadMacros.pyw")]
+        self._quit()
+
     def _remote_state(self):
         if getattr(self, "remote", None):
             self.remote.state_changed()
@@ -2579,8 +2600,9 @@ def main():
     root = tk.Tk(className="NumpadMacros")
     app = App(root, start_minimized=minimized)
     root.mainloop()
-    if app.relaunch:                        # Linux: abrir la versión recién instalada
+    if app.relaunch:                        # versión recién instalada (Linux) o cambio de tema
         import subprocess
         sysutil.release_instance()
-        subprocess.Popen([app.relaunch, "--tras-actualizar"], env=updater.relaunch_env(),
+        cmd = app.relaunch if isinstance(app.relaunch, list) else [app.relaunch]
+        subprocess.Popen(cmd + ["--tras-actualizar"], env=updater.relaunch_env(),
                          start_new_session=True, close_fds=True)

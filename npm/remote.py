@@ -254,6 +254,9 @@ class Session:
         self.send(hello)
         self.send(srv.state())
         self.send(srv.library())
+        th = srv.theme_msg()
+        if th:
+            self.send(th)
         srv._changed("devices")
 
     # ------------------------------------------------------------ mensajes
@@ -589,6 +592,19 @@ class RemoteServer:
     def state_changed(self):
         """La ventana cambió bancos/teclas/volumen: avisar a los celulares."""
         self.broadcast(self.state())
+
+    def theme_msg(self):
+        """Tema del PC para el celular (si está activada la opción)."""
+        sel = self.cfg.get("theme") or {}
+        if not sel.get("phone", True):
+            return None
+        from . import themes
+        th = themes.current(self.cfg)
+        return {"t": "tema", "nombre": th["name"], "colores": th["colors"]}
+
+    def theme_changed(self):
+        msg = self.theme_msg() or {"t": "tema", "nombre": "", "colores": {}}
+        self.broadcast(msg)
 
     def library_changed(self):
         self.broadcast(self.library())

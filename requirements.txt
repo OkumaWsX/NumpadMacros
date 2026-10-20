@@ -12,4 +12,6 @@ evdev>=1.6; sys_platform == "linux"
 certifi
 # App del celular: código QR para vincular (todos) y Bluetooth en macOS
 segno>=1.5
+# Temas .npt: cifrado (AES-GCM) y firma (Ed25519)
+cryptography>=41
 pyobjc-framework-IOBluetooth>=10; sys_platform == "darwin"

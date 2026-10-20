@@ -295,6 +295,10 @@ class App:
                         font=(FONT, BASE - 1, "underline"))
         link.pack(side="right")
         link.bind("<Button-1>", lambda e: self.show_connect())
+        theme = tk.Label(foot, text="Crear tema .npt…", bg=C["panel"], fg=C["accent"], cursor="hand2",
+                         font=(FONT, BASE - 1, "underline"))
+        theme.pack(side="right", padx=(0, 16))
+        theme.bind("<Button-1>", lambda e: self._make_theme())
         tk.Label(foot, text=f"Publicador {VERSION}", bg=C["panel"], fg=C["muted"], font=(FONT, BASE - 2)).pack(side="left")
 
         def job():
@@ -720,6 +724,45 @@ class App:
                 ttk.Button(btns, text="Ver en GitHub ↗", command=lambda: self._open(url)).pack(side="left")
             ttk.Button(btns, text="Listo", style="Accent.TButton", command=self.show_home).pack(side="left", padx=8)
         self._bg(job, done)
+
+    def _make_theme(self):
+        """Tema .npt firmado: elige el JSON del tema, la clave de firma y dónde guardarlo."""
+        try:
+            from npm import npt
+        except Exception as e:
+            messagebox.showerror("Crear tema", f"Falta un componente: {e}", parent=self.root)
+            return
+        import json
+        src = filedialog.askopenfilename(parent=self.root, title="Tema a convertir (JSON)",
+                                         filetypes=[("Tema en JSON", "*.json"), ("Todos", "*.*")])
+        if not src:
+            return
+        cfg = core.load_settings()
+        key = cfg.get("theme_key", "")
+        if not key or not os.path.isfile(key):
+            key = filedialog.askopenfilename(parent=self.root, title="Tu clave de firma (firma-temas-OkumaWsX.key)",
+                                             filetypes=[("Clave de firma", "*.key"), ("Todos", "*.*")])
+            if not key:
+                return
+            cfg["theme_key"] = key
+            core.save_settings(cfg)
+        out = filedialog.asksaveasfilename(parent=self.root, title="Guardar tema", defaultextension=".npt",
+                                           initialfile=os.path.splitext(os.path.basename(src))[0] + ".npt",
+                                           filetypes=[("Tema de Numpad Macros", "*.npt")])
+        if not out:
+            return
+        try:
+            with open(src, encoding="utf-8") as f:
+                theme = json.load(f)
+            data = npt.pack(theme, npt.load_private_key(key))
+            t, official = npt.unpack(data)
+            with open(out, "wb") as f:
+                f.write(data)
+        except Exception as e:
+            messagebox.showerror("Crear tema", f"No se pudo crear el tema: {e}", parent=self.root)
+            return
+        messagebox.showinfo("Crear tema", f"Listo: «{t['name']}» quedó guardado como tema oficial "
+                            f"(firmado) en\n{out}", parent=self.root)
 
     def _open(self, url):
         if not open_url(url):

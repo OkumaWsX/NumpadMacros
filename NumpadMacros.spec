@@ -22,7 +22,8 @@ if IS_WIN and os.path.isfile(os.path.join(ROOT, "interception.dll")):
 
 hidden = ["npm.capture_win", "npm.capture_linux", "npm.capture_mac",
           "npm.send_win", "npm.send_linux", "npm.send_mac", "npm.linux_perms", "npm.desktop_linux",
-          "npm.remote", "npm.remote_bt", "npm.devices_tab", "segno"]
+          "npm.remote", "npm.remote_bt", "npm.devices_tab", "segno",
+          "npm.npt", "npm.themes", "npm.themes_tab"]
 if IS_WIN:
     hidden += ["pystray._win32"]
 elif IS_LINUX:

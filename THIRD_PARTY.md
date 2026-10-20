@@ -18,6 +18,7 @@ Numpad Macros usa o integra los siguientes componentes. Cada uno conserva su pro
 | [certifi](https://github.com/certifi/python-certifi) | Certificados para conectarse a GitHub (actualizaciones) | MPL-2.0 | Empaquetado, sin modificar |
 | [PipeWire](https://pipewire.org/) / PulseAudio (`pactl`, `pw-cat`, `pacat`) | Salida de audio y micrófono virtual en Linux | MIT / LGPL-2.1 | **No se incluye**: se usa el que trae el sistema |
 | [python-evdev](https://github.com/gvalkov/python-evdev) | Captura de teclado en Linux | BSD-3-Clause | Empaquetado (Linux) |
+| [cryptography](https://cryptography.io/) | Temas .npt: cifrado y firma | Apache-2.0 / BSD-3-Clause | Empaquetado (todos los sistemas) |
 | [segno](https://github.com/heuer/segno) | Código QR para vincular el celular | BSD-3-Clause | Empaquetado (todos los sistemas) |
 | [PyObjC](https://github.com/ronaldoussoren/pyobjc) (IOBluetooth) | Bluetooth con el celular en macOS | MIT | Empaquetado (macOS) |
 
