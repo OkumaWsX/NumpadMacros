@@ -200,6 +200,7 @@ class App:
         if start_minimized and self.tray:
             self.root.withdraw()
         self._queue_loudness()
+        self._setup_alpha()
         self.root.after(1200, self._startup_news)
         self.root.after(3000, lambda: self._check_updates(manual=False))
 
@@ -419,7 +420,6 @@ class App:
         self.tab_lib = ttk.Frame(nb, style="Panel.TFrame", padding=18)
         self.tab_cap = ttk.Frame(nb, style="Panel.TFrame", padding=18)
         self.tab_audio = ttk.Frame(nb, style="Panel.TFrame", padding=18)
-        self.tab_about = ttk.Frame(nb, style="Panel.TFrame", padding=24)
         self.tab_dev = ttk.Frame(nb, style="Panel.TFrame", padding=18)
         self.tab_themes = ttk.Frame(nb, style="Panel.TFrame", padding=18)
         nb.add(self.tab_key, text="Tecla")
@@ -428,7 +428,6 @@ class App:
         nb.add(self.tab_audio, text="Audio")
         nb.add(self.tab_dev, text="Celular")
         nb.add(self.tab_themes, text="Temas")
-        nb.add(self.tab_about, text="Creador")
         nb.bind("<<NotebookTabChanged>>", lambda e: self._on_tab())
         self._build_editor()
         self._build_library_tab()
@@ -436,7 +435,6 @@ class App:
         self._build_audio_tab()
         self.devtab = DevicesTab(self.tab_dev, self)
         self.themestab = ThemesTab(self.tab_themes, self)
-        self._build_about_tab()
 
         # ---------- barra de estado
         foot = ttk.Frame(r)
@@ -678,15 +676,17 @@ class App:
         self._fill_library()
 
     # ---------------------------------------------------------------- pestaña creador
-    def _build_about_tab(self):
-        t = self.tab_about
+    def _build_about_tab(self, t):
         t.columnconfigure(0, weight=1)
         t.rowconfigure(5, weight=1)
         head = ttk.Frame(t, style="Panel.TFrame")
         head.grid(row=0, column=0, sticky="w")
         if getattr(self, "_icon", None) is not None:
             self._icon_small = self._icon.subsample(max(1, self._icon.width() // 64))
-            tk.Label(head, image=self._icon_small, bg=C["panel"]).pack(side="left", padx=(0, 16))
+            logo = tk.Label(head, image=self._icon_small, bg=C["panel"], highlightthickness=3,
+                            highlightbackground=C["panel"], highlightcolor=C["panel"])
+            logo.pack(side="left", padx=(0, 16))
+            logo.bind("<Button-1>", lambda e, w=logo: self._mark(w))
         txt = ttk.Frame(head, style="Panel.TFrame")
         txt.pack(side="left")
         ttk.Label(txt, text=f"Numpad Macros {__version__}", style="H.TLabel",
@@ -758,8 +758,206 @@ class App:
         return card
 
     def _show_about(self):
+        """Ventana «Creador y soporte» (botón de abajo)."""
         self.root.deiconify()
-        self.nb.select(self.tab_about)
+        w = getattr(self, "about_win", None)
+        if w is not None and w.winfo_exists():
+            w.deiconify()
+            w.lift()
+            w.focus_force()
+            return
+        w = tk.Toplevel(self.root)
+        self.about_win = w
+        w.title("Creador y soporte · Numpad Macros")
+        w.configure(bg=C["panel"])
+        w.transient(self.root)
+        w.resizable(False, False)
+        body = ttk.Frame(w, style="Panel.TFrame", padding=24)
+        body.pack(fill="both", expand=True)
+        self._build_about_tab(body)
+        self.about_body = body
+        self._paint_extra()
+        w.update_idletasks()
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - w.winfo_width()) // 2
+        y = self.root.winfo_rooty() + 40
+        w.geometry(f"+{max(0, x)}+{max(0, y)}")
+
+    def _mark(self, logo):
+        ui = self.cfg.setdefault("ui", {})
+        if ui.get("extra"):
+            return
+        now = time.monotonic()
+        if now - getattr(self, "_mark_t0", 0) > 4:
+            self._mark_t0, self._mark_n = now, 0
+        self._mark_n = getattr(self, "_mark_n", 0) + 1
+        n = self._mark_n
+        if n >= 4:
+            logo.configure(highlightbackground=C["accent"], highlightcolor=C["accent"])
+        if 4 <= n < 7:
+            self._show_toast(f"Te faltan {7 - n} clics…")
+        if n >= 7:
+            with self.engine.lock:
+                ui["extra"] = True
+            self._save()
+            logo.configure(highlightbackground=C["panel"], highlightcolor=C["panel"])
+            self._show_toast("✦ Funciones ocultas desbloqueadas")
+            self._paint_extra()
+
+    def _paint_extra(self):
+        body = getattr(self, "about_body", None)
+        if body is None or not body.winfo_exists():
+            return
+        old = getattr(self, "extra_card", None)
+        if old is not None and old.winfo_exists():
+            old.destroy()
+        if not self.cfg.get("ui", {}).get("extra"):
+            return
+        lab = C["key_global_line"]
+        card = tk.Frame(body, bg=C["key_global"], highlightbackground=lab, highlightthickness=1)
+        card.grid(row=7, column=0, sticky="ew", pady=(10, 0))
+        card.columnconfigure(0, weight=1)
+        tk.Label(card, text="Laboratorio · funciones ocultas", bg=C["key_global"], fg=C["text"],
+                 font=(FONT, BASE + 1, "bold"), anchor="w").grid(row=0, column=0, sticky="w", padx=14, pady=(10, 0))
+        tk.Label(card, text="Opciones experimentales, como la transparencia de los temas.",
+                 bg=C["key_global"], fg=C["key_global_text"], font=(FONT, BASE - 1), anchor="w").grid(
+            row=1, column=0, sticky="w", padx=14, pady=(0, 10))
+        FlatButton(card, text="Abrir laboratorio", command=self._show_lab, bg=lab, fg="#ffffff",
+                   font=(FONT, BASE, "bold"), padx=14, pady=6).grid(row=0, column=1, rowspan=2, padx=(0, 6))
+        FlatButton(card, text="Ocultar", command=self._hide_extra, bg=C["key_global"], fg=C["key_global_text"],
+                   font=(FONT, BASE - 1), padx=10, pady=6).grid(row=0, column=2, rowspan=2, padx=(0, 12))
+        self.extra_card = card
+
+    def _hide_extra(self):
+        with self.engine.lock:
+            self.cfg.setdefault("ui", {})["extra"] = False
+        self._save()
+        self._mark_n = 0
+        self._paint_extra()
+
+    # ---------------------------------------------------------------- laboratorio
+    def _alpha_cfg(self):
+        a = self.cfg.setdefault("ui", {}).setdefault("alpha", {})
+        base = self.theme.get("alpha") or {}
+        a.setdefault("on", False)
+        a.setdefault("window", float(base.get("window", 0.92)))
+        a.setdefault("idle", float(base.get("idle", 0.6)))
+        a.setdefault("top", False)
+        return a
+
+    def _apply_alpha(self, idle=False):
+        """Transparencia de la ventana (solo con temas que la permiten)."""
+        a = self._alpha_cfg()
+        on = a["on"] and themes.supports_alpha(self.theme)
+        value = 1.0 if not on else (a["idle"] if idle else a["window"])
+        try:
+            self.root.attributes("-alpha", value)
+            self.root.attributes("-topmost", bool(on and a["top"]))
+        except tk.TclError:
+            pass
+
+    def _setup_alpha(self):
+        self.root.bind("<Enter>", lambda e: self._apply_alpha(False), add="+")
+        self.root.bind("<Leave>", lambda e: self.root.after(120, self._alpha_check), add="+")
+        self._apply_alpha()
+
+    def _alpha_check(self):
+        try:
+            x, y = self.root.winfo_pointerxy()
+            rx, ry = self.root.winfo_rootx(), self.root.winfo_rooty()
+            inside = rx <= x < rx + self.root.winfo_width() and ry <= y < ry + self.root.winfo_height()
+        except tk.TclError:
+            return
+        self._apply_alpha(idle=not inside)
+
+    def _show_lab(self):
+        w = getattr(self, "lab_win", None)
+        if w is not None and w.winfo_exists():
+            w.lift()
+            return
+        w = tk.Toplevel(self.root)
+        self.lab_win = w
+        w.title("Laboratorio · Numpad Macros")
+        w.configure(bg=C["panel"])
+        w.transient(self.root)
+        w.resizable(False, False)
+        lab = C["key_global_line"]
+        top = tk.Frame(w, bg=C["key_global"])
+        top.pack(fill="x")
+        tk.Label(top, text="Funciones ocultas", bg=C["key_global"], fg=C["key_global_text"],
+                 font=(FONT, BASE - 1)).pack(anchor="w", padx=18, pady=(12, 0))
+        hl = tk.Frame(top, bg=C["key_global"])
+        hl.pack(fill="x", padx=18, pady=(0, 12))
+        tk.Label(hl, text="Laboratorio", bg=C["key_global"], fg=C["text"], font=(FONT, BASE + 7, "bold")).pack(side="left")
+        tk.Label(hl, text="EXPERIMENTAL", bg=lab, fg="#ffffff", font=(FONT, BASE - 2, "bold"), padx=6).pack(side="right")
+        body = ttk.Frame(w, style="Panel.TFrame", padding=18)
+        body.pack(fill="both", expand=True)
+        left = ttk.Frame(body, style="Panel.TFrame")
+        left.grid(row=0, column=0, sticky="nw")
+        right = ttk.Frame(body, style="Panel.TFrame")
+        right.grid(row=0, column=1, sticky="nw", padx=(24, 0))
+        ok = themes.supports_alpha(self.theme)
+        a = self._alpha_cfg()
+        ttk.Label(left, text="Transparencia de los temas", style="H.TLabel").pack(anchor="w")
+        if ok:
+            msg = f"«{self.theme['name']}» admite transparencia."
+        else:
+            msg = (f"«{self.theme['name']}» no admite transparencia. Solo los temas creados con esta "
+                   "opción (en su archivo .npt) la activan.")
+        tk.Label(left, text=msg, bg=C["panel2"], fg=C["text"], wraplength=360, justify="left",
+                 font=(FONT, BASE - 1), padx=10, pady=8, anchor="w").pack(fill="x", pady=(8, 10))
+        st = ["!disabled"] if ok else ["disabled"]
+        self.al_on = tk.BooleanVar(value=a["on"])
+        self.al_win = tk.DoubleVar(value=round(a["window"] * 100))
+        self.al_idle = tk.DoubleVar(value=round(a["idle"] * 100))
+        self.al_top = tk.BooleanVar(value=a["top"])
+        cb = ttk.Checkbutton(left, text="Activar transparencia", variable=self.al_on, command=self._on_alpha)
+        cb.pack(anchor="w")
+        cb.state(st)
+        rows = []
+        for text, var, lo, sub in (("Opacidad de la ventana", self.al_win, 50, "Toda la ventana deja ver lo que hay detrás."),
+                                   ("Opacidad cuando no la usas", self.al_idle, 30, "Más transparente cuando el mouse sale de la ventana.")):
+            f = ttk.Frame(left, style="Panel.TFrame")
+            f.pack(fill="x", pady=(10, 0))
+            lbl = ttk.Label(f, style="Panel.TLabel")
+            lbl.pack(anchor="w")
+            sc = ttk.Scale(f, from_=lo, to=100, variable=var, length=340,
+                           command=lambda _v, lbl=lbl, t=text, var=var: (
+                               lbl.configure(text=f"{t}: {round(var.get())} %"), self._on_alpha()))
+            sc.pack(anchor="w")
+            sc.state(st)
+            lbl.configure(text=f"{text}: {round(var.get())} %")
+            ttk.Label(f, text=sub, style="Muted.TLabel").pack(anchor="w")
+            rows.append(sc)
+        tc = ttk.Checkbutton(left, text="Mantener la ventana siempre encima", variable=self.al_top,
+                             command=self._on_alpha)
+        tc.pack(anchor="w", pady=(10, 0))
+        tc.state(st)
+        ttk.Label(right, text="TEMAS COMPATIBLES", style="Muted.TLabel", font=(FONT, BASE - 1, "bold")).pack(anchor="w")
+        for th in themes.all_themes():
+            r = ttk.Frame(right, style="Panel.TFrame")
+            r.pack(fill="x", pady=(4, 0))
+            ttk.Label(r, text=th["name"], style="Panel.TLabel", width=18).pack(side="left")
+            yes = themes.supports_alpha(th)
+            tk.Label(r, text="Admite" if yes else "No admite", bg=C["panel"], fg=C["ok"] if yes else C["muted"],
+                     font=(FONT, BASE - 1, "bold" if yes else "normal")).pack(side="right")
+        ttk.Label(right, text="Más funciones experimentales\naparecerán aquí en futuras versiones.",
+                  style="Muted.TLabel", justify="left").pack(anchor="w", pady=(12, 0))
+        foot = ttk.Frame(w, style="Panel.TFrame", padding=(18, 0, 18, 16))
+        foot.pack(fill="x")
+        ttk.Label(foot, text="Para esconder el laboratorio otra vez: «Ocultar» en Creador y soporte.",
+                  style="Muted.TLabel").pack(side="left")
+        ttk.Button(foot, text="Cerrar", style="Accent.TButton", command=w.destroy).pack(side="right")
+        w.update_idletasks()
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - w.winfo_width()) // 2
+        y = self.root.winfo_rooty() + 60
+        w.geometry(f"+{max(0, x)}+{max(0, y)}")
+
+    def _on_alpha(self):
+        a = self._alpha_cfg()
+        a.update(on=self.al_on.get(), window=round(self.al_win.get()) / 100,
+                 idle=round(self.al_idle.get()) / 100, top=self.al_top.get())
+        self._save_later()
+        self._apply_alpha()
 
     def _open(self, url):
         if not sysutil.open_url(url):
