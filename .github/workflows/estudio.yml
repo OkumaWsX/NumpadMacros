@@ -54,13 +54,15 @@ jobs:
         run: |
           sudo apt-get install -y -qq xvfb >/dev/null
           export NPT_ESTUDIO_DIR="$RUNNER_TEMP/estudio"
-          xvfb-run -a timeout 90 tools/estudio/dist/EstudioTemas-NumpadMacros --probar || { cat "$NPT_ESTUDIO_DIR/error.log" 2>/dev/null; exit 1; }
+          xvfb-run -a timeout 90 tools/estudio/dist/EstudioTemas-NumpadMacros --probar > out.txt 2>&1 || {
+            cat out.txt "$NPT_ESTUDIO_DIR/error.log" 2>/dev/null | tail -25 | sed 's/^/::error::/'; exit 1; }
 
       - name: Probar el programa compilado (macOS)
         if: runner.os == 'macOS'
         run: |
           export NPT_ESTUDIO_DIR="$RUNNER_TEMP/estudio"
-          timeout 90 "tools/estudio/dist/Estudio de Temas.app/Contents/MacOS/EstudioTemas-NumpadMacros" --probar || { cat "$NPT_ESTUDIO_DIR/error.log" 2>/dev/null; exit 1; }
+          timeout 90 "tools/estudio/dist/Estudio de Temas.app/Contents/MacOS/EstudioTemas-NumpadMacros" --probar > out.txt 2>&1 || {
+            cat out.txt "$NPT_ESTUDIO_DIR/error.log" 2>/dev/null | tail -25 | sed 's/^/::error::/'; exit 1; }
 
       - name: Probar el programa compilado (Windows)
         if: runner.os == 'Windows'
