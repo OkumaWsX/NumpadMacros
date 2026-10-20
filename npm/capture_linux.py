@@ -151,11 +151,11 @@ class EvdevBackend:
             if want and not getattr(self, "_warned_main", False):
                 self._warned_main = True
                 self.engine.events.put(("error", "No se pudo tomar el teclado principal "
-                                        f"({ex}); la fila de números y F13–F24 también llegarán a los demás programas"))
+                                        f"({ex}); la fila de números también escribirá números"))
 
     def _sync_grab(self, learning: bool):
         want = self.engine.active and not learning
-        want_main = want and (self.engine.row_mode or self.engine.fkeys_wanted())
+        want_main = want and self.engine.row_mode
         for path, dev in self.devs.items():
             if not self._matches(dev):
                 self._sync_main(path, dev, want_main)

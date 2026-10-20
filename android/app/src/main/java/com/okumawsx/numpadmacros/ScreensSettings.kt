@@ -47,7 +47,7 @@ fun SettingsTab(vm: AppVm) {
                     Chip(n, vm.layout == id, { vm.setLayoutPref(id) }, Modifier.weight(1f))
                 }
             }
-            T("Botones del celular (no necesitan teclado)", 13.sp, C.muted)
+            T("Teclas virtuales por banco (no usan ningún teclado)", 13.sp, C.muted)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 for (n in vm.state.phoneCounts) {
                     Chip("$n", vm.state.phoneCount == n, { vm.setPhoneCount(n) }, Modifier.weight(1f))

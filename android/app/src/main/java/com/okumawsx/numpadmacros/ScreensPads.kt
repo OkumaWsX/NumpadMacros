@@ -194,7 +194,7 @@ private fun GroupRow(vm: AppVm) {
     }
 }
 
-/** Botonera con la forma real (numpad, fila 1–0, F13–F24), según las posiciones que manda el PC. */
+/** Botonera con la forma real (virtuales, numpad, fila 1–0), según las posiciones que manda el PC. */
 @Composable
 private fun ShapeGrid(vm: AppVm, g: KeyGroup) {
     BoxWithConstraints(Modifier.fillMaxSize().padding(horizontal = 14.dp)) {

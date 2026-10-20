@@ -83,7 +83,7 @@ data class Act(
 
 data class Bank(val name: String, val keys: Map<String, Act>)
 
-/** Grupo de teclas que se pueden lanzar desde el celular (numpad, fila 1–0, F13–F24). */
+/** Grupo de teclas que se pueden lanzar desde el celular (virtuales, numpad, fila 1–0). */
 data class KeyGroup(val id: String, val name: String, val cols: Int, val rows: Int, val keys: List<KeyPos>)
 
 data class PcState(

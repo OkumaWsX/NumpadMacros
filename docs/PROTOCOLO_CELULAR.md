@@ -74,7 +74,7 @@ usuario.
 | `subir_ini`   | `name` (nombre de archivo), `size` (bytes), `title` | Empieza a subir un sonido (máx. 50 MB). El PC solo lee **.mp3 .wav .ogg .opus .flac .aiff**: el celular convierte lo demás (m4a, aac, 3gp, amr…) a WAV antes de subirlo, y graba directo en WAV |
 | `subir_parte` | `seq`, `data` (base64, ≤ 192 KB decodificados)  | Trozo del archivo |
 | `subir_fin`   | `sha256` (hex), opcional `assign` = {`layer`,`key`,`act`} | Termina; el PC lo guarda y lo agrega a la biblioteca |
-| `botones`     | `n` (12, 24, 36 o 48)                            | Cuántos botones propios tiene el celular |
+| `botones`     | `n` (12, 24, 36 o 48)                            | Cuántas teclas virtuales hay por banco |
 | `pedir`       | `what`: `"estado"` o `"biblioteca"`             | Pide que se reenvíe |
 | `ping`        | `n`                                             | El PC responde `{"t":"pong","n":…}` (para medir la demora) |
 
@@ -96,19 +96,19 @@ usuario.
  "banks":[{"name":"Stream","keys":{"47":{"type":"file","title":"Aplausos","mode":"restart","volume":1.0,"lib":"a1b2c3d4e5","color":0}}}],
  "global":{"45":{"type":"bank_next"}},
  "keys":[["45","NumLk",0,0,1,1],["e0:35","/",1,0,1,1], …],
- "groups":[{"id":"numpad","name":"Numpad","cols":4,"rows":5,"keys":[…]},
+ "groups":[{"id":"celular","name":"Virtuales","cols":4,"rows":6,"keys":[["m1","1",0,0,1,1], …]},
+           {"id":"numpad","name":"Numpad","cols":4,"rows":5,"keys":[…]},
            {"id":"fila","name":"Fila 1–0","cols":6,"rows":2,"keys":[["02","1",0,0,1,1], …]},
-           {"id":"f","name":"F13–F24","cols":6,"rows":2,"keys":[["f13","F13",0,0,1,1], …]}],
  "paused":false}
 ```
 `keys` = las teclas del numpad con su posición `[id, etiqueta, col, fila, ancho, alto]`.
 `groups` = todos los grupos de teclas que se pueden lanzar y editar desde el celular
-(la fila de números y F13–F24 solo aparecen si están activadas en el PC). Una
-tecla de cualquier grupo se usa igual en `tecla` y `asignar`. Las teclas
-F13–F24 tienen id `"f13"` … `"f24"`.
+(la fila de números solo aparece si está activada en el PC). Una tecla de
+cualquier grupo se usa igual en `tecla` y `asignar`.
 
-El grupo `"celular"` (ids `"m1"` … `"m48"`, 4 columnas) son botones que no
-corresponden a ninguna tecla física. `estado` trae además
+El grupo `"celular"` («Virtuales», ids `"m1"` … `"m48"`, 4 columnas, siempre el
+primero) son las **teclas virtuales**: no corresponden a ninguna tecla física.
+(F13–F24 ya no son teclas de entrada desde 3.4.) `estado` trae además
 `"phone":{"count":24,"only":false,"counts":[12,24,36,48]}`. Con `only` = true
 (modo «Solo celular» del PC, sin teclado) `groups` trae **solo** el grupo `celular`.
 

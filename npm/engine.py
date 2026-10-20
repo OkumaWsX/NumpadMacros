@@ -10,7 +10,7 @@ import queue
 import threading
 import time
 
-from .keys import FKEY_ALIASES, FKEY_IDS, MOD_KIDS, ROW_IDS, parse_toggle
+from .keys import MOD_KIDS, ROW_IDS, parse_toggle
 
 BANK_TYPES = ("bank_next", "bank_prev", "bank_go")
 
@@ -78,22 +78,9 @@ class Engine:
     def row_enabled(self) -> bool:
         return bool(self.cfg.get("row_mode", {}).get("enabled"))
 
-    def fkeys_enabled(self) -> bool:
-        return bool(self.cfg.get("fkeys", {}).get("enabled", True))
-
-    def fkeys_wanted(self) -> bool:
-        """Hay alguna F13–F24 con acción (solo entonces se escucha el teclado principal)."""
-        if not self.fkeys_enabled():
-            return False
-        for layer in [self.cfg["global"]] + [b["keys"] for b in self.cfg["banks"]]:
-            for kid, act in layer.items():
-                if kid in FKEY_IDS and act and act.get("type", "none") != "none":
-                    return True
-        return False
-
     def main_wanted(self) -> bool:
-        """Hay que escuchar los teclados principales (fila de números o F13–F24)."""
-        return self.row_enabled() or self.fkeys_wanted()
+        """Hay que escuchar los teclados principales (solo para la fila de números)."""
+        return self.row_enabled() and not self.cfg.get("phone", {}).get("only")
 
     def set_row_mode(self, value: bool):
         with self.lock:
@@ -118,17 +105,7 @@ class Engine:
         `mods` (conjunto de nombres) lo entrega macOS; en los demás sistemas los
         modificadores se siguen aquí mismo.
         """
-        kid = FKEY_ALIASES.get(kid, kid)
         with self.lock:
-            if kid in FKEY_IDS:
-                # F13–F24: solo se consumen si tienen acción; si no, pasan normal
-                if kid in self._pressed or kid in self._passed:
-                    return self.decide(kid, down)
-                if down and self.capture_next:          # «Capturar tecla física»
-                    return self.decide(kid, True)
-                if not down or not self.fkeys_enabled() or self.resolve(kid) is None:
-                    return False
-                return self.decide(kid, True)
             if kid in MOD_KIDS:
                 if mods is None:
                     (self._mods_down.add if down else self._mods_down.discard)(kid)

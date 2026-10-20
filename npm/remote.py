@@ -26,7 +26,7 @@ import time
 
 from . import __version__
 from .soundboard import AUDIO_EXT
-from .keys import (FKEY_LAYOUT, NUMPAD_LAYOUT, PHONE_COUNTS, PHONE_IDS, ROW_LAYOUT, phone_count,
+from .keys import (NUMPAD_LAYOUT, PHONE_COUNTS, PHONE_IDS, ROW_LAYOUT, phone_count,
                    phone_layout)
 
 TCP_PORT = 47800
@@ -499,22 +499,18 @@ class RemoteServer:
                     "paused": not self.engine.active}
 
     def _groups(self):
-        """Grupos de teclas que el celular puede mostrar: numpad, fila, F13–F24 y los
-        botones propios del celular (primero, en el modo «solo celular»)."""
+        """Grupos de teclas que el celular puede mostrar: las teclas virtuales (solo
+        ellas en el modo «solo celular»), el numpad y la fila de números."""
         n = phone_count(self.cfg)
-        cel = {"id": "celular", "name": "Celular", "cols": 4, "rows": -(-n // 4),
+        cel = {"id": "celular", "name": "Virtuales", "cols": 4, "rows": -(-n // 4),
                "keys": [[k, v[0], v[1], v[2], 1, 1] for k, v in phone_layout(n, 4).items()]}
         if self.cfg.get("phone", {}).get("only"):
             return [cel]
-        g = [{"id": "numpad", "name": "Numpad", "cols": 4, "rows": 5,
+        g = [cel, {"id": "numpad", "name": "Numpad", "cols": 4, "rows": 5,
               "keys": [[k, v[0], v[1], v[2], v[3], v[4]] for k, v in NUMPAD_LAYOUT.items()]}]
         if self.cfg.get("row_mode", {}).get("enabled", True):
             g.append({"id": "fila", "name": "Fila 1–0", "cols": 6, "rows": 2,
                       "keys": [[k, v[0], v[1], v[2], 1, 1] for k, v in ROW_LAYOUT.items()]})
-        if self.cfg.get("fkeys", {}).get("enabled", True):
-            g.append({"id": "f", "name": "F13–F24", "cols": 6, "rows": 2,
-                      "keys": [[k, v[0], v[1], v[2], 1, 1] for k, v in FKEY_LAYOUT.items()]})
-        g.append(cel)
         return g
 
     def library(self) -> dict:
@@ -541,7 +537,7 @@ class RemoteServer:
 
     def assign(self, layer, kid, act):
         """Cambia una tecla desde el celular. Devuelve un mensaje de error o None."""
-        if kid not in NUMPAD_LAYOUT and kid not in ROW_LAYOUT and kid not in FKEY_LAYOUT \
+        if kid not in NUMPAD_LAYOUT and kid not in ROW_LAYOUT \
                 and kid not in PHONE_IDS and kid not in self.cfg.get("extra_keys", []):
             return "Esa tecla no existe"
         with self.engine.lock:
@@ -728,7 +724,7 @@ class RemoteServer:
             keys = {}
             for tag, p in prog.items():
                 kid = str(tag).split("|", 1)[0]
-                if kid in NUMPAD_LAYOUT or kid in ROW_LAYOUT or kid in FKEY_LAYOUT \
+                if kid in NUMPAD_LAYOUT or kid in ROW_LAYOUT \
                         or kid in PHONE_IDS or kid in self.cfg.get("extra_keys", []):
                     keys[kid] = round(max(keys.get(kid, 0.0), p), 3)
             if not keys and idle_sent:

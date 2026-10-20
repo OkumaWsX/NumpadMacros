@@ -45,24 +45,14 @@ ROW_LAYOUT = {
 }
 ROW_IDS = frozenset(ROW_LAYOUT)
 
-# Teclas F13–F24: casi ningún teclado las trae, pero las envían el software de
-# teclados y mouse gamer (teclas G, QMK/VIA), un Stream Deck o AutoHotkey.
-# Ningún programa común las usa, así que no interfieren con nada.
-# id -> (etiqueta, columna, fila) en una cuadrícula de 6 x 2
-FKEY_LAYOUT = {f"f{13 + i}": (f"F{13 + i}", i % 6, i // 6) for i in range(12)}
-FKEY_IDS = frozenset(FKEY_LAYOUT)
-# id propio de cada sistema -> "f13"… (Windows: scancode; Linux: evdev)
-FKEY_ALIASES = {f"{sc:02x}": f"f{13 + i}" for i, sc in enumerate(
-    (0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6A, 0x6B, 0x6C, 0x6D, 0x6E, 0x76))}
-FKEY_ALIASES.update({f"ev:{183 + i}": f"f{13 + i}" for i in range(12)})
-
-# Botones del celular: no corresponden a ninguna tecla física, solo se tocan en la app
+# Teclas virtuales: no corresponden a ninguna tecla física, solo se tocan en la app del
+# celular, así nunca interfieren con los teclados del equipo
 PHONE_COUNTS = (12, 24, 36, 48)
 PHONE_IDS = frozenset(f"m{i}" for i in range(1, PHONE_COUNTS[-1] + 1))
 
 
 def phone_layout(count: int, cols: int = 6) -> dict:
-    """id -> (etiqueta, columna, fila) de los primeros `count` botones del celular."""
+    """id -> (etiqueta, columna, fila) de las primeras `count` teclas virtuales."""
     return {f"m{i}": (str(i), (i - 1) % cols, (i - 1) // cols) for i in range(1, count + 1)}
 
 
@@ -105,10 +95,8 @@ def key_label(kid: str) -> str:
     """Nombre legible de una tecla."""
     if kid in ROW_LAYOUT:
         return f"Fila {ROW_LAYOUT[kid][0]}"
-    if kid in FKEY_LAYOUT:
-        return FKEY_LAYOUT[kid][0]
     if kid in PHONE_IDS:
-        return f"Botón {kid[1:]} del celular"
+        return f"Virtual {kid[1:]}"
     if kid in NUMPAD_LAYOUT:
         name = NUMPAD_LAYOUT[kid][0]
         if name == "NumLk":

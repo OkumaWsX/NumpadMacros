@@ -4,10 +4,11 @@ Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https:
 
 ## [Sin publicar]
 ### Añadido
-- **Modo «Solo celular»**: Numpad Macros funciona sin ningún teclado ni numpad conectado, solo con la app del celular. Se activa en «Numpad y opciones»; no muestra avisos de captura y en vez del numpad dibuja los botones del celular.
-- **Botones del celular**: un grupo propio de 12, 24, 36 o 48 botones por banco que no corresponden a ninguna tecla (se eligen en el PC o en Ajustes de la app). Se editan desde el PC (botón «Celular» bajo el dibujo) o desde el celular.
+- **Teclas virtuales**: teclas que solo existen en la app del celular (12, 24, 36 o 48 por banco). Lanzan sonidos y atajos sin pasar por ningún teclado, así que nunca interfieren con los teclados físicos del equipo. Se editan en el PC (botón «Virtuales» bajo el dibujo) o desde el celular, y la cantidad se elige en el PC o en Ajustes de la app.
+- **Modo «Solo celular»**: Numpad Macros funciona sin ningún teclado ni numpad conectado. Se activa en «Numpad y opciones»; no muestra avisos de captura y en vez del numpad dibuja las teclas virtuales.
 
 ### Cambiado
+- **F13–F24 ya no se usan como teclas de entrada**: las reemplazan las teclas virtuales. Lo que tenías asignado a F13–F24 se mueve solo a las primeras teclas virtuales libres del mismo banco. (Los atajos que *envían* F13–F24 a OBS u otros programas siguen igual.)
 - La pestaña «Numpad y opciones» ahora se puede desplazar (ya no se cortan las últimas opciones).
 
 ## [3.3.1] - 2026-10-19

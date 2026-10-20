@@ -116,7 +116,7 @@ class RemoteTest(unittest.TestCase):
         self.assertEqual(st["banks"][0]["name"], "Stream")
         k = st["banks"][0]["keys"]["47"]
         self.assertEqual((k["title"], k["mode"]), ("Aplausos", "restart"))
-        self.assertEqual([g["id"] for g in st["groups"]], ["numpad", "fila", "f", "celular"])
+        self.assertEqual([g["id"] for g in st["groups"]], ["celular", "numpad", "fila"])
         lib = ph.recv("biblioteca")
         self.assertEqual(lib["items"][0]["lib"], remote.lib_id(self.wav))
         ph.send(t="tecla", key="47", down=True)
@@ -177,13 +177,16 @@ class RemoteTest(unittest.TestCase):
         ph, _ = self.pair()
         ph.recv("estado")
         ph.recv("biblioteca")
-        # asignar un atajo a F13 desde el celular
-        ph.send(t="asignar", layer=0, key="f13", act={"type": "keys", "combo": "ctrl+shift+f16",
-                                                      "color": 2})
+        # asignar un atajo a una tecla virtual desde el celular
+        ph.send(t="asignar", layer=0, key="m2", act={"type": "keys", "combo": "ctrl+shift+f16",
+                                                     "color": 2})
         st = ph.recv("estado")
-        self.assertEqual(st["banks"][0]["keys"]["f13"], {"type": "keys", "combo": "ctrl+shift+f16",
-                                                         "color": 2})
-        self.assertIn(("keys", 0, "f13"), self.notes)
+        self.assertEqual(st["banks"][0]["keys"]["m2"], {"type": "keys", "combo": "ctrl+shift+f16",
+                                                        "color": 2})
+        self.assertIn(("keys", 0, "m2"), self.notes)
+        # F13–F24 ya no son teclas de entrada
+        ph.send(t="asignar", layer=0, key="f13", act={"type": "sound_stop"})
+        self.assertTrue(ph.recv("aviso")["bad"])
         # atajo no válido
         ph.send(t="asignar", layer=0, key="48", act={"type": "keys", "combo": "nada+zz"})
         self.assertTrue(ph.recv("aviso")["bad"])
@@ -225,12 +228,12 @@ class RemoteTest(unittest.TestCase):
     def test_phone_buttons_and_only_mode(self):
         ph, _ = self.pair()
         st = ph.recv("estado")
-        cel = st["groups"][-1]
+        cel = st["groups"][0]
         self.assertEqual((cel["id"], cel["cols"], cel["rows"], len(cel["keys"])), ("celular", 4, 6, 24))
         self.assertEqual(st["phone"]["count"], 24)
         ph.send(t="botones", n=48)
         st = ph.recv("estado")
-        self.assertEqual((st["phone"]["count"], len(st["groups"][-1]["keys"])), (48, 48))
+        self.assertEqual((st["phone"]["count"], len(st["groups"][0]["keys"])), (48, 48))
         ph.send(t="botones", n=7)                         # no válido: no cambia
         ph.send(t="asignar", layer=0, key="m40", act={"type": "sound_stop"})
         st = ph.recv("estado")
@@ -269,63 +272,63 @@ class RemoteTest(unittest.TestCase):
         self.assertIn("&c=4821&n=PC-Prueba&id=", q)
 
 
-class FKeyTest(unittest.TestCase):
+class VirtualKeysTest(unittest.TestCase):
     def make(self):
         cfg = copy.deepcopy(config.DEFAULT)
         cfg["row_mode"]["enabled"] = False
         self.board, self.snd = FakeBoard(), FakeSender()
         return Engine(cfg, self.snd, soundboard=self.board), cfg
 
-    def test_unassigned_passes(self):
-        e, cfg = self.make()
-        self.assertFalse(e.fkeys_wanted())
-        self.assertFalse(e.main_wanted())
-        self.assertFalse(e.main_key("64", True))     # F13 (scancode de Windows) sin acción
-        self.assertFalse(e.main_key("64", False))
-
-    def test_assigned_consumed_all_platform_ids(self):
+    def test_fkeys_are_not_input_anymore(self):
         e, cfg = self.make()
         cfg["banks"][0]["keys"]["f13"] = {"type": "file", "path": "boom"}
-        cfg["global"]["f24"] = {"type": "sound_stop"}
-        self.assertTrue(e.main_wanted())
-        for kid in ("64", "ev:183", "f13"):          # Windows, Linux, macOS
-            self.assertTrue(e.main_key(kid, True))
-            self.assertTrue(e.main_key(kid, False))
-        self.assertTrue(e.main_key("76", True))       # F24 en la capa Global
-        self.assertTrue(e.main_key("76", False))
-        wait()
-        self.assertEqual(self.board.played, ["boom", "boom", "boom", "STOP"])
-
-    def test_disabled_and_paused(self):
-        e, cfg = self.make()
-        cfg["banks"][0]["keys"]["f14"] = {"type": "file", "path": "boom"}
-        cfg["fkeys"]["enabled"] = False
-        self.assertFalse(e.main_key("65", True))
         self.assertFalse(e.main_wanted())
-        cfg["fkeys"]["enabled"] = True
-        e.set_active(False)
-        self.assertFalse(e.main_key("65", True))      # en pausa pasa normal
-        self.assertFalse(e.main_key("65", False))
+        for kid in ("64", "ev:183", "f13"):          # F13 en Windows, Linux y macOS: pasa normal
+            self.assertFalse(e.main_key(kid, True))
+            self.assertFalse(e.main_key(kid, False))
+        wait()
+        self.assertEqual(self.board.played, [])
 
-    def test_capture_fkey(self):
+    def test_only_mode_does_not_listen_keyboards(self):
         e, cfg = self.make()
-        e.capture_next = True
-        self.assertTrue(e.main_key("ev:190", True))
-        self.assertEqual(e.events.get_nowait(), ("captured", "f20"))
+        cfg["row_mode"]["enabled"] = True
+        self.assertTrue(e.main_wanted())
+        cfg["phone"]["only"] = True
+        self.assertFalse(e.main_wanted())
+
+    def test_migrate_fkeys(self):
+        path = os.path.join(tempfile.mkdtemp(), "config.json")
+        old = copy.deepcopy(config.DEFAULT)
+        old.pop("phone")
+        old["fkeys"] = {"enabled": True}
+        old["banks"][0]["keys"] = {"m1": {"type": "sound_stop"},
+                                   "f14": {"type": "keys", "combo": "ctrl+f16"},
+                                   "f13": {"type": "file", "path": "a.wav", "title": "A"}}
+        old["global"]["f24"] = {"type": "bank_next"}
+        for i in range(30):
+            old["banks"][1]["keys"][f"m{i + 1}"] = {"type": "sound_stop"}
+        old["banks"][1]["keys"]["f20"] = {"type": "sound_stop"}
+        with open(path, "w") as f:
+            json.dump(old, f)
+        cfg = config.load(path)
+        self.assertNotIn("fkeys", cfg)
+        keys0 = cfg["banks"][0]["keys"]
+        self.assertEqual(keys0["m2"]["path"], "a.wav")             # F13 -> primera libre
+        self.assertEqual(keys0["m3"]["combo"], "ctrl+f16")         # F14 -> la siguiente
+        self.assertFalse(any(k.startswith("f") for k in keys0))
+        self.assertEqual(cfg["global"]["m1"], {"type": "bank_next"})
+        self.assertIn("m31", cfg["banks"][1]["keys"])
+        self.assertEqual(cfg["phone"]["count"], 36)                # se agranda para que se vea
 
     def test_remote_key_works_when_paused(self):
         e, cfg = self.make()
-        cfg["banks"][0]["keys"]["f15"] = {"type": "file", "path": "boom", "mode": "hold"}
+        cfg["banks"][0]["keys"]["m5"] = {"type": "file", "path": "boom", "mode": "hold"}
         e.set_active(False)
-        e.remote_key("f15", True)
-        e.remote_key("f15", True)                     # repetición: no duplica
-        e.remote_key("f15", False)
+        e.remote_key("m5", True)
+        e.remote_key("m5", True)                      # repetición: no duplica
+        e.remote_key("m5", False)
         wait()
-        self.assertEqual(self.board.played, ["boom", "STOP f15|boom"])
-
-
-if __name__ == "__main__":
-    unittest.main()
+        self.assertEqual(self.board.played, ["boom", "STOP m5|boom"])
 
 
 class BluetoothPiecesTest(unittest.TestCase):

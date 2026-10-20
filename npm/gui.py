@@ -16,7 +16,7 @@ from .engine import Engine
 from .dialogs import NewsDialog, UpdateDialog
 from .devices_tab import DevicesTab
 from .remote import RemoteServer
-from .keys import (FKEY_IDS, FKEY_LAYOUT, PHONE_COUNTS, PHONE_IDS, phone_count, phone_layout, KEY_CHOICES, MODIFIER_KEYSYMS, MODIFIERS, NUMPAD_IDS, NUMPAD_LAYOUT, ROW_IDS,
+from .keys import (PHONE_COUNTS, PHONE_IDS, phone_count, phone_layout, KEY_CHOICES, MODIFIER_KEYSYMS, MODIFIERS, NUMPAD_IDS, NUMPAD_LAYOUT, ROW_IDS,
                    ROW_LAYOUT, TOGGLE_CHOICES, busy_reason, combo_text, join_combo, key_label,
                    keysym_to_key, parse_combo, parse_toggle)
 from .senders import make_sender
@@ -359,14 +359,14 @@ class App:
         self.canvas.pack(pady=(4, 8))
         self.canvas.bind("<Button-1>", self._on_canvas_click)
 
-        # fila de números y F13–F24 comparten el mismo espacio (se elige con los botones)
-        self.small_group = "cel" if self._phone_only() else "row"
+        # teclas virtuales y fila de números comparten el mismo espacio (se elige con los botones)
+        self.small_group = "cel"
         self.cel_page = 0
         sg = ttk.Frame(left, style="Panel.TFrame")
         sg.pack(fill="x")
         self.sg_frame = sg
         self.sg_btns = {}
-        for gid, text in (("row", "1–0"), ("f", "F13–F24"), ("cel", "Celular")):
+        for gid, text in (("cel", "Virtuales"), ("row", "Fila 1–0")):
             b = FlatButton(sg, text=text, command=lambda g=gid: self._set_group(g),
                            font=(FONT, BASE - 1, "bold"), padx=8, pady=2)
             b.pack(side="left", padx=(0, 5))
@@ -562,8 +562,8 @@ class App:
         }[PLATFORM]
         ttk.Label(f, style="Muted.TLabel", wraplength=500, justify="left", text=(
             hint + " Para asignarlas en OBS u otro programa: abre su ventana de atajos, haz clic en "
-            "el campo y pulsa esta tecla del numpad. La combinación se mantiene apretada mientras "
-            "mantengas la tecla (sirve para push-to-talk).")).grid(row=3, column=0, sticky="w")
+            "el campo y pulsa esta tecla (en el numpad o en la app del celular). La combinación se "
+            "mantiene apretada mientras mantengas la tecla (sirve para push-to-talk).")).grid(row=3, column=0, sticky="w")
         ttk.Button(f, text="Probar en 3 s", command=self._test_keys_delayed).grid(
             row=4, column=0, sticky="w", pady=(14, 0))
 
@@ -796,7 +796,7 @@ class App:
             "todas las demás teclas siguen escribiendo.")).grid(row=r, column=0, sticky="w", pady=(4, 0))
 
         r += 1
-        ttk.Label(t, text="Solo celular (sin teclado)", style="H.TLabel").grid(
+        ttk.Label(t, text="Teclas virtuales (app del celular)", style="H.TLabel").grid(
             row=r, column=0, sticky="w", pady=(20, 0))
         r += 1
         ph = ttk.Frame(t, style="Panel.TFrame")
@@ -807,29 +807,16 @@ class App:
         r += 1
         pc = ttk.Frame(t, style="Panel.TFrame")
         pc.grid(row=r, column=0, sticky="w", pady=(6, 0))
-        ttk.Label(pc, text="Botones del celular por banco", style="Panel.TLabel").pack(side="left", padx=(0, 10))
+        ttk.Label(pc, text="Teclas virtuales por banco", style="Panel.TLabel").pack(side="left", padx=(0, 10))
         self.phone_count_cb = ttk.Combobox(pc, state="readonly", width=5, values=[str(n) for n in PHONE_COUNTS])
         self.phone_count_cb.set(str(phone_count(self.cfg)))
         self.phone_count_cb.pack(side="left")
         self.phone_count_cb.bind("<<ComboboxSelected>>", lambda e: self._on_phone_opts())
         r += 1
         ttk.Label(t, style="Muted.TLabel", wraplength=520, justify="left", text=(
-            "Los botones del celular no corresponden a ninguna tecla: solo se tocan en la app. Con "
-            "«solo celular» el programa no necesita ningún teclado conectado y en vez del numpad "
-            "dibuja esos botones para editarlos aquí también.")).grid(row=r, column=0, sticky="w", pady=(4, 0))
-
-        r += 1
-        ttk.Label(t, text="Teclas F13–F24", style="H.TLabel").grid(row=r, column=0, sticky="w", pady=(20, 0))
-        r += 1
-        self.fkeys_var = tk.BooleanVar(value=self.cfg["fkeys"].get("enabled", True))
-        ttk.Checkbutton(t, text="Usar F13–F24 como botones", variable=self.fkeys_var,
-                        command=self._on_fkeys_opt).grid(row=r, column=0, sticky="w", pady=(8, 0))
-        r += 1
-        ttk.Label(t, style="Muted.TLabel", wraplength=520, justify="left", text=(
-            "Casi ningún teclado trae estas teclas, pero las pueden enviar el software de teclados y "
-            "mouse gamer (teclas G, QMK/VIA), un Stream Deck o AutoHotkey. Ningún programa común las usa, "
-            "así que sirven para tener más botones con un solo teclado. Las que no tengan acción pasan "
-            "normal a los demás programas. Asígnalas con el botón «F13–F24» bajo el dibujo del numpad.")
+            "Las teclas virtuales no son teclas físicas: solo se tocan en la app del celular, así que "
+            "nunca interfieren con los teclados del equipo. Con «solo celular» el programa no necesita "
+            "ningún teclado conectado y en vez del numpad dibuja las teclas virtuales para editarlas aquí.")
         ).grid(row=r, column=0, sticky="w", pady=(4, 0))
 
         r += 1
@@ -1588,8 +1575,6 @@ class App:
         self._redraw()
 
     def _small_layout(self):
-        if self.small_group == "f":
-            return FKEY_LAYOUT
         if self.small_group == "cel":
             per = 6 * self._cel_rows()
             self.cel_page = min(self.cel_page, self._cel_pages() - 1)
@@ -1632,13 +1617,8 @@ class App:
         if self.small_group == "cel":
             enabled = True
             self.row_title.configure(text=(
-                f"Botones del celular ({phone_count(self.cfg)}) · no necesitan teclado: "
-                "se tocan en la app"))
-        elif self.small_group == "f":
-            enabled = self.cfg["fkeys"].get("enabled", True)
-            self.row_title.configure(text=(
-                "Teclas F13–F24 · las envían teclados/mouse gamer, Stream Deck o AutoHotkey"
-                if enabled else "Teclas F13–F24 · desactivadas (ver «Numpad y opciones»)"))
+                f"Teclas virtuales ({phone_count(self.cfg)}) · se tocan en la app del celular "
+                "y nunca interfieren con tus teclados"))
         else:
             enabled = self.cfg["row_mode"].get("enabled", True)
             try:
@@ -1685,7 +1665,7 @@ class App:
         for wdg in self.extra_frame.winfo_children():
             wdg.destroy()
         extras = [k for k in self.cfg.get("extra_keys", [])
-                  if k not in NUMPAD_IDS and k not in ROW_IDS and k not in FKEY_IDS and k not in PHONE_IDS]
+                  if k not in NUMPAD_IDS and k not in ROW_IDS and k not in PHONE_IDS]
         if self._phone_only():
             extras = []
         if not extras:
@@ -1713,9 +1693,7 @@ class App:
 
     def _select(self, kid):
         self.selected = kid
-        if kid in FKEY_IDS:
-            self.small_group = "f"
-        elif kid in ROW_IDS:
+        if kid in ROW_IDS:
             self.small_group = "row"
         elif kid in PHONE_IDS:
             self.small_group = "cel"
@@ -1817,14 +1795,8 @@ class App:
                 row_note = "La fila de números está desactivada: actívala en «Numpad y opciones»."
             note = (row_note + " " + note).strip()
         elif kid in PHONE_IDS:
-            note = (f"{key_label(kid)}: no corresponde a ninguna tecla, solo se toca en la app del "
+            note = (f"Tecla {key_label(kid).lower()}: no es una tecla física, solo se toca en la app del "
                     "celular (pestaña «Celular» para conectarlo). " + note).strip()
-        elif kid in FKEY_IDS:
-            f_note = (f"{FKEY_LAYOUT[kid][0]}: llega si la envía el software de tu teclado o mouse, "
-                      "un Stream Deck o AutoHotkey. Si no le asignas nada, pasa normal a los demás programas.")
-            if not self.cfg["fkeys"].get("enabled", True):
-                f_note = "Las teclas F13–F24 están desactivadas: actívalas en «Numpad y opciones»."
-            note = (f_note + " " + note).strip()
         self.ed_note.configure(text=note)
         self._editor_lock = True
         self.type_cb.set(TYPE_LABEL.get(act.get("type", "none"), TYPE_LABEL["none"]))
@@ -1863,8 +1835,6 @@ class App:
             else:
                 d[self.selected] = act
         self._save()
-        if self.selected in FKEY_IDS:
-            self._kick_backend()          # escuchar (o soltar) el teclado principal
         if redraw:
             self._redraw()
 
@@ -2089,7 +2059,7 @@ class App:
             ph["count"] = int(self.phone_count_cb.get())
         self._save()
         if changed:
-            self.small_group = "cel" if only else "row"
+            self.small_group = "cel"
             self._apply_phone_only()
             self._start_backend()
         self.cel_page = 0
@@ -2108,14 +2078,6 @@ class App:
                 self.btn_capture.pack(fill="x", pady=(6, 0))
         if self._phone_only() and self.selected not in PHONE_IDS:
             self.selected = "m1"
-
-    def _on_fkeys_opt(self):
-        with self.engine.lock:
-            self.cfg["fkeys"]["enabled"] = self.fkeys_var.get()
-        self._save()
-        self._kick_backend()
-        self._redraw()
-        self._load_editor()
 
     # ================================================================ activo / pausa
     def _paint_tog_warn(self, combo):
@@ -2169,7 +2131,7 @@ class App:
                 self._redraw()
         elif kind == "captured":
             kid = ev[1]
-            if kid not in NUMPAD_IDS and kid not in ROW_IDS and kid not in FKEY_IDS and kid not in PHONE_IDS \
+            if kid not in NUMPAD_IDS and kid not in ROW_IDS and kid not in PHONE_IDS \
                     and kid not in self.cfg["extra_keys"]:
                 with self.engine.lock:
                     self.cfg["extra_keys"].append(kid)

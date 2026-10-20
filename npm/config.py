@@ -56,9 +56,8 @@ DEFAULT = {
     },
     "last_dir": "",
     "library": [],                   # biblioteca de sonidos: [{"path", "title"}]
-    "fkeys": {"enabled": True},
-    "phone": {"count": 24,           # botones propios de la app del celular
-              "only": False},        # True = sin teclado: solo se usa el celular      # teclas F13–F24 como botones (si llegan desde el teclado)
+    "phone": {"count": 24,           # teclas virtuales de la app del celular
+              "only": False},        # True = sin teclado: solo se usa el celular
     "row_mode": {                    # fila de números del teclado principal
         "enabled": True,
         "toggle": "ctrl+alt+m",      # combinación que activa/desactiva el modo macros
@@ -98,9 +97,8 @@ def load(path: str | None = None) -> dict:
     ph = copy.deepcopy(DEFAULT["phone"])
     ph.update(cfg.get("phone") or {})
     cfg["phone"] = ph
-    fk = copy.deepcopy(DEFAULT["fkeys"])
-    fk.update(cfg.get("fkeys") or {})
-    cfg["fkeys"] = fk
+    cfg.pop("fkeys", None)
+    migrate_fkeys(cfg)
     upd = copy.deepcopy(DEFAULT["updates"])
     upd.update(cfg.get("updates") or {})
     cfg["updates"] = upd
@@ -119,6 +117,34 @@ def load(path: str | None = None) -> dict:
                 add(cfg, [act["path"]], act.get("title"))
     cfg["active_bank"] = min(max(0, int(cfg.get("active_bank", 0))), len(cfg["banks"]) - 1)
     return cfg
+
+
+def migrate_fkeys(cfg: dict) -> int:
+    """En 3.3.1 F13–F24 servían como teclas de entrada. Ahora las reemplazan las
+    teclas virtuales del celular: lo asignado a "f13"… pasa a la primera tecla
+    virtual libre de la misma capa (y se agranda la cantidad si hace falta)."""
+    from .keys import PHONE_COUNTS
+    moved, top = 0, 0
+    for layer in [cfg["global"]] + [b["keys"] for b in cfg["banks"]]:
+        old = sorted((k for k in layer if k.startswith("f") and k[1:].isdigit() and 13 <= int(k[1:]) <= 24),
+                     key=lambda k: int(k[1:]))
+        for kid in old:
+            act = layer.pop(kid)
+            if not act or act.get("type", "none") == "none":
+                continue
+            i = 1
+            while f"m{i}" in layer and i < PHONE_COUNTS[-1]:
+                i += 1
+            if f"m{i}" in layer:
+                continue                                   # no queda espacio: se descarta
+            layer[f"m{i}"] = act
+            top = max(top, i)
+            moved += 1
+    if top:
+        ph = cfg["phone"]
+        if int(ph.get("count", 24)) < top:
+            ph["count"] = next(n for n in PHONE_COUNTS if n >= top)
+    return moved
 
 
 def save(cfg: dict, path: str | None = None) -> None:
