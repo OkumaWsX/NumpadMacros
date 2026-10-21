@@ -134,6 +134,7 @@ class ThemeArt:
         bg = theme.get("background") or {}
         self.gradient = bg if (bg.get("tipo", "degradado") == "degradado" and bg.get("colores")) else None
         self.sections = theme.get("sections") or {}
+        self.layer_alpha = theme.get("layer_alpha") or {}
         self._anims: list[dict] = []
         self._idle = False
         self._pause = theme.get("gif_pause", True) is not False    # el tema puede pedir no pausarlos
@@ -166,6 +167,13 @@ class ThemeArt:
     def under(self) -> str:
         """Color que queda debajo de los paneles (promedio del degradado o el fondo)."""
         return gradient_average(self.gradient["colores"]) if self.gradient else C["bg"]
+
+    def layer(self, token) -> float:
+        """Opacidad propia de una capa del tema (0–1); 1 si no tiene."""
+        try:
+            return max(0.0, min(1.0, float(self.layer_alpha.get(token, 100)) / 100))
+        except (TypeError, ValueError):
+            return 1.0
 
     def section(self, name) -> dict:
         return self.sections.get(name) or {}

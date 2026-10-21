@@ -2355,6 +2355,9 @@ class App:
         ka = 1.0
         if art is not None and art.has("keys") and kid not in self.flash:
             ka = art.section("keys").get("contenido", 100) / 100 if art.section("keys") else 1.0
+            # transparencia propia de la capa de la tecla (vacía, con acción o Global)
+            tok = "key" if not shown else ("key_global" if is_global else "key_set")
+            ka *= art.layer(tok) if not col else 1.0
             ka = ka if shown else min(ka, .82)            # las vacías dejan ver un poco la imagen
         img = aa.key_shape(self.root, int(x1 - x0) - 1, int(y1 - y0) - 1, r, fill, line, lw, ka)
         if img is not None:
