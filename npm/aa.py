@@ -57,15 +57,24 @@ def _rgba(col, alpha=1.0):
 
 
 # ---------------------------------------------------------------- formas
-def key_shape(master, w, h, r, fill, line, lw):
-    """Tecla: rectángulo redondeado con borde (borde = 0 → sin borde)."""
+def key_shape(master, w, h, r, fill, line, lw, alpha=1.0):
+    """Tecla: rectángulo redondeado con borde (borde = 0 → sin borde). `alpha` = opacidad del relleno
+    (deja ver la imagen del tema que está detrás de las teclas)."""
     def paint(d, s):
         W, H = w * s, h * s
-        d.rounded_rectangle((0, 0, W - 1, H - 1), radius=r * s, fill=_rgba(line if lw else fill))
+        if alpha >= 1:
+            d.rounded_rectangle((0, 0, W - 1, H - 1), radius=r * s, fill=_rgba(line if lw else fill))
+            if lw:
+                k = lw * s
+                d.rounded_rectangle((k, k, W - 1 - k, H - 1 - k), radius=max(1, (r - lw) * s), fill=_rgba(fill))
+            return
         if lw:
+            d.rounded_rectangle((0, 0, W - 1, H - 1), radius=r * s, outline=_rgba(line), width=int(lw * s))
             k = lw * s
-            d.rounded_rectangle((k, k, W - 1 - k, H - 1 - k), radius=max(1, (r - lw) * s), fill=_rgba(fill))
-    return _render(master, ("key", w, h, r, fill, line, lw), w, h, paint)
+            d.rounded_rectangle((k, k, W - 1 - k, H - 1 - k), radius=max(1, (r - lw) * s), fill=_rgba(fill, alpha))
+        else:
+            d.rounded_rectangle((0, 0, W - 1, H - 1), radius=r * s, fill=_rgba(fill, alpha))
+    return _render(master, ("key", w, h, r, fill, line, lw, round(alpha, 2)), w, h, paint)
 
 
 def badge(master, size, fill, radius=None):

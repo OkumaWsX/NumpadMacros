@@ -107,9 +107,23 @@ firma Ed25519 de `OFFICIAL_KEY` (64, si va firmado). El contenido es el JSON del
 **Nombres repetidos**: dos personas pueden elegir el mismo nombre. Lo que las distingue es `author_key`:
 Numpad Macros puede recordar qué clave usó cada nombre y avisar si cambia.
 
+## Cómo se dibuja en Numpad Macros (desde 3.4.1)
+
+Código: `npm/theme_art.py` (y el encabezado y el pie en `npm/gui.py`).
+
+| Zona | Cómo se ve |
+|---|---|
+| `fondo` degradado | Detrás de toda la ventana: bordes, espacios entre paneles, encabezado y pie. Lo que se pinta con color sólido (barra de pestañas, campos) usa el **promedio** del degradado. |
+| `banner`, `logo`, `headmid` | El encabezado es un lienzo: el banner lo cubre entero, el logo va antes del título y `headmid` entre el título y los medidores (si no cabe, se oculta). |
+| `keys` | Detrás de la tabla de teclas (numpad o virtuales). Las teclas dejan ver la imagen según `secciones.keys.contenido`; las vacías siempre un poco. |
+| `leftbot` | Abajo del panel de teclas. |
+| `tabsend` | A la derecha de la última pestaña, si hay espacio. |
+| `corner` | Al fondo de la pestaña Tecla, detrás del contenido (se ve en el espacio libre de abajo). |
+| `footband`, `foot` | El pie también es un lienzo: la banda lo cubre entero y `foot` va a la izquierda de los botones. |
+| `secciones` | `head`, `foot` y `keys`: plancha del color del panel con su opacidad sobre el fondo, y el texto según `contenido`. `left`, `body` y `tabs`: su color se mezcla con el de debajo (Tk no tiene transparencia real en los paneles). `realce`: borde del color de acento. |
+| GIF | Se animan y se **pausan** cuando el mouse sale de la ventana (como «cuando no usas la ventana» en el Estudio) o la ventana está oculta. |
+
 ## Pendiente en Numpad Macros
 
-3.4.1 abre los temas con todas las zonas nuevas (9 espacios, GIF, degradado y secciones), aplica los
-colores y la transparencia de la ventana, y en la pestaña Temas dice qué más trae el tema. Falta dibujar
-las imágenes, el degradado y la transparencia por sección en la ventana, y el aviso de `reserved_name`.
-«Exportar» desde Numpad Macros guarda en versión 1 (sin imágenes ni capas).
+El aviso de `reserved_name`, y `contenido` de las secciones `left`, `body` y `tabs` (sus textos no se
+atenúan). «Exportar» desde Numpad Macros guarda en versión 1 (sin imágenes ni capas).

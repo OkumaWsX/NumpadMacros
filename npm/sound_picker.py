@@ -173,6 +173,8 @@ class SoundPicker:
     def refresh(self, current=None):
         """Vuelve a llenar con la biblioteca (respetando lo buscado)."""
         if current is not None:
+            if current != self.current:
+                self._reveal = True               # mostrar el elegido al dibujar
             self.current = current
         self.items = library.search(self.app.cfg, self.q.get())
         self.usage = library.usage(self.app.cfg)
@@ -455,6 +457,14 @@ class SoundPicker:
                            fill=C["muted"], font=(FONT, BASE))
         cv.configure(scrollregion=(0, 0, W, max(total, self.height - 2)))
         cv.yview_moveto(top)
+        if getattr(self, "_reveal", False):
+            self._reveal = False
+            idx = next((i for i, it in enumerate(self.items) if library.norm(it["path"]) == self.current), None)
+            if idx is not None and total > 0:
+                ry = pad + (idx // self.cols) * (card_h + gap)
+                y0, y1 = cv.yview()[0] * total, cv.yview()[1] * total
+                if ry < y0 or ry + card_h > y1:
+                    cv.yview_moveto(max(0, ry - pad) / total)
         self._paint_badges()
 
     def _preview_tag(self, path):

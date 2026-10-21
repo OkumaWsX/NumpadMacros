@@ -19,6 +19,7 @@ from .dialogs import NewsDialog, UpdateDialog
 from . import themes
 from .devices_tab import DevicesTab
 from .sound_picker import SoundPicker
+from .theme_art import CanvasPill, CanvasText, ThemeArt
 from .themes_tab import ThemesTab
 from .remote import RemoteServer
 from .keys import (PHONE_IDS, VIRTUAL_COLS, VIRTUAL_COUNT, VIRTUAL_ROWS, phone_layout, KEY_CHOICES, MODIFIER_KEYSYMS, MODIFIERS, NUMPAD_IDS, NUMPAD_LAYOUT, ROW_IDS,
@@ -67,6 +68,23 @@ def short_action(act, narrow=False) -> str:
         "bank_prev": "◀ Banco",
         "bank_go": f"→ Banco {act.get('bank', 1)}",
     }.get(t, "")
+
+
+class _HeadSlot(tk.Frame):
+    """Aviso de versión nueva dentro del encabezado dibujado: grid() lo muestra y grid_remove() lo oculta."""
+
+    def __init__(self, master, app, **kw):
+        super().__init__(master, **kw)
+        self.app = app
+        self.shown = False
+
+    def grid(self, **_kw):
+        self.shown = True
+        self.app._schedule_head()
+
+    def grid_remove(self):
+        self.shown = False
+        self.app._schedule_head()
 
 
 class FlatButton(tk.Label):
@@ -152,6 +170,8 @@ class App:
         self.cfg = config.load()
         self.theme = themes.current(self.cfg)
         apply_theme(self.theme["colors"])           # antes de crear cualquier ventana
+        self.art = ThemeArt(self, self.theme)       # imágenes, degradado y secciones del tema
+        self.art.tweak_colors()
         self.uiq: queue.Queue = queue.Queue()     # mensajes de otros hilos -> GUI
         self.sender, self.sender_err = make_sender()
         self.board = make_soundboard(self.cfg["audio"])
@@ -232,6 +252,8 @@ class App:
                     selectforeground=C["text"], insertcolor=C["text"], font=(FONT, BASE))
         s.configure("TFrame", background=C["bg"])
         s.configure("Panel.TFrame", background=C["panel"])
+        s.configure("Realce.Panel.TFrame", background=C["panel"], borderwidth=2, relief="solid",
+                    bordercolor=C["accent"], lightcolor=C["accent"], darkcolor=C["accent"])
         s.configure("TLabel", background=C["bg"])
         s.configure("Panel.TLabel", background=C["panel"])
         s.configure("Field.TLabel", background=C["panel"], foreground=C["muted"])
@@ -279,12 +301,18 @@ class App:
         # pestañas
         s.configure("TNotebook", background=C["bg"], borderwidth=1, bordercolor=C["line"],
                     lightcolor=C["panel"], darkcolor=C["panel"], tabmargins=(0, 0, 0, 0))
-        s.configure("TNotebook.Tab", background=mix(C["bg"], C["panel"], .5), foreground=C["muted"],
-                    padding=(14, 7), borderwidth=1, bordercolor=C["line"],
-                    lightcolor=mix(C["bg"], C["panel"], .5), darkcolor=mix(C["bg"], C["panel"], .5),
+        tab_bg = C.get("tab_bg", mix(C["bg"], C["panel"], .5))
+        tab_on = C.get("tab_on", C["panel"])
+        art = getattr(self, "art", None)
+        tab_line = C["accent"] if art is not None and art.realce("tabs") else C["line"]
+        if art is not None and art.realce("body"):
+            s.configure("TNotebook", bordercolor=C["accent"])
+        s.configure("TNotebook.Tab", background=tab_bg, foreground=C["muted"],
+                    padding=(14, 7), borderwidth=1, bordercolor=tab_line,
+                    lightcolor=tab_bg, darkcolor=tab_bg,
                     font=(FONT, BASE, "bold"))
-        s.map("TNotebook.Tab", background=[("selected", C["panel"]), ("active", C["panel"])],
-              lightcolor=[("selected", C["panel"])], darkcolor=[("selected", C["panel"])],
+        s.map("TNotebook.Tab", background=[("selected", tab_on), ("active", tab_on)],
+              lightcolor=[("selected", tab_on)], darkcolor=[("selected", tab_on)],
               foreground=[("selected", C["text"]), ("active", C["text"])],
               expand=[("selected", (0, 0, 0, 1))], padding=[("selected", (14, 7))])
 
@@ -389,68 +417,15 @@ class App:
         r.columnconfigure(1, weight=1)
         r.rowconfigure(1, weight=1)
 
-        # ---------- cabecera
-        head = ttk.Frame(r)
-        head.grid(row=0, column=0, columnspan=2, sticky="ew", padx=18, pady=(14, 8))
-        head.columnconfigure(1, weight=1)
-        ttk.Label(head, text="Numpad Macros", style="Title.TLabel").grid(row=0, column=0, sticky="w")
-        chips = ttk.Frame(head)
-        chips.grid(row=1, column=0, columnspan=4, sticky="w", pady=(4, 0))
-        self.chip_dev = tk.Label(chips, bg=C["bg"], fg=C["muted"], font=(FONT, BASE - 1))
-        self.chip_dev.pack(side="left", padx=(0, 14))
-        self.chip_board = tk.Label(chips, bg=C["bg"], fg=C["muted"], font=(FONT, BASE - 1))
-        self.chip_board.pack(side="left", padx=(0, 14))
-        self.chip_row = FlatButton(chips, command=self._toggle_row, bg=C["bg"],
-                                   font=(FONT, BASE - 1, "bold"), padx=8, pady=1)
-        self.chip_row.pack(side="left")
-        # aviso del compresor o de saturación (junto a los demás indicadores)
-        self.meter_flag = tk.Label(chips, bg=C["bg"], font=(FONT, BASE - 1, "bold"))
-        self.meter_flag.pack(side="left", padx=(14, 0))
+        # ---------- fondo de toda la ventana (degradado del tema)
+        self.win_bg = None
+        if self.art.gradient:
+            self.win_bg = tk.Label(r, bd=0, highlightthickness=0, bg=C["bg"])
+            self.win_bg.place(x=0, y=0, relwidth=1, relheight=1)
+            self.win_bg.lower()
 
-        bank_box = ttk.Frame(head)
-        bank_box.grid(row=0, column=2, sticky="e", padx=(0, 14))
-        ttk.Button(bank_box, text="◀", width=3,
-                   command=lambda: self.engine.set_bank(self.engine.bank - 1)).pack(side="left")
-        self.bank_lbl = tk.Label(bank_box, bg=C["bg"], fg=C["text"], font=(FONT, BASE + 1, "bold"),
-                                 width=18)
-        self.bank_lbl.pack(side="left", padx=6)
-        ttk.Button(bank_box, text="▶", width=3,
-                   command=lambda: self.engine.set_bank(self.engine.bank + 1)).pack(side="left")
-
-        self.btn_active = FlatButton(head, command=self._toggle_active,
-                                     font=(FONT, BASE, "bold"), padx=16, pady=6)
-        self.btn_active.grid(row=0, column=3, sticky="e")
-        self._paint_active()
-        self._paint_row()
-
-        # medidores de volumen en tiempo real
-        mt = ttk.Frame(head)
-        mt.grid(row=0, column=1, sticky="e", padx=(10, 22))
-        self.meters = {}
-        for i, (key, name) in enumerate((("spk", "Audífonos"), ("mic", "Micrófono virtual"))):
-            tk.Label(mt, text=name, bg=C["bg"], fg=C["muted"], font=(FONT, BASE - 2), anchor="e").grid(
-                row=i, column=0, sticky="e", padx=(0, 6))
-            m = Meter(mt, width=190, height=9)
-            m.grid(row=i, column=1, pady=1)
-            val = tk.Label(mt, text="—", bg=C["bg"], fg=C["muted"], font=(FONT, BASE - 2), width=7, anchor="w")
-            val.grid(row=i, column=2, sticky="w", padx=(6, 0))
-            self.meters[key] = (m, val)
-
-        # aviso de versión nueva (oculto hasta que haya una)
-        self.banner = tk.Frame(head, bg=C["accent_bg"], highlightbackground=C["accent_dim"], highlightthickness=1)
-        self.banner.grid(row=2, column=0, columnspan=4, sticky="ew", pady=(10, 0))
-        self.banner.columnconfigure(1, weight=1)
-        self.banner_icon = tk.Label(self.banner, text="⬇", bg=C["accent_bg"], fg=C["accent"], font=(FONT, BASE + 3, "bold"))
-        self.banner_icon.grid(row=0, column=0, padx=(12, 8), pady=6)
-        self.banner_lbl = tk.Label(self.banner, bg=C["accent_bg"], fg=C["text"], font=(FONT, BASE, "bold"), anchor="w")
-        self.banner_lbl.grid(row=0, column=1, sticky="ew")
-        self.banner_btn = FlatButton(self.banner, text="Actualizar", command=self._open_update,
-                                     bg=C["accent"], fg=C["on_accent"], font=(FONT, BASE - 1, "bold"), padx=14, pady=4)
-        self.banner_btn.grid(row=0, column=2, padx=6, pady=6)
-        self.banner_later = FlatButton(self.banner, text="Más tarde", command=self._hide_banner,
-                                       bg=C["accent_bg"], fg=C["text"], font=(FONT, BASE - 1), padx=10, pady=4)
-        self.banner_later.grid(row=0, column=3, padx=(0, 10))
-        self.banner.grid_remove()
+        # ---------- cabecera (un lienzo: el banner o el degradado del tema se ve detrás)
+        self._build_head(r)
 
         # ---------- izquierda: numpad
         left = ttk.Frame(r, style="Panel.TFrame", padding=16)
@@ -543,26 +518,362 @@ class App:
         self.devtab = DevicesTab(self.tab_dev, self)
         self.themestab = ThemesTab(self.tab_themes, self)
 
-        # ---------- barra de estado
-        foot = ttk.Frame(r)
-        foot.grid(row=2, column=0, columnspan=2, sticky="ew", padx=18, pady=(0, 10))
-        foot.columnconfigure(0, weight=1)
-        self.status = tk.Label(foot, anchor="w", bg=C["bg"], fg=C["muted"], font=(FONT, BASE - 1))
-        self.status.grid(row=0, column=0, sticky="ew")
-        FlatButton(foot, text=f"v{__version__} · Novedades", command=self._show_news,
-                   bg=C["bg"], fg=C["muted"], font=(FONT, BASE - 1), padx=10, pady=4,
-                   highlightbackground=C["line"], highlightthickness=1).grid(row=0, column=1, padx=(10, 0))
-        FlatButton(foot, text=f"Creado por {about.CREATOR} · Soporte", command=self._show_about,
-                   bg=C["panel2"], fg=C["text"], font=(FONT, BASE - 1), padx=12, pady=4).grid(
-            row=0, column=2, padx=(6, 6))
-        FlatButton(foot, text="♥ Donar", command=lambda: self._open(about.DONATE),
-                   bg=C["accent"], fg=C["on_accent"], font=(FONT, BASE - 1, "bold"), padx=12, pady=4).grid(
-            row=0, column=3)
+        # ---------- pie (también un lienzo, por la banda y el espacio libre del tema)
+        self._build_foot(r)
+        # ---------- espacios libres del tema: final de las pestañas y abajo del panel de teclas
+        self._place_free_slots(left)
         self._refresh_layer_combo()
+
+    # ---------------------------------------------------------------- cabecera y pie dibujados
+    def _build_head(self, r):
+        art = self.art
+        cv = tk.Canvas(r, bg=C["bg"], highlightthickness=0, bd=0, height=70)
+        cv.grid(row=0, column=0, columnspan=2, sticky="ew")
+        self.head_cv = cv
+        self._head_bg = cv.create_image(0, 0, anchor="nw", tags=("bg",))
+        relayout = self._schedule_head
+        self.title_txt = CanvasText(cv, (FONT, BASE + 7, "bold"), C["text"], "head", art, text="Numpad Macros")
+        self.logo_item = cv.create_image(0, 0, anchor="nw")
+        self.headmid_item = cv.create_image(0, 0, anchor="center")
+        small = (FONT, BASE - 1)
+        self.chip_dev = CanvasText(cv, small, C["muted"], "head", art, relayout)
+        self.chip_board = CanvasText(cv, small, C["muted"], "head", art, relayout)
+        self.chip_row = CanvasPill(cv, (FONT, BASE - 1, "bold"), self._toggle_row, art, relayout, "head")
+        self.meter_flag = CanvasText(cv, (FONT, BASE - 1, "bold"), C["muted"], "head", art, relayout)
+
+        self.bank_prev = ttk.Button(cv, text="◀", width=3, command=lambda: self.engine.set_bank(self.engine.bank - 1))
+        self.bank_next = ttk.Button(cv, text="▶", width=3, command=lambda: self.engine.set_bank(self.engine.bank + 1))
+        self.bank_lbl = CanvasText(cv, (FONT, BASE + 1, "bold"), C["text"], "head", art, anchor="center")
+        self.btn_active = FlatButton(cv, command=self._toggle_active, font=(FONT, BASE, "bold"), padx=16, pady=6)
+        self._head_win = {w: cv.create_window(0, 0, window=w, anchor="nw")
+                          for w in (self.bank_prev, self.bank_next, self.btn_active)}
+        self._paint_active()
+        self._paint_row()
+
+        # medidores de volumen en tiempo real
+        self.meters = {}
+        self._meter_rows = []
+        for key, name in (("spk", "Audífonos"), ("mic", "Micrófono virtual")):
+            lbl = CanvasText(cv, (FONT, BASE - 2), C["muted"], "head", art, anchor="ne", text=name)
+            m = Meter(cv, width=190, height=9)
+            mw = cv.create_window(0, 0, window=m, anchor="nw")
+            val = CanvasText(cv, (FONT, BASE - 2), C["muted"], "head", art, text="—")
+            self.meters[key] = (m, val)
+            self._meter_rows.append((lbl, m, mw, val))
+
+        # aviso de versión nueva (oculto hasta que haya una)
+        self.banner = _HeadSlot(cv, self, bg=C["accent_bg"], highlightbackground=C["accent_dim"], highlightthickness=1)
+        self.banner.columnconfigure(1, weight=1)
+        self.banner_icon = tk.Label(self.banner, text="⬇", bg=C["accent_bg"], fg=C["accent"], font=(FONT, BASE + 3, "bold"))
+        self.banner_icon.grid(row=0, column=0, padx=(12, 8), pady=6)
+        self.banner_lbl = tk.Label(self.banner, bg=C["accent_bg"], fg=C["text"], font=(FONT, BASE, "bold"), anchor="w")
+        self.banner_lbl.grid(row=0, column=1, sticky="ew")
+        self.banner_btn = FlatButton(self.banner, text="Actualizar", command=self._open_update,
+                                     bg=C["accent"], fg=C["on_accent"], font=(FONT, BASE - 1, "bold"), padx=14, pady=4)
+        self.banner_btn.grid(row=0, column=2, padx=6, pady=6)
+        self.banner_later = FlatButton(self.banner, text="Más tarde", command=self._hide_banner,
+                                       bg=C["accent_bg"], fg=C["text"], font=(FONT, BASE - 1), padx=10, pady=4)
+        self.banner_later.grid(row=0, column=3, padx=(0, 10))
+        self._banner_win = cv.create_window(0, 0, window=self.banner, anchor="nw", state="hidden")
+        self._head_job = None
+        self._head_size = None
+        cv.bind("<Configure>", lambda e: self._schedule_head())
+        self._schedule_head()
+
+    def _schedule_head(self):
+        if getattr(self, "_head_job", None) is None and hasattr(self, "head_cv"):
+            try:
+                self._head_job = self.root.after_idle(self._layout_head)
+            except tk.TclError:
+                pass
+
+    def _layout_head(self):
+        self._head_job = None
+        cv, art = self.head_cv, self.art
+        try:
+            W = cv.winfo_width()
+        except tk.TclError:
+            return
+        if W < 50:
+            W = max(self.root.winfo_width(), 900)
+        d = getattr(self, "dpi", 1.0)
+        pad, top = 18, 14
+        tfont = tkfont.Font(font=cv.itemcget(self.title_txt.item, "font"))
+        sfont = tkfont.Font(font=(FONT, BASE - 1))
+        title_h = tfont.metrics("linespace")
+        chip_h = sfont.metrics("linespace")
+        block_h = title_h + 4 + chip_h
+        x = pad
+        if art.has("logo"):
+            size = int(block_h)
+            got = art.show("logo", lambda ph: cv.itemconfigure(self.logo_item, image=ph), size, size, key="logo")
+            cv.coords(self.logo_item, pad, top)
+            if got:
+                x = pad + got[0] + 10
+        self.title_txt.move_to(x, top)
+        cy = top + title_h + 4
+        cx = x
+        for t in (self.chip_dev, self.chip_board):
+            t.move_to(cx, cy)
+            w = t.width()
+            cx += (w + 14) if w else 0
+        self.chip_row.move_to(cx + 8, cy)
+        cx += (self.chip_row.width() + 14) if self.chip_row.width() else 0
+        self.meter_flag.move_to(cx, cy)
+        chips_right = cx + self.meter_flag.width()
+        title_right = x + self.title_txt.width()
+
+        # derecha: ACTIVO · banco · medidores
+        ah = self.btn_active.winfo_reqheight()
+        aw = self.btn_active.winfo_reqwidth()
+        rx = W - pad
+        cv.coords(self._head_win[self.btn_active], rx - aw, top)
+        rx -= aw + 14
+        bw, bh = self.bank_next.winfo_reqwidth(), self.bank_next.winfo_reqheight()
+        by = top + (ah - bh) / 2
+        cv.coords(self._head_win[self.bank_next], rx - bw, by)
+        rx -= bw + 6
+        lw = int(150 * d)
+        self.bank_lbl.move_to(rx - lw / 2, top + ah / 2)
+        rx -= lw + 6
+        cv.coords(self._head_win[self.bank_prev], rx - bw, by)
+        rx -= bw + 22
+        mfont = tkfont.Font(font=(FONT, BASE - 2))
+        val_w = mfont.measure("−60.0 dB") + 4
+        label_w = max(mfont.measure(r[0].cget("text")) for r in self._meter_rows)
+        row_h = max(13, mfont.metrics("linespace"))
+        meters_left = rx - val_w - 6 - 190 - 6 - label_w
+        my = top + max(0, (ah - 2 * row_h) / 2)
+        for i, (lbl, m, mw, val) in enumerate(self._meter_rows):
+            y = my + i * (row_h + 1)
+            lbl.move_to(meters_left + label_w, y)
+            cv.coords(mw, meters_left + label_w + 6, y + (row_h - 9) / 2)
+            val.move_to(meters_left + label_w + 6 + 190 + 6, y)
+        base_h = top + max(block_h, ah) + 8
+
+        # espacio central del encabezado (sticker o GIF)
+        gap_l = max(title_right, chips_right) + 20
+        gap_r = meters_left - 20
+        if art.has("headmid") and gap_r - gap_l > 40:
+            got = art.show("headmid", lambda ph: cv.itemconfigure(self.headmid_item, image=ph),
+                           int(min(360 * d, gap_r - gap_l)), int(min(48 * d, base_h - 6)), key="headmid")
+            cv.coords(self.headmid_item, (gap_l + gap_r) / 2, (base_h + 2) / 2)
+        else:
+            art.stop("headmid")
+            cv.itemconfigure(self.headmid_item, image="")
+
+        H = base_h
+        if self.banner.shown:
+            cv.itemconfigure(self._banner_win, state="normal", width=W - 2 * pad)
+            cv.coords(self._banner_win, pad, base_h)
+            H = base_h + self.banner.winfo_reqheight() + 10
+        else:
+            cv.itemconfigure(self._banner_win, state="hidden")
+        H = int(H)
+        if int(cv.cget("height")) != H:
+            cv.configure(height=H)
+        # fondo: degradado + plancha de la sección + banner del tema
+        if (W, H) != self._head_size or getattr(self, "_head_dirty", True):
+            self._head_size = (W, H)
+            self._head_dirty = False
+            img = art.compose(W, H, box=(0, 0), slot="banner", section="head") if art.active else None
+            if img is not None:
+                if art.realce("head"):
+                    from PIL import ImageDraw
+                    ImageDraw.Draw(img).rectangle((1, 1, W - 2, H - 2), outline=C["accent"], width=2)
+                cv.itemconfigure(self._head_bg, image=art.photo("head", img))
+                for lbl, m, mw, val in self._meter_rows:
+                    x0, y0 = cv.coords(mw)
+                    m.configure(bg=art.average(img, (int(x0), int(y0), int(x0) + 190, int(y0) + 9)))
+            else:
+                cv.itemconfigure(self._head_bg, image="")
+        cv.tag_lower("bg")
+
+    def _build_foot(self, r):
+        art = self.art
+        cv = tk.Canvas(r, bg=C["bg"], highlightthickness=0, bd=0, height=34)
+        cv.grid(row=2, column=0, columnspan=2, sticky="ew")
+        self.foot_cv = cv
+        self._foot_bg = cv.create_image(0, 0, anchor="nw", tags=("bg",))
+        self.status = CanvasText(cv, (FONT, BASE - 1), C["muted"], "foot", art, self._schedule_foot, anchor="w")
+        self.status.winfo_height = lambda: cv.winfo_height()
+        self.foot_item = cv.create_image(0, 0, anchor="e")
+        btns = [
+            FlatButton(cv, text=f"v{__version__} · Novedades", command=self._show_news,
+                       bg=C["bg"], fg=C["muted"], font=(FONT, BASE - 1), padx=10, pady=4,
+                       highlightbackground=C["line"], highlightthickness=1),
+            FlatButton(cv, text=f"Creado por {about.CREATOR} · Soporte", command=self._show_about,
+                       bg=C["panel2"], fg=C["text"], font=(FONT, BASE - 1), padx=12, pady=4),
+            FlatButton(cv, text="♥ Donar", command=lambda: self._open(about.DONATE),
+                       bg=C["accent"], fg=C["on_accent"], font=(FONT, BASE - 1, "bold"), padx=12, pady=4),
+        ]
+        self._foot_btns = [(b, cv.create_window(0, 0, window=b, anchor="e")) for b in btns]
+        self._foot_job = None
+        self._foot_size = None
+        cv.bind("<Configure>", lambda e: self._schedule_foot())
+        self._schedule_foot()
+
+    def _schedule_foot(self):
+        if getattr(self, "_foot_job", None) is None and hasattr(self, "foot_cv"):
+            try:
+                self._foot_job = self.root.after_idle(self._layout_foot)
+            except tk.TclError:
+                pass
+
+    def _layout_foot(self):
+        self._foot_job = None
+        cv, art = self.foot_cv, self.art
+        try:
+            W = cv.winfo_width()
+        except tk.TclError:
+            return
+        if W < 50:
+            W = max(self.root.winfo_width(), 900)
+        d = getattr(self, "dpi", 1.0)
+        pad = 18
+        bh = max(b.winfo_reqheight() for b, _ in self._foot_btns)
+        sfont = tkfont.Font(font=(FONT, BASE - 1))
+        x = W - pad
+        for b, item in reversed(self._foot_btns):
+            x -= b.winfo_reqwidth()
+            x -= 6
+        btn_left = x + 6
+        free_r = btn_left - 10
+        status_w = max(100, free_r - pad)
+        if art.has("foot"):
+            got = art.show("foot", lambda ph: cv.itemconfigure(self.foot_item, image=ph),
+                           int(min(420 * d, (free_r - pad) / 2)), int(28 * d), key="foot")
+            if got:
+                status_w = max(100, free_r - got[0] - 12 - pad)
+        cv.itemconfigure(self.status.item, width=status_w)
+        lines = max(1, self.status.height() // max(1, sfont.metrics("linespace")))
+        H = int(max(bh, lines * sfont.metrics("linespace")) + 10 + 4)
+        cy = (H - 10) / 2 + 2
+        xb = W - pad
+        for b, item in reversed(self._foot_btns):
+            cv.coords(item, xb, cy)
+            xb -= b.winfo_reqwidth() + 6
+        self.status.move_to(pad, cy)
+        cv.coords(self.foot_item, free_r, cy)
+        if int(cv.cget("height")) != H:
+            cv.configure(height=H)
+        if (W, H) != self._foot_size or getattr(self, "_foot_dirty", True):
+            self._foot_size = (W, H)
+            self._foot_dirty = False
+            img = None
+            if art.active:
+                y = max(0, self.root.winfo_height() - H)
+                img = art.compose(W, H, box=(0, y), slot="footband", section="foot")
+                if img is not None and art.realce("foot"):
+                    from PIL import ImageDraw
+                    ImageDraw.Draw(img).rectangle((1, 1, W - 2, H - 2), outline=C["accent"], width=2)
+            cv.itemconfigure(self._foot_bg, image=art.photo("foot", img) if img is not None else "")
+        cv.tag_lower("bg")
+
+    def _place_free_slots(self, left):
+        """Espacios libres del tema: abajo del panel de teclas y al final de las pestañas."""
+        art = self.art
+        d = getattr(self, "dpi", 1.0)
+        self.leftbot_lbl = None
+        if art.has("leftbot"):
+            lb = tk.Label(left, bg=C["panel"], bd=0, highlightthickness=0)
+            lb.pack(side="bottom", pady=(8, 0))
+            art.show("leftbot", lambda ph: lb.configure(image=ph), int(300 * d), int(160 * d), key="leftbot")
+            self.leftbot_lbl = lb
+        self.tabsend_lbl = None
+        if art.has("tabsend"):
+            self.tabsend_lbl = tk.Label(self.root, bg=C["bg"], bd=0, highlightthickness=0)
+            self.nb.bind("<Configure>", lambda e: self._place_tabsend(), add="+")
+        if self.art.realce("left"):
+            left.configure(style="Realce.Panel.TFrame")
+
+    def _paint_tab_corner(self, cv):
+        """«Pestaña · parte de abajo»: la imagen del tema al fondo de la pestaña Tecla."""
+        art = self.art
+        if not art.has("corner"):
+            return
+        d = getattr(self, "dpi", 1.0)
+
+        def place(_e=None):
+            try:
+                w, h = cv.winfo_width(), cv.winfo_height()
+            except tk.TclError:
+                return
+            if w < 50:
+                return
+            s = art.slots["corner"]
+            iw, ih = s.size
+            ch = int(min(200 * d, w * ih / max(1, iw)))
+            got = art.show("corner", lambda ph: cv.itemconfigure("corner", image=ph), w, ch, mode="cover", key="corner")
+            if not cv.find_withtag("corner"):
+                cv.create_image(0, h, anchor="sw", tags=("corner",))
+                got = art.show("corner", lambda ph: cv.itemconfigure("corner", image=ph), w, ch, mode="cover",
+                               key="corner")
+            cv.coords("corner", 0, h)
+            cv.tag_lower("corner")
+            del got
+        cv.bind("<Configure>", lambda e: (place(), None)[1], add="+")
+        place()
+
+    def _paint_window_bg(self):
+        """Degradado de toda la ventana (se ve en los bordes y entre los paneles)."""
+        if self.win_bg is None:
+            return
+        W, H = self.root.winfo_width(), self.root.winfo_height()
+        img = self.art.window_gradient(W, H)
+        if img is not None:
+            self.win_bg.configure(image=self.art.photo("window", img))
+            self.win_bg.lower()
+        self._head_dirty = self._foot_dirty = True
+        self._schedule_head()
+        self._schedule_foot()
+        self._place_tabsend()
+
+    def _place_tabsend(self):
+        """«Pestañas · espacio al final»: a la derecha de la última pestaña, con el fondo de detrás."""
+        tl = getattr(self, "tabsend_lbl", None)
+        if tl is None:
+            return
+        art = self.art
+        d = getattr(self, "dpi", 1.0)
+        if getattr(self, "_tabsend_busy", False):
+            return
+        self._tabsend_busy = True
+        try:
+            nx = self.nb.winfo_rootx() - self.root.winfo_rootx()
+            ny = self.nb.winfo_rooty() - self.root.winfo_rooty()
+            nw = self.nb.winfo_width()
+            tab_h = 4
+            while tab_h < 80 and self.nb.identify(12, tab_h):
+                tab_h += 2
+            right = 0
+            for x in range(0, nw, 3):
+                if self.nb.identify(x, max(2, tab_h // 2)):
+                    right = x
+            tabs_right = nx + right
+        except tk.TclError:
+            return
+        finally:
+            self._tabsend_busy = False
+        if tab_h < 12:
+            tab_h = int(34 * d)
+        free = nx + nw - tabs_right - 12
+        w, h = art.fit_size("tabsend", min(240 * d, free), min(28 * d, tab_h - 4))
+        if free < 30 or w < 8:
+            tl.place_forget()
+            art.stop("tabsend")
+            return
+        x, y = nx + nw - w - 4, ny + max(0, (tab_h - h) // 2)
+        from PIL import Image                      # la barra de pestañas es de color sólido
+        back = Image.new("RGB", (w, h), tuple(int(C["bg"][i:i + 2], 16) for i in (1, 3, 5)))
+        art.show("tabsend", lambda ph: tl.configure(image=ph), w, h, key="tabsend", backdrop=back)
+        tl.place(x=x, y=y)
+        tl.lift()
 
     # ---------------------------------------------------------------- editor
     def _build_editor(self):
         t = scroll_frame(self.tab_key)          # en pantallas bajas se desplaza en vez de cortarse
+        self._paint_tab_corner(t.master)
         t.columnconfigure(0, weight=1)
         self.ed_title = ttk.Label(t, style="H.TLabel")
         self.ed_title.grid(row=0, column=0, sticky="w")
@@ -951,6 +1262,8 @@ class App:
         a = self._alpha_cfg()
         on = a["on"] and themes.supports_alpha(self.theme)
         value = 1.0 if not on else (a["idle"] if idle else a["window"])
+        if getattr(self, "art", None) is not None:
+            self.art.set_idle(idle)
         try:
             self.root.attributes("-alpha", value)
             self.root.attributes("-topmost", bool(on and a["top"]))
@@ -1912,6 +2225,7 @@ class App:
         if W < 50 or H < 50 or (W, H) == self._fit_size:
             return
         self._fit_size = (W, H)
+        self._paint_window_bg()
         d = self.dpi
         # alto libre para el dibujo (cabecera, pestañas y pie fuera)
         free = H - self.left_top_h()
@@ -2037,7 +2351,12 @@ class App:
         small = size == "small"
         r = max(5, int(u * (.14 if small else .12)))
         # fondo suavizado (Pillow); sin Pillow, dos formas llenas del lienzo
-        img = aa.key_shape(self.root, int(x1 - x0) - 1, int(y1 - y0) - 1, r, fill, line, lw)
+        art = getattr(self, "art", None)
+        ka = 1.0
+        if art is not None and art.has("keys") and kid not in self.flash:
+            ka = art.section("keys").get("contenido", 100) / 100 if art.section("keys") else 1.0
+            ka = ka if shown else min(ka, .82)            # las vacías dejan ver un poco la imagen
+        img = aa.key_shape(self.root, int(x1 - x0) - 1, int(y1 - y0) - 1, r, fill, line, lw, ka)
         if img is not None:
             cv.create_image(int(x0) + 1, int(y0) + 1, image=img, anchor="nw")
         else:
@@ -2097,15 +2416,35 @@ class App:
         if self.left_view == "virt":
             cv = self.virt_canvas
             cv.delete("all")
+            self._draw_keys_bg(cv)
             for kid, (label, _c, _r) in phone_layout().items():
                 self._draw_key(cv, self._virt_rect(kid), kid, label, layer.get(kid), glob(kid))
             return
         cv = self.canvas
         cv.delete("all")
+        self._draw_keys_bg(cv)
         for kid, (label, *_rest) in NUMPAD_LAYOUT.items():
             self._draw_key(cv, self._key_rect(kid), kid, label, layer.get(kid), glob(kid))
         self._draw_row()
         self._draw_extras()
+
+    def _draw_keys_bg(self, cv):
+        """Imagen del tema detrás de la tabla de teclas (y la plancha de la sección «keys»)."""
+        art = getattr(self, "art", None)
+        if art is None or not (art.has("keys") or art.section("keys")):
+            return
+        try:
+            w, h = int(cv.cget("width")), int(cv.cget("height"))
+        except (tk.TclError, ValueError):
+            return
+        key = ("keysbg", id(cv), w, h)
+        img = art._photos.get(key)
+        if img is None:
+            img = art.photo(key, art.compose(w, h, slot="keys", section="keys", base_color=C["panel"]))
+        if img is not None:
+            cv.create_image(0, 0, image=img, anchor="nw")
+            if art.realce("keys"):
+                cv.create_rectangle(1, 1, w - 2, h - 2, outline=C["accent"], width=2)
 
     def _round_rect(self, x0, y0, x1, y1, r, canvas=None, **kw):
         pts = [x0 + r, y0, x1 - r, y0, x1, y0, x1, y0 + r, x1, y1 - r, x1, y1,
@@ -2657,6 +2996,7 @@ class App:
         self.engine.set_active(new)
 
     def _paint_active(self):
+        self._schedule_head()
         if self.engine.active:
             self.btn_active.configure(text="●  ACTIVO", bg=C["ok"], fg=C["on_ok"])
         else:
@@ -2815,7 +3155,7 @@ class App:
         r = self.root
         keep = dict(selected=self.selected, layer=self.layer, view=self.left_view,
                     tab=self.nb.index("current"), status=getattr(self, "_status_last", None),
-                    banner=bool(self.update_rel) and self.banner.winfo_ismapped(),
+                    banner=bool(self.update_rel) and self.banner.shown,
                     theme_sel=getattr(self.themestab, "sel", None))
         for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
             r.unbind_all(seq)                    # ruedas de listas que se van a borrar
@@ -2838,7 +3178,11 @@ class App:
         self.__dict__.pop("_kfonts", None)
 
         self.theme = theme
+        if getattr(self, "art", None) is not None:
+            self.art.stop()
         apply_theme(theme["colors"])
+        self.art = ThemeArt(self, theme)
+        self.art.tweak_colors()
         self._style(first=False)
         self._build()
         self.layer = keep["layer"]
