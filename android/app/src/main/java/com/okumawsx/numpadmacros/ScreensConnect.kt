@@ -62,21 +62,28 @@ fun statusLine(vm: AppVm): Pair<String, Color> = when (vm.st) {
 }
 
 @Composable
-fun BottomNav(vm: AppVm) {
-    Box(Modifier.fillMaxWidth().height(1.dp).background(C.line))
-    Row(Modifier.fillMaxWidth().background(C.panel).padding(bottom = 8.dp)) {
+/** Alto que ocupa la barra flotante (para dejar espacio al final de cada pantalla). */
+val NAV_SPACE = 84.dp
+
+/** Barra inferior: una píldora de vidrio que flota sobre la pantalla. */
+@Composable
+fun BottomNav(vm: AppVm, modifier: Modifier = Modifier) {
+    Row(
+        modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp).fillMaxWidth().pillSurface().padding(5.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
         for ((tab, icon, name) in listOf(Triple(Tab.Pads, "grid", "Botonera"), Triple(Tab.Conn, "link", "Conexión"), Triple(Tab.Settings, "gear", "Ajustes"))) {
             val on = vm.tab == tab
             val col = if (on) C.acc else C.muted
             Column(
-                Modifier.weight(1f).heightIn(min = 62.dp).clickable(role = Role.Tab) { vm.tab = tab },
+                Modifier.weight(1f).height(52.dp).clip(CircleShape)
+                    .background(if (on) C.acc.copy(alpha = if (C.glassOn) 0.16f else 0.3f) else Color.Transparent)
+                    .clickable(role = Role.Tab) { vm.tab = tab },
                 horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
             ) {
-                Box(Modifier.clip(RoundedCornerShape(14.dp)).background(if (on) C.accSoft else Color.Transparent).padding(horizontal = 18.dp, vertical = 4.dp)) {
-                    NIcon(icon, 22.dp, col)
-                }
-                Spacer(Modifier.height(4.dp))
-                T(name, 12.sp, col, if (on) FontWeight.Bold else FontWeight.Medium)
+                NIcon(icon, 20.dp, col)
+                Spacer(Modifier.height(2.dp))
+                T(name, 11.sp, col, if (on) FontWeight.Bold else FontWeight.Medium, lines = 1)
             }
         }
     }
@@ -201,6 +208,7 @@ fun ConnTab(vm: AppVm, onQr: () -> Unit) {
                 NButton("Conectar", { vm.connectManual(ip) }, height = 46.dp, fontSize = 14.sp)
             }
         }
+        Spacer(Modifier.height(LocalNavSpace.current))
     }
 }
 

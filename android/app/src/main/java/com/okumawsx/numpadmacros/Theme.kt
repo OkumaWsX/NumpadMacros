@@ -39,6 +39,8 @@ object C {
     var padEmpty by mutableStateOf(Color(0xFF171A20))
     var padEmptyLine by mutableStateOf(Color(0xFF20242B))
     var light by mutableStateOf(false)
+    /** Transparencias y desenfoque de las píldoras (se apagan con Alto contraste). */
+    var glassOn by mutableStateOf(true)
     val scrim = Color(0x9E050608)
 
     /** Los 12 colores de los botones, en el mismo orden que el PC (`BUTTON_COLORS`); -1 = sin color. */
@@ -93,6 +95,7 @@ object Themes {
 
     /** especial: "" (ninguno), "contraste" o "amoled". */
     fun apply(name: String, especial: String, propio: Map<String, Long>? = null) {
+        C.glassOn = especial != "contraste"
         C.apply(
             when (especial) {
                 "contraste" -> altoContraste

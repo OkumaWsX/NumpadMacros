@@ -67,6 +67,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        vm.onAppResumed()   // por si vuelve de dar el permiso para instalar la actualización
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleIntent(intent)
@@ -88,18 +93,24 @@ fun Root(vm: AppVm) {
                 .setBeepEnabled(false).setOrientationLocked(false),
         )
     }
+    val glass = rememberGlass()
+    // acostado, la botonera trae su propio menú en la barra lateral
+    val sideMenu = isLandscape() && !(vm.st == St.Idle && vm.state.banks.isEmpty())
+    val showNav = vm.screen == Screen.Main && !(vm.tab == Tab.Pads && (vm.fullscreen || sideMenu))
+    CompositionLocalProvider(LocalGlass provides glass) {
     Box(Modifier.fillMaxSize().background(C.bg).systemBarsPadding().imePadding()) {
-        when (vm.screen) {
-            Screen.Welcome -> WelcomeScreen(vm)
-            Screen.Pin -> PinScreen(vm)
-            Screen.Usb -> UsbScreen(vm)
-            Screen.Bt -> BtScreen(vm)
-            Screen.Connected -> ConnectedScreen(vm)
-            Screen.SavedPcs -> SavedPcsScreen(vm)
-            Screen.About -> AboutScreen(vm)
-            Screen.Main -> Column(Modifier.fillMaxSize()) {
-                Box(Modifier.weight(1f)) {
-                    when (vm.tab) {
+        // todo lo que pasa por debajo de las píldoras de vidrio
+        Box(Modifier.fillMaxSize().glassSource(glass).background(C.bg)) {
+            CompositionLocalProvider(LocalNavSpace provides if (showNav) NAV_SPACE else 0.dp) {
+                when (vm.screen) {
+                    Screen.Welcome -> WelcomeScreen(vm)
+                    Screen.Pin -> PinScreen(vm)
+                    Screen.Usb -> UsbScreen(vm)
+                    Screen.Bt -> BtScreen(vm)
+                    Screen.Connected -> ConnectedScreen(vm)
+                    Screen.SavedPcs -> SavedPcsScreen(vm)
+                    Screen.About -> AboutScreen(vm)
+                    Screen.Main -> when (vm.tab) {
                         Tab.Pads -> PadsTab(vm)
                         Tab.Conn -> Column {
                             AppBar(vm)
@@ -111,13 +122,12 @@ fun Root(vm: AppVm) {
                         }
                     }
                 }
-                // acostado, la botonera trae su propio menú en la barra lateral
-                val sideMenu = isLandscape() && !(vm.st == St.Idle && vm.state.banks.isEmpty())
-                if (!(vm.tab == Tab.Pads && (vm.fullscreen || sideMenu))) BottomNav(vm)
             }
         }
+        if (showNav) BottomNav(vm, Modifier.align(Alignment.BottomCenter))
         vm.editing?.let { ed -> if (vm.screen == Screen.Main) EditSheet(vm, ed) }
         vm.upload?.let { u -> UploadSheet(vm, u) }
+        if (vm.updPhase.isNotEmpty()) UpdateSheet(vm)
         vm.toast?.let { (text, bad) ->
             LaunchedEffect(text) {
                 delay(3500)
@@ -132,10 +142,12 @@ fun Root(vm: AppVm) {
             }
         }
     }
-    val consumes = vm.upload != null || vm.editing != null || (vm.screen != Screen.Main && vm.screen != Screen.Welcome) ||
+    }
+    val consumes = vm.updPhase.isNotEmpty() || vm.upload != null || vm.editing != null || (vm.screen != Screen.Main && vm.screen != Screen.Welcome) ||
         vm.fullscreen || vm.editMode || (vm.screen == Screen.Main && vm.tab != Tab.Pads)
     BackHandler(enabled = consumes) {
         when {
+            vm.updPhase.isNotEmpty() -> vm.closeUpdate()
             vm.upload != null -> vm.closeUpload()
             vm.editing != null -> vm.editing = null
             vm.screen == Screen.Pin -> vm.cancelPin()

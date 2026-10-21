@@ -119,7 +119,24 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     private var uploadJob: Job? = null
     val recorder = Recorder(app)
 
+    // ---------------------------------------------------------------- actualizaciones
+    var updAuto by mutableStateOf(store.updAuto)
+    var updBeta by mutableStateOf(store.updBeta)
+    var updLast by mutableStateOf(store.updLast)
+    /** Versión nueva encontrada (o null si estás al día). */
+    var updInfo by mutableStateOf<Updater.Info?>(null)
+    /** Hoja de actualización: "" cerrada; buscando, aldia, nueva, permiso, descarga, instalar, error. */
+    var updPhase by mutableStateOf("")
+    var updDone by mutableStateOf(0L)
+    var updTotal by mutableStateOf(0L)
+    var updError by mutableStateOf("")
+    var updBanner by mutableStateOf(false)
+    private var updFile: File? = null
+    private var updJob: Job? = null
+
     init {
+        // una vez al día, al abrir la app (como el escritorio)
+        if (updAuto && System.currentTimeMillis() - updLast > Updater.CHECK_EVERY_MS) checkUpdates(manual = false)
         if (store.autoReconnect) {
             val last = store.pc(store.lastPc) ?: pcs.firstOrNull()
             if (last != null && last.token.isNotBlank()) start(last.target(), reconnect = true)
@@ -577,6 +594,123 @@ class AppVm(app: Application) : AndroidViewModel(app) {
     fun setKeepOnPref(v: Boolean) { keepOn = v; store.keepOn = v }
     fun setAutoPref(v: Boolean) { autoReconnect = v; store.autoReconnect = v }
     fun setMeterPref(v: Boolean) { meter = v; store.meter = v }
+
+    // ================================================================ actualizaciones
+    fun setUpdAutoPref(v: Boolean) { updAuto = v; store.updAuto = v }
+    fun setUpdBetaPref(v: Boolean) { updBeta = v; store.updBeta = v; updInfo = null; updBanner = false }
+
+    /** Busca una versión nueva. manual = true abre la hoja y muestra el resultado. */
+    fun checkUpdates(manual: Boolean) {
+        if (manual) { updPhase = "buscando"; updError = "" }
+        viewModelScope.launch {
+            try {
+                val r = withContext(Dispatchers.IO) { Updater.latest(updBeta) }
+                updLast = System.currentTimeMillis(); store.updLast = updLast
+                if (r != null && Updater.newer(r.version, APP_VERSION)) {
+                    updInfo = r
+                    if (manual) { if (updPhase == "buscando") updPhase = "nueva" }
+                    else if (store.updSkip != r.version) updBanner = true
+                } else {
+                    updInfo = null; updBanner = false
+                    if (manual && updPhase == "buscando") updPhase = "aldia"
+                }
+            } catch (e: Exception) {
+                if (manual && updPhase == "buscando") { updError = e.message ?: "No pude consultar GitHub."; updPhase = "error" }
+            }
+        }
+    }
+
+    fun openUpdate() { if (updInfo != null) updPhase = "nueva" }
+
+    /** «Ahora no» / ✕: no avisar sola de nuevo por esta versión (en Ajustes sigue apareciendo). */
+    fun updateLater() {
+        updInfo?.let { store.updSkip = it.version }
+        updBanner = false
+        if (updPhase == "nueva") updPhase = ""
+    }
+
+    /** Cierra la hoja; si estaba descargando, la descarga sigue y la hoja vuelve sola al terminar. */
+    fun closeUpdate() {
+        updPhase = ""
+    }
+
+    fun cancelUpdate() {
+        updJob?.cancel()
+        updPhase = ""
+    }
+
+    private fun canInstall(): Boolean = getApplication<Application>().packageManager.canRequestPackageInstalls()
+
+    /** «Actualizar»: pide el permiso la primera vez y después descarga. */
+    fun startUpdate() {
+        if (updInfo == null) return
+        if (!canInstall()) { updPhase = "permiso"; return }
+        download()
+    }
+
+    /** Abre el ajuste de Android «Instalar apps desconocidas» para esta app. */
+    fun openInstallPermission() {
+        val ctx = getApplication<Application>()
+        try {
+            ctx.startActivity(
+                android.content.Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + ctx.packageName))
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        } catch (_: Exception) {
+            toast = "No pude abrir los ajustes de Android." to true
+        }
+    }
+
+    /** Al volver a la app: si ya dio el permiso, sigue con la descarga. */
+    fun onAppResumed() {
+        if (updPhase == "permiso" && canInstall()) download()
+    }
+
+    private fun download() {
+        val info = updInfo ?: return
+        updPhase = "descarga"; updDone = 0; updTotal = info.size; updError = ""
+        updJob?.cancel()
+        updJob = viewModelScope.launch {
+            try {
+                val f = kotlinx.coroutines.runInterruptible(Dispatchers.IO) {
+                    Updater.download(getApplication(), info) { d, t -> updDone = d; updTotal = t }
+                }
+                updFile = f
+                updPhase = "instalar"
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                updError = e.message ?: "No se pudo actualizar."
+                updPhase = "error"
+            }
+        }
+    }
+
+    /** Abre el instalador de Android con el APK ya comprobado. */
+    fun installUpdate() {
+        val ctx = getApplication<Application>()
+        val f = updFile?.takeIf { it.exists() } ?: run { download(); return }
+        try {
+            val uri = androidx.core.content.FileProvider.getUriForFile(ctx, ctx.packageName + ".archivos", f)
+            ctx.startActivity(
+                android.content.Intent(android.content.Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
+                    .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        } catch (_: Exception) {
+            updError = "Android no pudo abrir el instalador."
+            updPhase = "error"
+        }
+    }
+
+    fun openReleasePage() {
+        val ctx = getApplication<Application>()
+        try {
+            ctx.startActivity(
+                android.content.Intent(android.content.Intent.ACTION_VIEW, Uri.parse(updInfo?.releaseUrl ?: Updater.RELEASES_URL))
+                    .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        } catch (_: Exception) {}
+    }
 
     /** Elegir un tema de la lista (no se puede mientras Alto contraste o AMOLED están activos). */
     fun setTemaPref(name: String) {

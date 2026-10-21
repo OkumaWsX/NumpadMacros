@@ -39,6 +39,12 @@ aparte. El programa de escritorio sigue en su propio chat. Fecha: 2026-10-20.
   (Ajustes → Apariencia), Alto contraste y AMOLED, 12 colores + «sin color» (mismo orden que el PC),
   etiqueta «G» en las teclas Global, teclas virtuales en 5 × 6 (6 × 5 acostado), barra lateral y
   pantalla completa con píldora en horizontal, y ya entiende el mensaje `tema` del PC.
+- **1.3.0** (versionCode 4): píldoras flotantes de vidrio (`Glass.kt`, desenfoque propio con
+  GraphicsLayer + BlurEffect en Android 12+, sin librerías) y actualizaciones (`Updater.kt`,
+  `ScreensUpdate.kt`): busca en GitHub Releases el APK `NumpadMacros-Android-<versión>.apk` más nuevo
+  (betas si se activan), lo verifica con `SHA256SUMS.txt` de la misma Release y abre el instalador
+  (permiso `REQUEST_INSTALL_PACKAGES`, FileProvider `<paquete>.archivos`). Para que funcione, cada
+  Release debe seguir trayendo el APK y `SHA256SUMS.txt` (ya lo hace `publicar.yml`).
 - Nada se ha probado todavía en un celular real (ni el Bluetooth del PC).
 
 ## 4. Lo que ya hace la app

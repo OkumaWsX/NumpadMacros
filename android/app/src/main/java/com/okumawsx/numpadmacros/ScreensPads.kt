@@ -77,6 +77,7 @@ fun PadsTab(vm: AppVm) {
             }
         }
         if (vm.st == St.Lost) LostBanner(vm)
+        if (vm.updBanner) UpdateBanner(vm, Modifier.padding(start = 14.dp, end = 14.dp, bottom = 10.dp))
         if (vm.st == St.Idle && vm.state.banks.isEmpty()) {
             EmptyPads(vm)
             return@Column
@@ -100,6 +101,8 @@ fun PadsTab(vm: AppVm) {
                 }
             } else BottomControls(vm)
         } else Spacer(Modifier.height(12.dp))
+        // espacio para la barra flotante, que pasa por encima del final de la pantalla
+        Spacer(Modifier.height(LocalNavSpace.current))
     }
 }
 
@@ -137,6 +140,7 @@ private fun PadsLandscape(vm: AppVm) {
         Box(Modifier.weight(1f).fillMaxHeight()) {
             Column(Modifier.fillMaxSize().padding(top = if (vm.fullscreen) 40.dp else 10.dp, bottom = 10.dp)) {
                 if (vm.st == St.Lost) LostBanner(vm)
+                if (vm.updBanner && !vm.fullscreen) UpdateBanner(vm, Modifier.padding(start = 12.dp, end = 12.dp, bottom = 8.dp))
                 if (vm.editMode) EditNotice(Modifier.padding(start = 12.dp, end = 12.dp, bottom = 8.dp))
                 Box(Modifier.weight(1f).fillMaxWidth().alpha(if (online) 1f else 0.35f)) {
                     PadsArea(vm, shownGroup(vm, true), land = true)
@@ -159,7 +163,7 @@ private fun SideBar(vm: AppVm) {
     val online = vm.online
     val (txt, col) = statusLine(vm)
     Column(
-        Modifier.width(210.dp).fillMaxHeight().background(C.panel).padding(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 6.dp),
+        Modifier.width(210.dp).fillMaxHeight().background(C.panel.copy(alpha = if (C.glassOn) 0.72f else 1f)).padding(start = 10.dp, end = 10.dp, top = 10.dp, bottom = 6.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -177,23 +181,16 @@ private fun SideBar(vm: AppVm) {
             }
         }
         if (vm.state.groups.size > 1) {
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                for (g in vm.state.groups) {
-                    val on = g.id == vm.state.group(vm.group).id
-                    Box(
-                        Modifier.weight(1f).height(30.dp).clip(RoundedCornerShape(8.dp)).background(if (on) C.panel2 else Color.Transparent)
-                            .border(1.dp, if (on) C.acc else C.line, RoundedCornerShape(8.dp)).clickable(role = Role.Tab) { vm.group = g.id },
-                        contentAlignment = Alignment.Center,
-                    ) { T(g.name.substringBefore(" "), 11.sp, if (on) C.text else C.muted, if (on) FontWeight.ExtraBold else FontWeight.Medium, lines = 1) }
-                }
-            }
+            val groups = vm.state.groups
+            val sel = groups.indexOfFirst { it.id == vm.state.group(vm.group).id }.coerceAtLeast(0)
+            SegRail(groups.map { it.name.substringBefore(" ") }, sel, { vm.group = groups[it].id }, height = 28.dp, fontSize = 11.sp)
         }
         Column(Modifier.weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             vm.state.banks.forEachIndexed { i, b ->
                 val on = i == vm.state.active
                 Box(
-                    Modifier.fillMaxWidth().heightIn(min = 34.dp).clip(RoundedCornerShape(10.dp)).background(if (on) C.acc else C.panel2)
-                        .border(1.dp, if (on) Color.Transparent else C.line, RoundedCornerShape(10.dp))
+                    Modifier.fillMaxWidth().heightIn(min = 34.dp).clip(CircleShape).background(if (on) C.acc else C.panel2.copy(alpha = if (C.glassOn) 0.55f else 1f))
+                        .border(1.dp, if (on) Color.Transparent else C.text.copy(alpha = if (C.glassOn) 0.11f else 0.3f), CircleShape)
                         .clickable(role = Role.Button) { vm.selectBank(i) }.padding(horizontal = 10.dp),
                     contentAlignment = Alignment.CenterStart,
                 ) { T("${i + 1} · ${b.name}", 12.5.sp, if (on) C.accDark else C.text, if (on) FontWeight.ExtraBold else FontWeight.SemiBold, lines = 1) }
@@ -201,7 +198,7 @@ private fun SideBar(vm: AppVm) {
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(
-                Modifier.weight(1f).height(38.dp).clip(RoundedCornerShape(10.dp)).background(C.badSoft).border(1.dp, C.badLine, RoundedCornerShape(10.dp))
+                Modifier.weight(1f).height(38.dp).clip(CircleShape).background(C.badSoft).border(1.dp, C.badLine, CircleShape)
                     .clickable(role = Role.Button) { vm.stopAll() },
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center,
             ) {
@@ -242,7 +239,7 @@ private fun FullPill(vm: AppVm, modifier: Modifier) {
     val (txt, col) = statusLine(vm)
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
         Row(
-            Modifier.height(30.dp).clip(RoundedCornerShape(15.dp)).background(C.bg.copy(alpha = 0.9f)).border(1.dp, C.line, RoundedCornerShape(15.dp))
+            Modifier.height(30.dp).pillSurface(elevation = 6.dp)
                 .clickable(role = Role.Button) { if (vm.state.banks.isNotEmpty()) vm.selectBank((vm.state.active + 1) % vm.state.banks.size) }
                 .semantics { contentDescription = "Banco ${vm.state.banks.getOrNull(vm.state.active)?.name ?: ""}. Toca para pasar al siguiente" }
                 .padding(horizontal = 10.dp),
@@ -258,7 +255,7 @@ private fun FullPill(vm: AppVm, modifier: Modifier) {
             contentAlignment = Alignment.Center,
         ) { NIcon("stop", 13.dp, C.badText) }
         Box(
-            Modifier.size(30.dp).clip(CircleShape).background(C.bg.copy(alpha = 0.9f)).border(1.dp, C.line, CircleShape)
+            Modifier.size(30.dp).pillSurface(elevation = 6.dp)
                 .clickable(role = Role.Button) { vm.fullscreen = false }.semantics { contentDescription = "Salir de pantalla completa" },
             contentAlignment = Alignment.Center,
         ) { NIcon("full", 13.dp, C.text) }
@@ -313,7 +310,7 @@ private fun BankRow(vm: AppVm) {
     Row(Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, bottom = 10.dp, top = if (vm.fullscreen) 14.dp else 0.dp), verticalAlignment = Alignment.CenterVertically) {
         Row(Modifier.weight(1f).horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             vm.state.banks.forEachIndexed { i, b ->
-                Chip(b.name, i == vm.state.active, { vm.selectBank(i) }, height = 36.dp, round = 18.dp)
+                Chip(b.name, i == vm.state.active, { vm.selectBank(i) }, height = 36.dp, solid = true)
             }
         }
         Spacer(Modifier.width(8.dp))
@@ -351,19 +348,9 @@ private fun BankRow(vm: AppVm) {
 
 @Composable
 private fun GroupRow(vm: AppVm) {
-    Row(
-        Modifier.padding(start = 14.dp, end = 14.dp, bottom = 10.dp).fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(C.panel).padding(3.dp),
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-    ) {
-        for (g in vm.state.groups) {
-            val on = g.id == vm.state.group(vm.group).id
-            Box(
-                Modifier.weight(1f).height(34.dp).clip(RoundedCornerShape(10.dp)).background(if (on) C.panel2 else Color.Transparent)
-                    .clickable(role = Role.Tab) { vm.group = g.id },
-                contentAlignment = Alignment.Center,
-            ) { T(g.name, 12.5.sp, if (on) C.text else C.muted, if (on) FontWeight.Bold else FontWeight.Medium, lines = 1) }
-        }
-    }
+    val groups = vm.state.groups
+    val sel = groups.indexOfFirst { it.id == vm.state.group(vm.group).id }.coerceAtLeast(0)
+    SegRail(groups.map { it.name }, sel, { vm.group = groups[it].id }, Modifier.padding(start = 14.dp, end = 14.dp, bottom = 10.dp))
 }
 
 /** Botonera con la forma real (virtuales, numpad, fila 1–0), según las posiciones que manda el PC. */
@@ -483,9 +470,14 @@ private fun Pad(vm: AppVm, k: KeyPos, modifier: Modifier, big: Boolean) {
 
 @Composable
 private fun BottomControls(vm: AppVm) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+    // Detener + volumen: una sola píldora flotante
+    Row(
+        Modifier.padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 10.dp).fillMaxWidth().pillSurface(elevation = 8.dp)
+            .padding(start = 7.dp, end = 16.dp, top = 7.dp, bottom = 7.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Row(
-            Modifier.height(48.dp).clip(RoundedCornerShape(14.dp)).background(C.badSoft).border(1.dp, C.badLine, RoundedCornerShape(14.dp))
+            Modifier.height(44.dp).clip(CircleShape).background(C.badSoft).border(1.dp, C.badLine, CircleShape)
                 .clickable(role = Role.Button) { vm.stopAll() }.padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -527,9 +519,7 @@ fun EditSheet(vm: AppVm, ed: EditTarget) {
     val soundAct = { Act("file", vm.library.firstOrNull { it.lib == lib }?.title ?: layerAct?.title ?: "", mode, vol.toDouble(), lib, color) }
 
     Sheet("Tecla ${ed.label} · $where", "Se guarda en Numpad Macros de tu PC", ::close) {
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            listOf("Sonido", "Atajo", "Otro").forEachIndexed { i, n -> Chip(n, tab == i, { tab = i }) }
-        }
+        SegRail(listOf("Sonido", "Atajo", "Otro"), tab, { tab = it }, height = 36.dp, fontSize = 13.sp)
         when (tab) {
             0 -> {
                 Field(query, { query = it }, "Buscar en la biblioteca del PC…", icon = "search")
@@ -594,7 +584,7 @@ fun EditSheet(vm: AppVm, ed: EditTarget) {
                     T(title.uppercase(), 12.sp, C.muted, FontWeight.Bold)
                     for (row in keys.chunked(6)) {
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            for (kk in row) Chip(kk.uppercase(), kk == key, { key = kk }, Modifier.weight(1f), height = 40.dp, round = 10.dp)
+                            for (kk in row) Chip(kk.uppercase(), kk == key, { key = kk }, Modifier.weight(1f), height = 40.dp)
                             repeat(6 - row.size) { Spacer(Modifier.weight(1f)) }
                         }
                     }

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Carpeta de la caché donde se guarda la actualización descargada para dársela al instalador de Android. -->
+<paths>
+    <cache-path name="actualizaciones" path="actualizaciones/" />
+</paths>

@@ -60,7 +60,10 @@ fun SettingsTab(vm: AppVm) {
             SetRow("Reconectar solo", "Al abrir la app vuelve al último PC", vm.autoReconnect) { vm.setAutoPref(!vm.autoReconnect) }
             SetRow("Mostrar medidor del PC", "Nivel de lo que suena", vm.meter) { vm.setMeterPref(!vm.meter) }
         }
+        SectionLabel("Actualizaciones")
+        UpdateSettings(vm) { t, sub, on, click -> SetRow(t, sub, on, click) }
         RowItem("info", "Acerca de y soporte", "Versión $APP_VERSION · OkumaWsX", { vm.screen = Screen.About }) { NIcon("chev", 20.dp, C.muted) }
+        Spacer(Modifier.height(LocalNavSpace.current))
     }
 }
 
@@ -192,7 +195,7 @@ fun AboutScreen(vm: AppVm) {
             RowItem("info", "Instagram", "@okumawsx", { open("https://instagram.com/okumawsx") }, Color(0xFFE1306C)) { NIcon("chev", 20.dp, C.muted) }
             RowItem("link", "Discord", "Comunidad y soporte", { open("https://discord.gg/hcutJcBx9") }, Color(0xFF8A94FF)) { NIcon("chev", 20.dp, C.muted) }
             RowItem("grid", "GitHub", "Código fuente y novedades", { open("https://github.com/OkumaWsX/NumpadMacros") }) { NIcon("chev", 20.dp, C.muted) }
-            RowItem("refresh", "Buscar actualizaciones", "Descarga la última versión de la app", { open("https://github.com/OkumaWsX/NumpadMacros/releases") }, C.ok) { NIcon("chev", 20.dp, C.muted) }
+            RowItem("refresh", "Buscar actualizaciones", "Revisa ahora si hay una versión nueva", { vm.checkUpdates(manual = true) }, C.ok) { NIcon("chev", 20.dp, C.muted) }
             Spacer(Modifier.height(8.dp))
             Row(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(C.panel).border(1.dp, C.acc, RoundedCornerShape(18.dp)).padding(16.dp),

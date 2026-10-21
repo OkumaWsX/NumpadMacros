@@ -1,5 +1,7 @@
 package com.okumawsx.numpadmacros
 
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -99,24 +101,42 @@ fun NButton(
 @Composable
 fun IconBtn(icon: String, label: String, onClick: () -> Unit, bg: Color = C.panel2, color: Color = C.text, size: Dp = 44.dp) {
     Box(
-        Modifier.size(size).clip(RoundedCornerShape(14.dp)).background(bg)
+        Modifier.size(size).clip(CircleShape).background(bg)
             .clickable(role = Role.Button, onClick = onClick).semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) { NIcon(icon, 22.dp, color) }
 }
 
 @Composable
-fun Chip(text: String, on: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, height: Dp = 40.dp, round: Dp = 12.dp) {
-    val shape = RoundedCornerShape(round)
+/**
+ * Opción en forma de píldora. solid = true (bancos): la elegida va en el color de acento con
+ * brillo. Si no, la elegida va en acento suave con borde (modos, diseño, teclas de atajo).
+ */
+@Composable
+fun Chip(text: String, on: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, height: Dp = 40.dp, solid: Boolean = false) {
+    val shape = CircleShape
+    val glass = C.glassOn
+    val bg = when {
+        on && solid -> C.acc
+        on -> if (glass) C.acc.copy(alpha = 0.17f) else C.accSoft
+        else -> if (glass) C.panel2.copy(alpha = 0.55f) else C.panel2
+    }
+    val line = when {
+        on && solid -> Color.Transparent
+        on -> C.acc.copy(alpha = if (glass) 0.6f else 1f)
+        else -> if (glass) C.text.copy(alpha = 0.11f) else C.line
+    }
+    val glow = if (on && solid && glass) Modifier.shadow(8.dp, shape, ambientColor = C.acc, spotColor = C.acc) else Modifier
     Box(
-        modifier.heightIn(min = height).clip(shape)
-            .background(if (on) C.acc else C.panel2)
-            .border(1.dp, if (on) Color.Transparent else C.line, shape)
+        modifier.heightIn(min = height).then(glow).clip(shape)
+            .background(bg)
+            .border(1.dp, line, shape)
             .clickable(role = Role.Button, onClick = onClick)
+            .semantics { selected = on }
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
-        T(text, 13.sp, if (on) C.accDark else C.text, if (on) FontWeight.ExtraBold else FontWeight.SemiBold, lines = 1)
+        T(text, 13.sp, if (on) (if (solid) C.accDark else C.acc) else C.text, if (on) FontWeight.ExtraBold else FontWeight.SemiBold, lines = 1)
     }
 }
 
@@ -238,7 +258,8 @@ fun Sheet(title: String, sub: String, onClose: () -> Unit, content: @Composable 
     ) {
         Column(
             Modifier.fillMaxWidth().fillMaxHeight(0.88f)
-                .clip(RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp)).background(C.panel)
+                .glass(RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp), C.panel.copy(alpha = 0.86f), 28.dp)
+                .border(1.dp, C.text.copy(alpha = if (C.glassOn) 0.1f else 0.3f), RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp))
                 .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {}
                 .padding(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 16.dp),
         ) {

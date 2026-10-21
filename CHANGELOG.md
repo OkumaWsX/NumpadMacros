@@ -4,6 +4,7 @@ Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https:
 
 ## [Sin publicar]
 ### Añadido
+- **App Android 1.3**: **busca actualizaciones sola** (una vez al día, en GitHub, igual que el escritorio): avisa en la botonera, muestra las novedades, descarga el APK, lo comprueba con su huella SHA256 y abre el instalador de Android (sin perder los PCs vinculados ni los ajustes). En Ajustes → Actualizaciones se puede apagar, recibir betas y «Buscar ahora». Además, los menús son **píldoras flotantes de vidrio** como en el escritorio: barra inferior flotante, selector de grupo y pestañas en un riel, bancos y Detener + volumen en píldoras, y hojas esmeriladas (desenfoque en Android 12 o más nuevo; con Alto contraste se vuelven sólidas).
 - **Estudio de Temas para descargar**: cada versión trae el Estudio listo para usar, sin instalar Python: instalador para Windows (no pide administrador), versión portátil, Linux y macOS. En Windows, los proyectos `.nptproj` se abren con doble clic.
 
 - **Estudio de Temas 1.1**, con todo lo de las maquetas:

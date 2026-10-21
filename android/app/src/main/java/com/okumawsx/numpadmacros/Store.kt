@@ -80,4 +80,23 @@ class Store(ctx: Context) {
     var temaPc: String
         get() = p.getString("temaPc", "") ?: ""
         set(v) = p.edit().putString("temaPc", v).apply()
+
+    // ---------------------------------------------------------------- actualizaciones
+    var updAuto: Boolean
+        get() = p.getBoolean("updAuto", true)
+        set(v) = p.edit().putBoolean("updAuto", v).apply()
+
+    var updBeta: Boolean
+        get() = p.getBoolean("updBeta", false)
+        set(v) = p.edit().putBoolean("updBeta", v).apply()
+
+    /** Cuándo se buscó por última vez (ms). */
+    var updLast: Long
+        get() = p.getLong("updLast", 0L)
+        set(v) = p.edit().putLong("updLast", v).apply()
+
+    /** Versión que el usuario dejó para después («Ahora no»): no se vuelve a avisar sola. */
+    var updSkip: String
+        get() = p.getString("updSkip", "") ?: ""
+        set(v) = p.edit().putString("updSkip", v).apply()
 }
