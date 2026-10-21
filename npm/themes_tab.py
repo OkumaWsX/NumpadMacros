@@ -192,6 +192,9 @@ class ThemesTab:
             txt, col = "ⓘ Tema de la comunidad\nArchivo íntegro, pero no está firmado por OkumaWsX.", C["warn"]
         if themes.supports_alpha(th):
             txt += "\nAdmite transparencia."
+        extra = themes.extras(th)
+        if extra:
+            txt += "\n" + extra
         self.d_status.configure(text=txt, fg=C["text"], bg=self._tint(col),
                                 highlightthickness=1, highlightbackground=col)
         cv = self.d_dots

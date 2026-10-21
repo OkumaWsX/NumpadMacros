@@ -49,8 +49,45 @@ firma Ed25519 de `OFFICIAL_KEY` (64, si va firmado). El contenido es el JSON del
 - `alfa`: transparencia de cada capa, 0–100 (las que faltan son 100). Cada capa se mezcla con la de abajo
   (`npt.PARENT`). El fondo (`bg`) no tiene: usa la opacidad de la ventana.
 - `ventana`: opacidad de la ventana en uso y cuando el mouse sale, 50–100 (igual que el Laboratorio).
-- `imagenes`: PNG ya preparados por el Estudio. Espacios y tamaño máximo: `banner` 1200×120, `keys` 600×520
-  (detrás de las teclas), `logo` 64×64.
+- `imagenes`: imágenes ya preparadas por el Estudio (recortadas, oscurecidas y desenfocadas), en
+  9 espacios. PNG en todos; **GIF animado** solo en los espacios libres marcados con ★:
+
+  | Espacio | Dónde va | Máximo |
+  |---|---|---|
+  | `banner` | Encabezado completo, detrás del título | 1200 × 120 |
+  | `keys` | Detrás de la tabla de teclas | 600 × 520 |
+  | `corner` | Pestaña · parte de abajo, detrás de los botones | 600 × 200 |
+  | `footband` | Pie · banda completa, detrás de Novedades / Soporte / Donar | 1200 × 40 |
+  | `logo` | Junto al título | 64 × 64 |
+  | `headmid` ★ | Encabezado · espacio central | 360 × 48 |
+  | `tabsend` ★ | Pestañas · espacio al final | 240 × 28 |
+  | `leftbot` ★ | Panel de teclas · espacio de abajo | 360 × 160 |
+  | `foot` ★ | Pie · espacio libre | 420 × 28 |
+
+- `fondo` (opcional): fondo de toda la ventana. Sin la clave = color sólido (`colores.bg`).
+  ```json
+  "fondo": {"tipo": "degradado", "colores": [["#14161b", 0], ["#3a2c14", 55], ["#33294a", 100]], "desde": "c"}
+  ```
+  De 2 a 5 colores, cada uno con su posición 0–100. `desde` = dónde empieza: `tl` `t` `tr` `l` `c` `r` `bl`
+  `b` `br` (4 esquinas, 4 lados y el centro). Termina en el lado opuesto; desde `c` es circular.
+- `secciones` (opcional): transparencia propia de cada sección de la ventana.
+  ```json
+  "secciones": {"head": {"fondo": 70, "contenido": 100, "realce": true}, "foot": {"fondo": 60}}
+  ```
+  Secciones: `head` (encabezado), `left` (panel izquierdo), `keys` (tabla de teclas), `tabs` (pestañas),
+  `body` (contenido de la pestaña) y `foot` (pie). `fondo` y `contenido` van de 0 a 100 (falta = 100);
+  `realce` = borde de realce.
+
+### Compatibilidad hacia adelante (para el Estudio y las próximas versiones)
+
+- Estas claves son **del formato 2**: el byte de versión sigue siendo `2`. Subirlo a `3` hace que las
+  versiones anteriores de Numpad Macros rechacen el tema con «actualiza el programa»; solo se hace si
+  algo antiguo dejaría de verse bien.
+- Al **leer**, Numpad Macros (desde 3.4.1) **ignora** lo que no conoce: espacios de imagen nuevos,
+  secciones nuevas, tipos de `fondo` nuevos y claves nuevas del JSON. Lo que sí conoce tiene que estar
+  bien, si no el tema se rechaza como dañado. Así un Estudio más nuevo puede agregar zonas sin romper
+  los programas que ya tiene la gente.
+- Al **escribir**, el Estudio valida todo de forma estricta (`npt.validate(tema)`).
 
 ## Cómo lo ve Numpad Macros
 
@@ -60,7 +97,9 @@ firma Ed25519 de `OFFICIAL_KEY` (64, si va firmado). El contenido es el JSON del
 | Clave | Qué es |
 |---|---|
 | `layer_alpha` | Transparencia por capa (0–100) |
-| `images` | Espacio → PNG (`banner`, `keys`, `logo`) |
+| `images` | Espacio → PNG o GIF (los 9 espacios de arriba) |
+| `background` | El `fondo` (degradado) o `{}` |
+| `sections` | Las `secciones` o `{}` |
 | `description`, `kind` | Descripción y «oscuro» / «claro» |
 | `author_key` | Clave pública del autor (hex): identifica a la persona aunque cambie de nombre |
 | `reserved_name` | `True` si usa el nombre del creador oficial sin su firma: mostrar como Comunidad con aviso |
@@ -70,6 +109,7 @@ Numpad Macros puede recordar qué clave usó cada nombre y avisar si cambia.
 
 ## Pendiente en Numpad Macros
 
-Importar temas v2 ya funciona (colores y transparencia de la ventana). Falta aplicar `layer_alpha` (solo con
-el Laboratorio activo), mostrar las imágenes (encabezado, detrás de la tabla de teclas y junto al título) y
-el aviso de `reserved_name`. «Exportar» desde Numpad Macros guarda en versión 1 (sin imágenes ni capas).
+3.4.1 abre los temas con todas las zonas nuevas (9 espacios, GIF, degradado y secciones), aplica los
+colores y la transparencia de la ventana, y en la pestaña Temas dice qué más trae el tema. Falta dibujar
+las imágenes, el degradado y la transparencia por sección en la ventana, y el aviso de `reserved_name`.
+«Exportar» desde Numpad Macros guarda en versión 1 (sin imágenes ni capas).

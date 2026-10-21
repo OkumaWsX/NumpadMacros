@@ -53,6 +53,21 @@ def imported() -> list[dict]:
     return out
 
 
+def extras(th: dict) -> str:
+    """Lo que trae un tema del Estudio además de los colores (para mostrarlo en la pestaña Temas)."""
+    parts = []
+    bg = th.get("background") or {}
+    if bg.get("tipo", "degradado") == "degradado" and bg.get("colores"):
+        parts.append(f"fondo degradado de {len(bg['colores'])} colores")
+    slots = th.get("image_slots") or []
+    if slots:
+        parts.append(f"{len(slots)} imagen" + ("" if len(slots) == 1 else "es"))
+    secs = th.get("sections") or {}
+    if secs:
+        parts.append(f"transparencia en {len(secs)} secci" + ("ón" if len(secs) == 1 else "ones"))
+    return ("Trae " + ", ".join(parts) + ".") if parts else ""
+
+
 def all_themes() -> list[dict]:
     return builtin() + imported()
 

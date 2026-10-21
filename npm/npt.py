@@ -65,8 +65,27 @@ PARENT = {
     "key_global": "panel", "key_global_line": "panel", "key_global_text": "key_global",
     "ok": "bg", "on_ok": "ok", "bad": "panel", "warn": "panel",
 }
-# Espacios para imágenes (v2) y su tamaño máximo (ancho, alto).
-IMAGE_SLOTS = {"banner": (1200, 120), "keys": (600, 520), "logo": (64, 64)}
+# Espacios para imágenes (v2) y su tamaño máximo (ancho, alto). Los 9 del Estudio de Temas:
+# detrás del contenido (banner, keys, corner, footband) y espacios libres (logo, headmid, tabsend,
+# leftbot, foot). Un espacio que esta versión no conoce se ignora al leer (temas más nuevos).
+IMAGE_SLOTS = {
+    "banner": (1200, 120),     # encabezado completo, detrás del título
+    "keys": (600, 520),        # detrás de la tabla de teclas
+    "logo": (64, 64),          # junto al título
+    "headmid": (360, 48),      # encabezado · espacio central
+    "tabsend": (240, 28),      # pestañas · espacio al final
+    "leftbot": (360, 160),     # panel de teclas · espacio de abajo
+    "corner": (600, 200),      # pestaña · parte de abajo, detrás de los botones
+    "footband": (1200, 40),    # pie · banda completa, detrás de los botones
+    "foot": (420, 28),         # pie · espacio libre
+}
+# Espacios que aceptan GIF animado (stickers); los demás, solo PNG.
+ANIMATED_SLOTS = frozenset({"headmid", "tabsend", "leftbot", "foot"})
+# Fondo de la ventana con degradado: desde dónde empieza (4 esquinas, 4 lados o el centro).
+GRADIENT_FROM = ("tl", "t", "tr", "l", "c", "r", "bl", "b", "br")
+GRADIENT_STOPS = (2, 5)
+# Secciones con transparencia propia (fondo de la sección y su contenido) y borde de realce.
+SECTIONS = ("head", "left", "keys", "tabs", "body", "foot")
 WINDOW_MIN = 50                   # opacidad mínima de la ventana, igual que el Laboratorio
 
 _PUB_LEN, _NONCE_LEN, _SIG_LEN = 32, 12, 64
@@ -234,14 +253,19 @@ class Theme:
     kind: str = "oscuro"                                  # "oscuro" o "claro"
     alpha: dict = field(default_factory=dict)             # capa -> 0..100 (falta = 100)
     window: dict = field(default_factory=lambda: {"opacidad": 100, "sin_usar": 100})
-    images: dict = field(default_factory=dict)            # espacio -> bytes PNG
+    images: dict = field(default_factory=dict)            # espacio -> bytes PNG (o GIF en los libres)
     created: str = field(default_factory=lambda: date.today().isoformat())
+    # {"tipo": "degradado", "colores": [["#rrggbb", 0..100], …], "desde": "tl"…"br"/"c"}; {} = color sólido
+    background: dict = field(default_factory=dict)
+    # sección -> {"fondo": 0..100, "contenido": 0..100, "realce": bool}
+    sections: dict = field(default_factory=dict)
 
     @property
     def transparency(self) -> bool:
         """El tema usa transparencia (ventana o capas): el Laboratorio lo muestra como «Admite»."""
         return (any(v < 100 for v in self.alpha.values())
-                or self.window.get("opacidad", 100) < 100 or self.window.get("sin_usar", 100) < 100)
+                or self.window.get("opacidad", 100) < 100 or self.window.get("sin_usar", 100) < 100
+                or any(min(s.get("fondo", 100), s.get("contenido", 100)) < 100 for s in self.sections.values()))
 
 
 @dataclass
@@ -267,6 +291,7 @@ class ReadResult:
         if t.transparency:
             out["alpha"] = {"window": t.window.get("opacidad", 100) / 100, "idle": t.window.get("sin_usar", 100) / 100}
         out.update(description=t.description, kind=t.kind, layer_alpha=dict(t.alpha), image_slots=sorted(t.images),
+                   background=dict(t.background), sections={k: dict(v) for k, v in t.sections.items()},
                    author_key=self.author_key, reserved_name=self.reserved_name, format=self.format)
         if images:
             out["images"] = dict(t.images)
@@ -391,10 +416,23 @@ def _load_pem(pem: bytes, password: str | None):
     return k
 
 
-def validate(theme: Theme) -> None:
-    """Revisa que un tema v2 esté completo y sea válido. Lanza NptError('contenido')."""
+def validate(theme: Theme, strict: bool = True) -> None:
+    """Revisa que un tema v2 esté completo y sea válido. Lanza NptError('contenido').
+
+    ``strict=False`` (al leer): lo que esta versión no conoce —espacios de imagen, secciones o
+    tipos de fondo nuevos— se quita sin rechazar el tema, para abrir temas de un Estudio más nuevo.
+    Lo que sí conoce tiene que estar bien.
+    """
     def bad(msg):
         raise NptError(msg, "contenido")
+
+    if not strict:
+        theme.images = {k: v for k, v in theme.images.items() if k in IMAGE_SLOTS} \
+            if isinstance(theme.images, dict) else theme.images
+        if isinstance(theme.sections, dict):
+            theme.sections = {k: v for k, v in theme.sections.items() if k in SECTIONS}
+        if isinstance(theme.background, dict) and theme.background.get("tipo") not in (None, "solido", "degradado"):
+            theme.background = {}
 
     if not isinstance(theme.name, str) or not theme.name.strip() or len(theme.name) > 32:
         bad("El nombre del tema debe tener entre 1 y 32 caracteres.")
@@ -421,17 +459,45 @@ def validate(theme: Theme) -> None:
     for slot, data in theme.images.items():
         if slot not in IMAGE_SLOTS:
             bad(f"Espacio de imagen desconocido: «{slot}».")
-        if not isinstance(data, (bytes, bytearray)) or image_format(data) != "png":
-            bad(f"La imagen de «{slot}» debe ser PNG.")
+        fmt = image_format(data) if isinstance(data, (bytes, bytearray)) else None
+        if fmt != "png" and not (fmt == "gif" and slot in ANIMATED_SLOTS):
+            bad(f"La imagen de «{slot}» debe ser PNG" + (" o GIF." if slot in ANIMATED_SLOTS else "."))
         w, h = image_size(data)
         mw, mh = IMAGE_SLOTS[slot]
         if not (0 < w <= mw and 0 < h <= mh):
             bad(f"La imagen de «{slot}» mide {w}×{h}; el máximo es {mw}×{mh}.")
+    bg = theme.background
+    if not isinstance(bg, dict):
+        bad("El fondo de la ventana no tiene el formato correcto.")
+    if bg and bg.get("tipo", "degradado") == "degradado":
+        stops = bg.get("colores")
+        lo, hi = GRADIENT_STOPS
+        if not isinstance(stops, list) or not lo <= len(stops) <= hi:
+            bad(f"El degradado debe tener entre {lo} y {hi} colores.")
+        for st in stops:
+            if not (isinstance(st, (list, tuple)) and len(st) == 2 and _HEX.match(str(st[0]))
+                    and type(st[1]) is int and 0 <= st[1] <= 100):
+                bad("Un color del degradado no es válido.")
+        if bg.get("desde", "tl") not in GRADIENT_FROM:
+            bad("No se sabe desde dónde empieza el degradado.")
+    if not isinstance(theme.sections, dict):
+        bad("Las secciones no tienen el formato correcto.")
+    for k, sec in theme.sections.items():
+        if k not in SECTIONS or not isinstance(sec, dict):
+            bad(f"Sección desconocida: «{k}».")
+        for part in ("fondo", "contenido"):
+            v = sec.get(part, 100)
+            if type(v) is not int or not 0 <= v <= 100:
+                bad(f"Transparencia no válida en la sección «{k}».")
+        if not isinstance(sec.get("realce", False), bool):
+            bad(f"Borde de realce no válido en la sección «{k}».")
 
 
 def image_format(data: bytes) -> str | None:
     if data[:8] == b"\x89PNG\r\n\x1a\n":
         return "png"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
     if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
         return "webp"
     return None
@@ -439,8 +505,11 @@ def image_format(data: bytes) -> str | None:
 
 def image_size(data: bytes) -> tuple[int, int]:
     """Ancho y alto leídos del encabezado PNG (sin abrir la imagen)."""
-    if image_format(data) == "png" and len(data) >= 24:
+    fmt = image_format(data)
+    if fmt == "png" and len(data) >= 24:
         return struct.unpack(">II", data[16:24])
+    if fmt == "gif" and len(data) >= 10:
+        return struct.unpack("<HH", data[6:10])
     return 0, 0
 
 
@@ -460,6 +529,10 @@ def _pack_content(theme: Theme) -> bytes:
         "admite_transparencia": theme.transparency,
         "imagenes": index,
     }
+    if theme.background:
+        meta["fondo"] = theme.background
+    if theme.sections:
+        meta["secciones"] = {k: v for k, v in sorted(theme.sections.items())}
     js = json.dumps(meta, ensure_ascii=False, separators=(",", ":")).encode()
     return b"NPTC" + struct.pack(">I", len(js)) + js + b"".join(blobs)
 
@@ -485,10 +558,11 @@ def _unpack_content(raw: bytes) -> Theme:
         th = Theme(name=meta["nombre"], author=meta.get("autor", ""), colors=meta["colores"],
                    version=meta.get("version", "1.0"), description=meta.get("descripcion", ""),
                    kind=meta.get("tipo", "oscuro"), alpha=meta.get("alfa") or {},
-                   window=meta.get("ventana") or {}, images=images, created=str(meta.get("creado", "")))
+                   window=meta.get("ventana") or {}, images=images, created=str(meta.get("creado", "")),
+                   background=meta.get("fondo") or {}, sections=meta.get("secciones") or {})
     except Exception:
         raise NptError("El contenido del tema no se puede leer.", "contenido")
-    validate(th)
+    validate(th, strict=False)
     th.colors = {k: th.colors[k].lower() for k in TOKENS}
     return th
 
