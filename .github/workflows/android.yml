@@ -54,7 +54,7 @@ jobs:
           # si falla, cada error de Kotlin / Gradle queda como aviso visible en la página de la ejecución
           set -o pipefail
           if ! ./gradlew --no-daemon assembleRelease 2>&1 | tee ../gradle.log; then
-            grep -E "^e: |^> |What went wrong|AAPT: error" ../gradle.log | head -40 | while IFS= read -r l; do echo "::error::$l"; done
+            { grep -E "^e: |AAPT: error" ../gradle.log; grep -A4 "What went wrong" ../gradle.log | grep -v "^> Task"; } | head -9 | while IFS= read -r l; do echo "::error::$l"; done
             exit 1
           fi
           mkdir -p ../dist
