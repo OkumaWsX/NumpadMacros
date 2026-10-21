@@ -3,6 +3,8 @@
 Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
+
+## [3.4.1] - 2026-10-21
 ### Añadido
 - **App Android 1.3**: **busca actualizaciones sola** (una vez al día, en GitHub, igual que el escritorio): avisa en la botonera, muestra las novedades, descarga el APK, lo comprueba con su huella SHA256 y abre el instalador de Android (sin perder los PCs vinculados ni los ajustes). En Ajustes → Actualizaciones se puede apagar, recibir betas y «Buscar ahora». Además, los menús son **píldoras flotantes de vidrio** como en el escritorio: barra inferior flotante, selector de grupo y pestañas en un riel, bancos y Detener + volumen en píldoras, y hojas esmeriladas (desenfoque en Android 12 o más nuevo; con Alto contraste se vuelven sólidas).
 - **Estudio de Temas para descargar**: cada versión trae el Estudio listo para usar, sin instalar Python: instalador para Windows (no pide administrador), versión portátil, Linux y macOS. En Windows, los proyectos `.nptproj` se abren con doble clic.
@@ -109,6 +111,7 @@ Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https:
 ### Añadido
 - Primera versión para Windows: numpad como panel de sonidos de Soundpad y atajos, con bancos.
 
+[3.4.1]: https://github.com/OkumaWsX/NumpadMacros/releases/tag/v3.4.1
 [3.4.0]: https://github.com/OkumaWsX/NumpadMacros/releases/tag/v3.4.0
 [3.3.1]: https://github.com/OkumaWsX/NumpadMacros/releases/tag/v3.3.1
 [3.3.0]: https://github.com/OkumaWsX/NumpadMacros/releases/tag/v3.3.0
