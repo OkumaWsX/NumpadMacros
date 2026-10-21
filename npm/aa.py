@@ -144,3 +144,91 @@ def curve(master, w, h, segments, dots=()):
             d.ellipse((x * s - r * s, y * s - r * s, x * s + r * s, y * s + r * s), fill=_rgba(col))
     key = ("curve", w, h, tuple((tuple(p), c, wd, dash) for p, c, wd, dash in segments), tuple(dots))
     return _render(master, key, w, h, paint)
+
+
+# ---------------------------------------------------------------- selector de sonidos
+def rounded_image(master, key, pil_img, size, radius):
+    """Imagen PIL (cuadrada) reducida a `size` con esquinas redondeadas suavizadas."""
+    if not HAVE_PIL or pil_img is None or size < 4:
+        return None
+    full = ("rimg", key, size, radius)
+    img = _cache.get(full)
+    if img is not None:
+        return img
+    im = pil_img.convert("RGB").resize((size, size), Image.LANCZOS).convert("RGBA")
+    mask = Image.new("L", (size * SS, size * SS), 0)
+    ImageDraw.Draw(mask).rounded_rectangle((0, 0, size * SS - 1, size * SS - 1), radius=radius * SS, fill=255)
+    im.putalpha(mask.resize((size, size), Image.LANCZOS))
+    img = _photo(master, im)
+    if len(_cache) > _MAX:
+        _cache.clear()
+    _cache[full] = img
+    return img
+
+
+def check_badge(master, size, fill, mark):
+    """Círculo con ✓ (elemento elegido)."""
+    def paint(d, s):
+        S = size * s
+        d.ellipse((0, 0, S - 1, S - 1), fill=_rgba(fill))
+        pts = [(S * .28, S * .53), (S * .44, S * .68), (S * .73, S * .36)]
+        d.line(pts, fill=_rgba(mark), width=int(S * .13), joint="curve")
+        for x, y in (pts[0], pts[-1]):
+            r = S * .065
+            d.ellipse((x - r, y - r, x + r, y + r), fill=_rgba(mark))
+    return _render(master, ("check", size, fill, mark), size, size, paint)
+
+
+def play_badge(master, size, bg, fg, playing, alpha=.82):
+    """Botón redondo de escuchar (▶) o detener (❚❚)."""
+    def paint(d, s):
+        S = size * s
+        d.ellipse((0, 0, S - 1, S - 1), fill=_rgba(bg, 1.0 if playing else alpha))
+        if playing:
+            w, h = S * .12, S * .38
+            for x in (S * .36, S * .52):
+                d.rounded_rectangle((x, S / 2 - h / 2, x + w, S / 2 + h / 2), radius=w / 3, fill=_rgba(fg))
+        else:
+            c = S / 2
+            d.polygon([(c - S * .13, c - S * .2), (c - S * .13, c + S * .2), (c + S * .22, c)], fill=_rgba(fg))
+    return _render(master, ("play", size, bg, fg, playing, alpha), size, size, paint)
+
+
+def grid_icon(master, size, n, color):
+    """Icono de cuadrícula n × n (botones de vista y de tamaño)."""
+    def paint(d, s):
+        S = size * s
+        gap = S * (.14 if n <= 2 else .1)
+        cell = (S - gap * (n - 1)) / n
+        for i in range(n):
+            for j in range(n):
+                x, y = i * (cell + gap), j * (cell + gap)
+                d.rounded_rectangle((x, y, x + cell, y + cell), radius=cell * .22, fill=_rgba(color))
+    return _render(master, ("grid", size, n, color), size, size, paint)
+
+
+def list_icon(master, size, color):
+    """Icono de lista (tres renglones con viñeta)."""
+    def paint(d, s):
+        S = size * s
+        t = S * .14
+        for k in range(3):
+            y = S * (.18 + .32 * k)
+            d.ellipse((0, y - t / 2, t, y + t / 2), fill=_rgba(color))
+            d.rounded_rectangle((t * 2, y - t / 2, S, y + t / 2), radius=t / 2, fill=_rgba(color))
+    return _render(master, ("list", size, color), size, size, paint)
+
+
+def wave_icon(master, w, h, color):
+    """Forma de onda (sonidos sin portada)."""
+    bars = (.25, .55, 1.0, .4, .75, .35, .65, .25)
+
+    def paint(d, s):
+        W, H = w * s, h * s
+        n = len(bars)
+        bw = W / (n * 2 - 1)
+        for i, k in enumerate(bars):
+            x = i * 2 * bw
+            bh = max(bw, H * k)
+            d.rounded_rectangle((x, (H - bh) / 2, x + bw, (H + bh) / 2), radius=bw / 2, fill=_rgba(color))
+    return _render(master, ("wave", w, h, color), w, h, paint)

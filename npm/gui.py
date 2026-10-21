@@ -18,6 +18,7 @@ from .engine import Engine
 from .dialogs import NewsDialog, UpdateDialog
 from . import themes
 from .devices_tab import DevicesTab
+from .sound_picker import SoundPicker
 from .themes_tab import ThemesTab
 from .remote import RemoteServer
 from .keys import (PHONE_IDS, VIRTUAL_COLS, VIRTUAL_COUNT, VIRTUAL_ROWS, phone_layout, KEY_CHOICES, MODIFIER_KEYSYMS, MODIFIERS, NUMPAD_IDS, NUMPAD_LAYOUT, ROW_IDS,
@@ -561,7 +562,7 @@ class App:
 
     # ---------------------------------------------------------------- editor
     def _build_editor(self):
-        t = self.tab_key
+        t = scroll_frame(self.tab_key)          # en pantallas bajas se desplaza en vez de cortarse
         t.columnconfigure(0, weight=1)
         self.ed_title = ttk.Label(t, style="H.TLabel")
         self.ed_title.grid(row=0, column=0, sticky="w")
@@ -603,7 +604,7 @@ class App:
     def _clear_sub(self):
         for wdg in self.sub.winfo_children():
             wdg.destroy()
-        self.pick_lb = None
+        self.picker = None
         self.btn_test = None
 
     def _build_file_sub(self, act):
@@ -616,19 +617,11 @@ class App:
         self.file_warn = ttk.Label(top, style="Warn.TLabel")
         self.file_warn.pack(side="left", padx=10)
 
-        srow = ttk.Frame(f, style="Panel.TFrame")
-        srow.grid(row=1, column=0, sticky="ew", pady=(8, 6))
-        ttk.Label(srow, text="Buscar", style="Panel.TLabel", width=LBL_W).pack(side="left")
-        self.pick_q = tk.StringVar()
-        ttk.Entry(srow, textvariable=self.pick_q, width=28).pack(side="left")
-        self.pick_q.trace_add("write", lambda *_: self._fill_pick())
-        ttk.Button(srow, text="＋ Agregar archivos…", command=self._add_files_for_key).pack(side="left", padx=8)
-
-        box, self.pick_lb = make_listbox(f, 7, width=58)
-        box.grid(row=2, column=0, sticky="w")
+        # elegir sonido: lista o cuadrícula con portadas (sound_picker.py)
+        self.picker = SoundPicker(f, self, on_pick=lambda item: self._assign_file(item, rebuild=False),
+                                  on_add=self._add_files_for_key, label_width=LBL_W)
+        self.picker.grid(row=1, column=0, sticky="ew", pady=(8, 0))
         self._fit_pick_rows()
-        self.pick_lb.bind("<<ListboxSelect>>", self._on_pick)
-        self.pick_lb.bind("<Double-Button-1>", lambda e: self._test_action())
 
         opts = ttk.Frame(f, style="Panel.TFrame")
         opts.grid(row=3, column=0, sticky="ew", pady=(10, 0))
@@ -1752,30 +1745,17 @@ class App:
 
     # ---- elegir sonido para la tecla
     def _fill_pick(self):
-        lb = getattr(self, "pick_lb", None)
-        if lb is None or not lb.winfo_exists():
+        pk = getattr(self, "picker", None)
+        if pk is None:
             return
-        lb.delete(0, "end")
-        self._pick_view = library.search(self.cfg, self.pick_q.get())
+        try:
+            if not pk.frame.winfo_exists():
+                return
+        except tk.TclError:
+            return
         act = self._current_action() or {}
-        cur = library.norm(act["path"]) if act.get("type") == "file" and act.get("path") else None
-        sel = None
-        for i, x in enumerate(self._pick_view):
-            mark = "⚠ " if not os.path.isfile(x["path"]) else ""
-            lb.insert("end", f"  {mark}{x['title']}")
-            if cur and library.norm(x["path"]) == cur:
-                sel = i
-        if not self.cfg.get("library"):
-            lb.insert("end", "  Biblioteca vacía: usa «＋ Agregar archivos…».")
-        if sel is not None:
-            lb.selection_set(sel)
-            lb.see(sel)
-
-    def _on_pick(self, _e=None):
-        sel = self.pick_lb.curselection()
-        if not sel or sel[0] >= len(self._pick_view):
-            return
-        self._assign_file(self._pick_view[sel[0]], rebuild=False)
+        cur = library.norm(act["path"]) if act.get("type") == "file" and act.get("path") else ""
+        pk.refresh(current=cur)
 
     def _add_files_for_key(self):
         paths = self._ask_files()
@@ -1947,7 +1927,7 @@ class App:
         v = min(v, (width_cap - 4 * 8) / 5, 88 * d)
         self.VUNIT = int(max(44 * d, v))
         self.VGAP = max(6, int(self.VUNIT / 8))
-        if hasattr(self, "pick_lb") and self.pick_lb is not None:
+        if getattr(self, "picker", None) is not None:
             self._fit_pick_rows()
         self.canvas.configure(width=4 * self.UNIT + 3 * self.GAP, height=5 * self.UNIT + 4 * self.GAP)
         self.row_canvas.configure(width=6 * self.RUNIT + 5 * self.RGAP, height=2 * self.RUNIT + self.RGAP)
@@ -1956,18 +1936,16 @@ class App:
         self._redraw()
 
     def _fit_pick_rows(self):
-        """Filas de la lista de sonidos según el alto de la ventana (sin empujar lo demás)."""
-        lb = getattr(self, "pick_lb", None)
-        if lb is None:
+        """Alto del selector de sonidos según el alto de la ventana (la pestaña se desplaza si no cabe)."""
+        pk = getattr(self, "picker", None)
+        if pk is None:
             return
         try:
             H = self.root.winfo_height()
             if H < 50:
                 return
-            ls = tkfont.Font(font=lb.cget("font")).metrics("linespace") + 1
             d = getattr(self, "dpi", 1.0)
-            rows = int((H - 668 * d) / ls)
-            lb.configure(height=max(4, min(12, rows)))
+            pk.set_height(max(200 * d, min(560 * d, H - 660 * d)))
         except tk.TclError:
             pass
 
@@ -2855,7 +2833,7 @@ class App:
             except tk.TclError:
                 pass
         self.toast = None
-        self.pick_lb = None
+        self.picker = None
         self._upd_dialog = None
         self.__dict__.pop("_kfonts", None)
 
