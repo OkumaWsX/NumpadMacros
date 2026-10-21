@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Flecha hacia arriba sobre una bandeja: «subir y publicar» (zona segura del icono: 66 de 108) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#F2A33A"
+        android:pathData="M54,30 L70,47 L60,47 L60,64 L48,64 L48,47 L38,47 Z" />
+    <path android:fillColor="#E9E9EC"
+        android:pathData="M34,62 L40,62 L40,72 L68,72 L68,62 L74,62 L74,75 Q74,78 71,78 L37,78 Q34,78 34,75 Z" />
+</vector>

@@ -28,6 +28,20 @@ para Windows, Linux y macOS, y hace que la app de cada usuario muestre el aviso 
 4. El robot de GitHub tarda unos 10–15 minutos. Puedes cerrar el Publicador: si algo falla, GitHub te avisa
    por correo y **no se publica nada**.
 
+### Desde el teléfono (Publicador para Android)
+
+Para cuando no tienes el PC a mano. Hace lo mismo que el del escritorio, con las mismas pantallas.
+
+1. Instálalo una vez: *Actions → Compilar Publicador Android* → la ejecución más reciente → descarga
+   `Publicador-Android` (un .zip con el APK) y ábrelo en el teléfono.
+2. La primera vez pide el token: sirve el mismo del PC (o crea otro con los mismos permisos).
+3. Elige el `NumpadMacros-codigo_X.Y.Z.zip` con «Elegir .zip…», o *Compártelo* desde Archivos, Drive o
+   Telegram con «Publicador NM». Revisa, corrige las notas si quieres y pulsa «Aceptar y publicar».
+4. El avance se ve en la app y en una notificación; puedes salir de la app mientras GitHub compila.
+
+«Crear tema .npt…» también está: eliges el tema en JSON y tu clave de firma (se guarda cifrada en el
+teléfono; nunca la subas a GitHub).
+
 ### Sin el Publicador (desde la web de GitHub)
 
 *Actions → Publicar versión → Run workflow*. Elige el tipo (corrección, mejora o grande) o deja
