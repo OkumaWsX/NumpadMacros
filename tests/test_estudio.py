@@ -159,6 +159,36 @@ class LogicTest(unittest.TestCase):
         self.assertEqual(pv.tag_at(V.OX + 100, V.OY + 300, "s:"), "keys")
         self.assertEqual(pv.tag_at(V.OX + 500, V.OY + 300, "s:"), "body")
 
+    def test_background_image_and_one_piece(self):
+        import vista as V
+        pal = L.extract_palette(L.sample_image())
+        gen = L.background_from_palette(pal, True)
+        img = L.from_bytes(gen)
+        self.assertEqual(img.size, (1600, 1000))
+        data = L.background_png(gen, 30, "#101010")
+        w, h = L.npt.image_size(data)
+        self.assertTrue(w <= 1920 and h <= 1200)
+        self.assertLess(len(data), L.BG_LIMIT + 1)
+        e = L.effective(self.base, {})
+        r, _c, st = L.one_piece_check(e, ["#ffffff", "#000000"], "#101010", 0)
+        self.assertIn(st, ("ok", "warn", "bad"))
+
+        class FakeCanvas:
+            def after(self, *a):
+                return 1
+
+            def after_cancel(self, *a):
+                pass
+        pv = V.Preview(FakeCanvas())
+        pv._show = lambda: None
+        bright = L.from_bytes(L.background_from_palette([("#ff0000", 1.0), ("#00ff00", .5)], False))
+        pv.draw(e, bg_image=bright, one_piece=True, tint=0)
+        inside = pv.compose().getpixel((V.OX + 150, V.OY + 470))      # panel de teclas, sin tinte
+        pv.draw(e, bg_image=bright, one_piece=False)
+        solid = pv.compose().getpixel((V.OX + 150, V.OY + 470))       # panel de color sólido
+        self.assertNotEqual(inside[:3], solid[:3])
+        self.assertEqual(L.npt.IMAGE_SLOTS["fondo"], (1920, 1200))
+
     def test_slug(self):
         self.assertEqual(L.slug("Neón Tokio!"), "neon-tokio")
         self.assertEqual(L.slug("¡¡!!"), "tema")

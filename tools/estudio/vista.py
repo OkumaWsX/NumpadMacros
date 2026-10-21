@@ -229,21 +229,40 @@ class Preview:
 
     # ------------------------------------------------------------ armado
     def draw(self, e: dict, slot_frames=None, gradient=None, sections=None, opacity=100, wall=False,
-             hover=False, mode="edit", sel=None, paused=False):
+             hover=False, mode="edit", sel=None, paused=False, bg_image=None, one_piece=False,
+             tint=L.TINT_DEFAULT):
+        """``gradient`` o ``bg_image`` (PIL): fondo de toda la ventana. ``one_piece``: «fondo de una pieza»,
+        el fondo pasa también por detrás del panel de teclas y de las pestañas, suavizado y teñido con
+        ``tint`` (0–90), como lo dibuja Numpad Macros (npm/theme_art.py)."""
         zones()
         slot_frames = slot_frames or (lambda *a: None)
         sections = sections or {}
         sec = {k: L.section(sections, k) for k in npt.SECTIONS}
         self.hits = []
-        self.e = e
-        under = L.gradient_avg(gradient, e["bg"])
-
-        # capa 1: fondo de la ventana (sólido o degradado) y las planchas de cada sección
-        base = _Pen(fill=rgba(e["bg"]))
+        window_bg = None
         if gradient:
-            base.im.paste(L.gradient_image(gradient, (WW * S, WH * S)), (0, 0))
+            window_bg = L.gradient_image(gradient, (WW * S, WH * S))
+            under = L.gradient_avg(gradient, e["bg"])
+        elif bg_image is not None:
+            window_bg = self._cover(bg_image)
+            under = L.image_avg(bg_image)
+        else:
+            under = e["bg"]
+        one_piece = bool(one_piece and window_bg is not None)
+        if window_bg is not None:              # como Numpad: lo que no se dibuja con el fondo toma su promedio
+            e = dict(e, bg=under)
+        if one_piece:
+            e = dict(e, panel=L.tint_panel(e, under, tint))
+        self.e = e
+
+        # capa 1: fondo de la ventana (sólido, degradado o imagen) y las planchas de cada sección
+        base = _Pen(fill=rgba(e["bg"]))
+        if window_bg is not None:
+            base.im.paste(window_bg, (0, 0))
         self._hit(0, 0, WW, WH, "t:bg")
-        self._plates(base.im, e, sec)
+        if one_piece:
+            self._one_piece(base.im, e, tint)
+        self._plates(base.im, e, sec, skip=("left", "body") if one_piece else ())
 
         # imágenes (detrás del contenido y en los espacios libres)
         behind, free = {}, {}
@@ -351,9 +370,31 @@ class Preview:
             self._job = None
 
     # ------------------------------------------------------------ planchas
-    def _plates(self, base, e, sec):
+    def _cover(self, img):
+        key = (id(img), img.size)
+        if getattr(self, "_cover_key", None) != key:
+            self._cover_key, self._cover_img = key, L.cover(img.convert("RGBA"), WW * S, WH * S)
+        return self._cover_img
+
+    # paneles por donde pasa el «fondo de una pieza»: el panel de teclas y el bloque de pestañas
+    ONE_PIECE = ((8, 64, 290, 512), (300, 64, 672, 512))
+
+    def _one_piece(self, base, e, tint):
+        """Dentro de los paneles el fondo se suaviza (desenfoque) y se tiñe con el color del panel."""
+        radius = max(12, min(WW, WH) // 25)
+        small = base.reduce(4)
+        soft = small.filter(ImageFilter.GaussianBlur(radius * S / 4)).resize(base.size, Image.BILINEAR)
+        veil = _Pen()
+        for x1, y1, x2, y2 in self.ONE_PIECE:
+            box = (x1 * S, y1 * S, x2 * S, y2 * S)
+            base.paste(soft.crop(box), box[:2])
+            veil.rect(x1, y1, x2, y2, fill=rgba(e["panel"]))
+        if tint > 0:
+            base.alpha_composite(_alpha_mul(veil.im, tint / 100))
+
+    def _plates(self, base, e, sec, skip=()):
         """Planchas de las secciones: cada una con la transparencia de su fondo, sobre el fondo de la ventana."""
-        f = {k: sec[k]["fondo"] / 100 for k in sec}
+        f = {k: (0 if k in skip else sec[k]["fondo"] / 100) for k in sec}
 
         def layer(k, draw):
             if f[k] <= 0:

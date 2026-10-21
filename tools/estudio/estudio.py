@@ -182,7 +182,8 @@ class App:
         self.base_name = base["nombre"]
         self.auto = True
         self.images: dict = {}
-        self.grad = {"on": False, "colores": [], "desde": "tl"}
+        self.grad = {"on": False, "modo": "solido", "colores": [], "desde": "tl", "una_pieza": False,
+                     "tinte": L.TINT_DEFAULT}
         self.sections: dict = {}
         self.gif_pause = True
         self.pal_img = L.to_png(L.sample_image())
@@ -214,8 +215,17 @@ class App:
         g = s.get("degradado") or {}
         stops = [[str(c).lower(), L.clamp(int(p), 0, 100)] for c, p in (g.get("colores") or [])
                  if npt._HEX.match(str(c))]
-        self.grad = {"on": bool(g.get("on")) and len(stops) >= 2, "colores": stops[:5],
-                     "desde": g.get("desde") if g.get("desde") in npt.GRADIENT_FROM else "tl"}
+        modo = g.get("modo") or ("degradado" if g.get("on") else "solido")
+        if modo == "degradado" and len(stops) < 2 or modo == "imagen" and "fondo" not in self.images \
+                or modo not in ("solido", "degradado", "imagen"):
+            modo = "solido"
+        try:
+            tinte = L.clamp(int(g.get("tinte", L.TINT_DEFAULT)), 0, 90)
+        except (TypeError, ValueError):
+            tinte = L.TINT_DEFAULT
+        self.grad = {"on": modo == "degradado", "modo": modo, "colores": stops[:5],
+                     "desde": g.get("desde") if g.get("desde") in npt.GRADIENT_FROM else "tl",
+                     "una_pieza": bool(g.get("una_pieza", False)), "tinte": tinte}
         self.sections = {}
         for k, v in (s.get("secciones") or {}).items():
             if k in npt.SECTIONS and isinstance(v, dict):
@@ -550,14 +560,58 @@ class App:
         self.lbl(box, "Fondo de la ventana", 0, True).grid(row=0, column=0, sticky="w")
         seg = tk.Frame(box, bg=C["line"])
         seg.grid(row=1, column=0, sticky="ew", pady=(4, 6))
-        seg.columnconfigure(0, weight=1, uniform="g")
-        seg.columnconfigure(1, weight=1, uniform="g")
         self.grad_seg = {}
-        for i, (key, txt) in enumerate(((False, "Color sólido"), (True, "Degradado"))):
-            b = tk.Label(seg, text=txt, font=fnt(-1), cursor="hand2", pady=5, width=10)
+        for i, (key, txt) in enumerate((("solido", "Sólido"), ("degradado", "Degradado"), ("imagen", "Imagen"))):
+            seg.columnconfigure(i, weight=1, uniform="g")
+            b = tk.Label(seg, text=txt, font=fnt(-1), cursor="hand2", pady=5, width=7)
             b.grid(row=0, column=i, sticky="ew", padx=(0 if i else 1, 1), pady=1)
-            b.bind("<Button-1>", lambda e, on=key: self.grad_mode(on))
+            b.bind("<Button-1>", lambda e, m=key: self.bg_mode(m))
             self.grad_seg[key] = b
+        # imagen de fondo
+        self.bgimg_ed = tk.Frame(box, bg=C["panel"])
+        self.bgimg_ed.columnconfigure(0, weight=1)
+        top = tk.Frame(self.bgimg_ed, bg=C["panel"])
+        top.grid(row=0, column=0, sticky="ew")
+        self.bgimg_thumb = tk.Label(top, bg="#0d0e11", image=self._blank(96, 60), width=96, height=60)
+        self.bgimg_thumb.pack(side="left")
+        side = tk.Frame(top, bg=C["panel"])
+        side.pack(side="left", padx=(8, 0), fill="x", expand=True)
+        ttk.Button(side, text="Subir imagen…", style="Small.TButton", command=self.bg_upload).pack(fill="x")
+        ttk.Button(side, text="La importada", style="Small.TButton", command=self.bg_from_imported).pack(
+            fill="x", pady=3)
+        ttk.Button(side, text="Generar con la paleta", style="Small.TButton", command=self.bg_generate).pack(
+            fill="x")
+        line = tk.Frame(self.bgimg_ed, bg=C["panel"])
+        line.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+        self.lbl(line, "Oscurecer la imagen", -1).pack(side="left")
+        self.bgdark_out = self.lbl(line, "", -1, color="muted", mono=True)
+        self.bgdark_out.pack(side="right")
+        self.bgdark_var = tk.IntVar(value=0)
+        self.bgdark_scale = self.scale(self.bgimg_ed, self.bgdark_var, 0, 90, 5, self.on_bg_dark)
+        self.bgdark_scale.grid(row=2, column=0, sticky="ew")
+        self.bgimg_note = self.lbl(self.bgimg_ed, "", -2, color="muted", wrap=255)
+        self.bgimg_note.grid(row=3, column=0, sticky="ew", pady=(4, 0))
+        # fondo de una pieza (con degradado o imagen)
+        self.onep_box = tk.Frame(box, bg=C["panel"])
+        self.onep_box.columnconfigure(0, weight=1)
+        self.onep_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(self.onep_box, text="Fondo de una pieza", variable=self.onep_var,
+                        command=self.on_one_piece).grid(row=0, column=0, sticky="w")
+        self.lbl(self.onep_box, "El fondo pasa también por detrás del panel de teclas, las pestañas y su contenido, "
+                                "como si toda la ventana fuera una sola imagen.", -2, color="muted",
+                 wrap=255).grid(row=1, column=0, sticky="ew", pady=(2, 0))
+        line = tk.Frame(self.onep_box, bg=C["panel"])
+        line.grid(row=2, column=0, sticky="ew", pady=(8, 0))
+        self.tint_lbl = self.lbl(line, "Tinte de los paneles", -1)
+        self.tint_lbl.pack(side="left")
+        self.tint_out = self.lbl(line, "", -1, color="muted", mono=True)
+        self.tint_out.pack(side="right")
+        self.tint_var = tk.IntVar(value=L.TINT_DEFAULT)
+        self.tint_scale = self.scale(self.onep_box, self.tint_var, 0, 90, 5, self.on_tint)
+        self.tint_scale.grid(row=3, column=0, sticky="ew")
+        self.lbl(self.onep_box, "Cuánto se tiñen los paneles con su color para que el texto se lea. Los campos, "
+                                "botones, listas y tarjetas quedan con sus colores encima.", -2, color="muted",
+                 wrap=255).grid(row=4, column=0, sticky="ew", pady=(2, 0))
         self.grad_ed = tk.Frame(box, bg=C["panel"])
         self.grad_ed.columnconfigure(0, weight=1)
         self.grad_bar = tk.Canvas(self.grad_ed, width=200, height=20, highlightthickness=1,
@@ -983,9 +1037,49 @@ class App:
     def eff(self):
         return L.effective(self.colors, self.alpha)
 
+    def bg_image(self):
+        """Imagen de fondo de la ventana (PIL), ya oscurecida, o None."""
+        s = self.images.get("fondo")
+        if self.grad["modo"] != "imagen" or not s:
+            return None
+        key = ("bgimg", hashlib.md5(s["src"]).digest(), s.get("dark", 0), self.colors["bg"])
+        if key not in self._cache:
+            data = L.background_png(s["src"], s.get("dark", 0), self.colors["bg"])
+            self._cache[key] = (data, L.from_bytes(data).convert("RGB"))
+        return self._cache[key][1]
+
+    def bg_colors(self) -> list:
+        """Colores principales del fondo (degradado o imagen), para revisar la legibilidad."""
+        g = self.gradient()
+        if g:
+            return [c for c, _p in g["colores"]]
+        img = self.bg_image()
+        if img is None:
+            return []
+        key = ("bgcols", id(img))
+        if key not in self._cache:
+            self._cache[key] = L.background_colors(img)
+        return self._cache[key]
+
+    def one_piece(self) -> bool:
+        return self.grad["una_pieza"] and bool(self.gradient() or self.bg_image() is not None)
+
+    def background_meta(self) -> dict:
+        """El «fondo» tal como va en el tema."""
+        g = self.gradient()
+        if g:
+            out = {"tipo": "degradado", **g}
+        elif self.bg_image() is not None:
+            out = {"tipo": "imagen"}
+        else:
+            return {}
+        if self.grad["una_pieza"]:
+            out.update(una_pieza=True, tinte=int(self.grad["tinte"]))
+        return out
+
     def gradient(self) -> dict:
         """El degradado que se usa (vacío si el fondo es de color sólido)."""
-        if self.grad["on"] and len(self.grad["colores"]) >= 2:
+        if self.grad["modo"] == "degradado" and len(self.grad["colores"]) >= 2:
             return {"colores": [list(s) for s in self.grad["colores"]], "desde": self.grad["desde"]}
         return {}
 
@@ -1005,7 +1099,8 @@ class App:
         self.idle_out.configure(text=f"{self.window['sin_usar']} %")
         self.kind_lbl.configure(text="Oscuro" if L.is_dark(self.colors) else "Claro")
         self._paint_grad()
-        common = dict(gradient=self.gradient() or None, sections=self.sections, wall=self.wall_var.get())
+        common = dict(gradient=self.gradient() or None, sections=self.sections, wall=self.wall_var.get(),
+                      bg_image=self.bg_image(), one_piece=self.one_piece(), tint=self.grad["tinte"])
         if self.screen == "edit":
             self.pv_edit.draw(e, self.slot_frames, opacity=self.window["opacidad"], hover=self.hover_var.get(),
                               **common)
@@ -1097,9 +1192,16 @@ class App:
         """Filas de legibilidad: (nombre, valor, (fondo, texto) o None, estado). Incluye el degradado y las
         secciones que cambiaron (estas solo avisan: atenuar una sección es a propósito)."""
         rows = [(n, r, None, st) for n, r, _mn, st in L.legibility(self.colors, self.alpha, self.window)]
-        g = L.gradient_check(self.colors, self.alpha, self.gradient())
-        if g:
-            rows.append(("Texto sobre el degradado", g[0], (g[1], self.eff()["text"]), g[2]))
+        e = self.eff()
+        cols = self.bg_colors()
+        if cols:
+            r, c, st = L.colors_check(e, cols)
+            what = "el degradado" if self.gradient() else "la imagen de fondo"
+            rows.append((f"Texto sobre {what}", r, (c, e["text"]), st))
+            if self.one_piece():
+                under = L.gradient_avg(self.gradient(), e["bg"]) if self.gradient() else L.image_avg(self.bg_image())
+                r, c, st = L.one_piece_check(e, cols, under, self.grad["tinte"])
+                rows.append(("Texto en los paneles (de una pieza)", r, (c, e["text"]), st))
         for k, name, r, pe, te, st, changed, img in L.section_rows(self.colors, self.alpha, self.sections,
                                                                     self.gradient(), self.images):
             if changed:
@@ -1211,12 +1313,18 @@ class App:
         # degradado (fila «Toda la ventana»)
         self.grad_mini.delete("all")
         g = self.gradient()
+        img = self.bg_image()
+        onep = " · de una pieza" if self.one_piece() else ""
         if g:
             gi = L.gradient_image(g, (40, 26))
             self._grad_mini_photo = ImageTk.PhotoImage(gi)
             self.grad_mini.create_image(0, 0, anchor="nw", image=self._grad_mini_photo)
             self.grad_mini_t.configure(text=f"Degradado de {len(g['colores'])} colores · desde "
-                                            f"{L.GRADIENT_DIRS[g['desde']][1]}")
+                                            f"{L.GRADIENT_DIRS[g['desde']][1]}{onep}")
+        elif img is not None:
+            self._grad_mini_photo = ImageTk.PhotoImage(L.cover(img, 40, 26))
+            self.grad_mini.create_image(0, 0, anchor="nw", image=self._grad_mini_photo)
+            self.grad_mini_t.configure(text=f"Imagen{onep}")
         else:
             self.grad_mini.create_rectangle(0, 0, 42, 28, fill=self.colors["bg"], width=0)
             self.grad_mini_t.configure(text="Color sólido · tócalo para usar un degradado")
@@ -1268,12 +1376,49 @@ class App:
                                   fg=C["bad_text"] if kb * 1024 > npt.MAX_FILE else C["text"])
 
     def _paint_grad(self):
-        on = self.grad["on"]
+        modo = self.grad["modo"]
         for key, b in self.grad_seg.items():
-            sel = key == on
+            sel = key == modo
             b.configure(bg=C["panel2"] if sel else C["bg"], fg=C["text"] if sel else C["muted"],
                         font=fnt(-1, sel))
-        if not on:
+        if modo == "solido":
+            self.onep_box.grid_remove()
+        else:
+            self.onep_box.grid(row=4, column=0, sticky="ew", pady=(12, 0))
+            if self.onep_var.get() != self.grad["una_pieza"]:
+                self.onep_var.set(self.grad["una_pieza"])
+            if self.tint_var.get() != self.grad["tinte"]:
+                self.tint_var.set(self.grad["tinte"])
+            on = self.grad["una_pieza"]
+            self.tint_out.configure(text=f"{self.grad['tinte']} %")
+            self.tint_scale.configure(state="normal" if on else "disabled")
+            self.tint_lbl.configure(fg=C["text"] if on else C["muted"])
+        if modo == "imagen":
+            self.bgimg_ed.grid(row=3, column=0, sticky="ew")
+            s = self.images.get("fondo")
+            img = self.bg_image()
+            if img is not None:
+                th = img.copy()
+                th.thumbnail((96, 60))
+                self._bgimg_photo = ImageTk.PhotoImage(th)
+                self.bgimg_thumb.configure(image=self._bgimg_photo, width=96, height=60)
+                data = self._cache[("bgimg", hashlib.md5(s["src"]).digest(), s.get("dark", 0),
+                                    self.colors["bg"])][0]
+                self.bgimg_note.configure(text=f"Se guarda a {img.width} × {img.height} px · "
+                                               f"{max(1, len(data) // 1024)} KB. Cubre toda la ventana, recortada al "
+                                               "centro.")
+            else:
+                self.bgimg_thumb.configure(image=self._blank(96, 60), width=96, height=60)
+                self.bgimg_note.configure(text="Sube una imagen (hasta 1920 × 1200 se guarda tal cual) o genera "
+                                               "una con los colores de la paleta.")
+            d = s.get("dark", 0) if s else 0
+            if self.bgdark_var.get() != d:
+                self.bgdark_var.set(d)
+            self.bgdark_out.configure(text=f"{d} %")
+            self.bgdark_scale.configure(state="normal" if s else "disabled")
+        else:
+            self.bgimg_ed.grid_remove()
+        if modo != "degradado":
             self.grad_ed.grid_remove()
             return
         self.grad_ed.grid(row=2, column=0, sticky="ew")
@@ -1321,7 +1466,7 @@ class App:
             self.grad_note.configure(text=f"Empieza {prep(start)}{start} y termina {prep(end)}{end}.")
 
     def _paint_grad_bar(self):
-        if not self.grad["on"] or len(self.grad["colores"]) < 2:
+        if self.grad["modo"] != "degradado" or len(self.grad["colores"]) < 2:
             return
         cv = self.grad_bar
         w = max(cv.winfo_width(), 40)
@@ -1393,7 +1538,7 @@ class App:
         bad = sum(1 for r in rows if r[3] == "bad")
         warn = sum(1 for r in rows if r[3] == "warn")
         reserved = self.mode != "creador" and npt.is_reserved_name(self.author)
-        n = len(self.images)
+        n = len([s for s in self.images if s in L.SLOT_NAMES])
         anim = [s for s in self.images if self.is_animated(s)]
         checks = [("ok", "Los 22 colores están completos")]
         checks.append(("bad", f"{bad} combinación ilegible: vuelve a «Editar tema»") if bad else
@@ -1405,14 +1550,21 @@ class App:
                              f"{self.window['sin_usar']} %) · {nl} {'capa' if nl == 1 else 'capas'} con nivel propio")
                       if t.transparency else ("ok", "Sin transparencia (opaco)"))
         g = self.gradient()
-        checks.append(("ok", f"Fondo: degradado de {len(g['colores'])} colores, desde "
-                             f"{L.GRADIENT_DIRS[g['desde']][1]}" if g else "Fondo: color sólido"))
+        onep = f" · de una pieza (tinte de los paneles {self.grad['tinte']} %)" if self.one_piece() else ""
+        if g:
+            checks.append(("ok", f"Fondo: degradado de {len(g['colores'])} colores, desde "
+                                 f"{L.GRADIENT_DIRS[g['desde']][1]}{onep}"))
+        elif self.bg_image() is not None:
+            checks.append(("ok", f"Fondo: imagen de {self.bg_image().width} × {self.bg_image().height} px{onep}"))
+        else:
+            checks.append(("ok", "Fondo: color sólido"))
         ns = len(L.sections_clean(self.sections))
         checks.append(("ok", f"Transparencia por sección: {ns} {'sección' if ns == 1 else 'secciones'} "
                              f"ajustada{'s' if ns != 1 else ''}" if ns else "Transparencia por sección: normal"))
         gif = f" ({len(anim)} animada{'s' if len(anim) != 1 else ''})" if anim else ""
         checks.append(("ok", f"{n} imagen{'es' if n != 1 else ''}{gif}: " + ", ".join(
-            L.SLOT_NAMES[s].lower() for s in self.images)) if n else ("ok", "Sin imágenes (solo colores)"))
+            L.SLOT_NAMES[s].lower() for s in self.images if s in L.SLOT_NAMES)) if n else
+                      ("ok", "Sin imágenes (solo colores)"))
         kb = self.theme_weight()
         if kb > npt.MAX_FILE:
             checks.append(("bad", f"Pesa {kb // 1024} KB: el máximo es 5 MB"))
@@ -1478,6 +1630,11 @@ class App:
     def final_images(self) -> dict:
         out = {}
         for slot, s in self.images.items():
+            if slot == "fondo":                    # fondo de toda la ventana: solo si el fondo es «Imagen»
+                if self.bg_image() is not None:
+                    out[slot] = self._cache[("bgimg", hashlib.md5(s["src"]).digest(), s.get("dark", 0),
+                                             self.colors["bg"])][0]
+                continue
             key = ("final", slot, self.colors["bg"], s["fit"], s["op"], s["dark"], s["blur"],
                    hashlib.md5(s["src"]).digest())
             if key not in self._cache:
@@ -1576,15 +1733,68 @@ class App:
 
     # ================================================================ fondo de la ventana
     def grad_mode(self, on):
-        if on and len(self.grad["colores"]) < 2:
+        self.bg_mode("degradado" if on else "solido")
+
+    def bg_mode(self, modo):
+        if modo == "degradado" and len(self.grad["colores"]) < 2:
             self.grad["colores"] = L.gradient_from_theme(self.colors)
-        self.grad["on"] = on
+        self.grad["modo"] = modo
+        self.grad["on"] = modo == "degradado"
         self.mark()
         self.render()
+
+    def _set_bg_image(self, data, msg):
+        old = self.images.get("fondo") or {}
+        self.images["fondo"] = {"src": data, "fit": "cover", "op": 100, "dark": old.get("dark", 0), "blur": 0}
+        self.bg_mode("imagen")
+        self.toast(msg, "ok")
+
+    def bg_upload(self):
+        path = filedialog.askopenfilename(parent=self.root, title="Imagen para el fondo de la ventana",
+                                          filetypes=IMG_TYPES)
+        if not path:
+            return
+        data, _n = self._read_image(path)
+        if data:
+            self._set_bg_image(data, f"Fondo de la ventana: «{os.path.basename(path)}».")
+
+    def bg_from_imported(self):
+        self._set_bg_image(self.pal_img, f"Fondo de la ventana: la imagen importada «{self.pal_name}».")
+
+    def bg_generate(self):
+        data = L.background_from_palette(self.palette, L.is_dark(self.colors))
+        self._set_bg_image(data, f"Fondo generado con los colores de «{self.pal_name}».")
+
+    def on_bg_dark(self):
+        s = self.images.get("fondo")
+        if self._quiet or not s:
+            return
+        v = int(self.bgdark_var.get())
+        if v != s.get("dark", 0):
+            s["dark"] = v
+            self.mark()
+            self.render()
+
+    def on_one_piece(self):
+        v = bool(self.onep_var.get())
+        if v != self.grad["una_pieza"]:
+            self.grad["una_pieza"] = v
+            self.mark()
+            self.render()
+
+    def on_tint(self):
+        if self._quiet:
+            return
+        v = int(self.tint_var.get())
+        if v != self.grad["tinte"]:
+            self.grad["tinte"] = v
+            self.mark()
+            self.render()
 
     def grad_set(self, stops, msg=None):
         self.grad["colores"] = [[c, int(p)] for c, p in stops][:npt.GRADIENT_STOPS[1]]
         self.grad["on"] = True
+        self.grad["modo"] = "degradado"
         self.mark()
         self.render()
         if msg:
@@ -1631,7 +1841,7 @@ class App:
 
     def goto_gradient(self):
         self.show("edit")
-        if not self.grad["on"]:
+        if self.grad["modo"] == "solido":
             self.grad_mode(True)
         self.root.update_idletasks()
         try:
@@ -1923,7 +2133,10 @@ class App:
                 for slot, data in t.images.items()}
         self.apply_state({"nombre": t.name, "version": _next_version(t.version), "descripcion": t.description,
                           "colores": t.colors, "alfa": t.alpha, "ventana": t.window, "auto": False, "imagenes": imgs,
-                          "degradado": {"on": bool(t.gradient), **t.gradient} if t.gradient else {},
+                          "degradado": {"modo": "degradado" if t.gradient else
+                                        ("imagen" if t.background.get("tipo") == "imagen" else "solido"),
+                                        **t.gradient, "una_pieza": bool(t.background.get("una_pieza")),
+                                        "tinte": t.background.get("tinte", L.TINT_DEFAULT)},
                           "secciones": t.sections, "pausar_animaciones": t.gif_pause})
         self.project_path = None
         self.dirty = True
@@ -1936,7 +2149,7 @@ class App:
                          description=self.meta["descripcion"].strip(),
                          kind="oscuro" if L.is_dark(self.colors) else "claro",
                          alpha={k: v for k, v in self.alpha.items() if v < 100}, window=dict(self.window),
-                         background={"tipo": "degradado", **self.gradient()} if self.gradient() else {},
+                         background=self.background_meta(),
                          sections=L.sections_clean(self.sections),
                          gif_pause=self.gif_pause)
 
@@ -2326,6 +2539,17 @@ def main():
             else:
                 app.apply_palette()
                 app.apply_template("todo")          # 8 espacios, con GIF animados
+                app.bg_generate()                   # fondo de imagen de una pieza
+                app.onep_var.set(True)
+                app.on_one_piece()
+                app.show("img")
+                root.update()
+                theme = app.build_theme_meta()
+                theme.images = app.final_images()
+                res = npt.read(npt.write(theme, npt.SigningKey.generate()))
+                if res.theme.background.get("tipo") != "imagen" or "fondo" not in res.theme.images \
+                        or not res.theme.background.get("una_pieza"):
+                    errors.append("el fondo de imagen de una pieza no se exportó")
                 app.grad_mode(True)
                 app.grad_add_stop()
                 app.grad_from("c")

@@ -16,8 +16,10 @@ Viene en cada [Release](https://github.com/OkumaWsX/NumpadMacros/releases/latest
 ## Qué puedes hacer
 
 1. **Editar tema**: cambia las 22 capas de color, cada una con su propia transparencia, y la opacidad de la
-   ventana (en uso y cuando no la usas). El **fondo de la ventana** puede ser un color o un **degradado** de
-   2 a 5 colores que empieza en una esquina, un lado o el centro. La vista previa es la ventana de Numpad
+   ventana (en uso y cuando no la usas). El **fondo de la ventana** puede ser un color, un **degradado** de
+   2 a 5 colores que empieza en una esquina, un lado o el centro, o una **imagen** (subida, la importada o
+   generada con la paleta). Con **«Fondo de una pieza»** el fondo pasa también por detrás de los paneles,
+   suavizado y teñido con el **«Tinte de los paneles»**. La vista previa es la ventana de Numpad
    Macros 3.4.1, sobre un fondo de escritorio de ejemplo: toca cualquier parte para editar su color. El panel
    de legibilidad avisa si algún texto no se lee.
 2. **Transparencia por sección**: el encabezado, el panel de teclas, las teclas, las pestañas, el panel de la

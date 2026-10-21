@@ -415,30 +415,40 @@ def gradient_color(stops: list, t: float) -> str:
     return stops[-1][0]
 
 
+_START = {"tl": (0, 0), "t": (.5, 0), "tr": (1, 0), "l": (0, .5), "c": (.5, .5), "r": (1, .5),
+          "bl": (0, 1), "b": (.5, 1), "br": (1, 1)}
+
+
 def gradient_image(g: dict, size):
-    """Dibuja el degradado (PIL RGBA) del tamaño pedido."""
+    """Dibuja el degradado (PIL RGBA) del tamaño pedido, con la misma geometría que Numpad Macros
+    (npm/theme_art.py): proyección sobre la línea que va del punto de inicio al opuesto, o circular
+    desde el centro hasta las esquinas."""
     from PIL import Image
     w, h = size
     stops = gradient_stops(g)
     frm = g.get("desde", "tl")
     lut = [hex2rgb(gradient_color(stops, i / 255)) for i in range(256)]
-    # mapa de posiciones 0–255 calculado chico y escalado (rápido y suave)
-    sw, sh = 64, max(2, round(64 * h / max(w, 1)))
-    pos = Image.new("L", (sw, sh))
+    sw = 64
+    sh = max(2, round(sw * h / max(w, 1)))
     px = []
-    for y in range(sh):
-        v = y / (sh - 1)
-        for x in range(sw):
-            u = x / (sw - 1)
-            if frm == "c":
-                t = min(1.0, ((u - .5) ** 2 + ((v - .5) * h / max(w, 1)) ** 2) ** .5 / (.5 * (1 + (h / max(w, 1)) ** 2) ** .5))
-            else:
-                dx = {"l": 1, "r": -1, "tl": 1, "bl": 1, "tr": -1, "br": -1}.get(frm, 0)
-                dy = {"t": 1, "b": -1, "tl": 1, "tr": 1, "bl": -1, "br": -1}.get(frm, 0)
-                a = (u if dx > 0 else 1 - u) if dx else 0
-                b = (v if dy > 0 else 1 - v) if dy else 0
-                t = (a + b) / 2 if dx and dy else a + b
-            px.append(round(t * 255))
+    if frm == "c":
+        half = 0.5 * (w * w + h * h) ** .5
+        for y in range(sh):
+            dy = ((y + .5) / sh - .5) * h
+            for x in range(sw):
+                dx = ((x + .5) / sw - .5) * w
+                px.append(round(min(1.0, (dx * dx + dy * dy) ** .5 / half) * 255))
+    else:
+        sx, sy = _START.get(frm, (0, 0))
+        vx, vy = (1 - 2 * sx) * w, (1 - 2 * sy) * h
+        l2 = vx * vx + vy * vy or 1
+        for y in range(sh):
+            v = (y + .5) / sh
+            for x in range(sw):
+                u = (x + .5) / sw
+                tt = ((u - sx) * w * vx + (v - sy) * h * vy) / l2
+                px.append(round(max(0.0, min(1.0, tt)) * 255))
+    pos = Image.new("L", (sw, sh))
     pos.putdata(px)
     pos = pos.resize((w, h), Image.BILINEAR)
     r = pos.point([c[0] for c in lut])
@@ -487,6 +497,91 @@ def gradient_check(colors: dict, alpha: dict, g: dict):
         return None
     e = effective(colors, alpha)
     worst = min(((ratio(e["text"], c), c) for c, _p in g["colores"]), key=lambda x: x[0])
+    r = worst[0]
+    return r, worst[1], "ok" if r >= 4.5 else ("warn" if r >= 3.4 else "bad")
+
+
+# ---------------------------------------------------------------- fondo de imagen y «fondo de una pieza»
+TINT_DEFAULT = 35
+BG_LIMIT = 2_400_000                  # peso máximo de la imagen de fondo dentro del tema (deja sitio al resto)
+
+
+def cover(img, w, h):
+    """Recorta al centro para llenar w×h sin deformar (igual que Numpad Macros)."""
+    from PIL import Image
+    iw, ih = img.size
+    k = max(w / iw, h / ih)
+    nw, nh = max(1, int(iw * k + .5)), max(1, int(ih * k + .5))
+    im = img.resize((nw, nh), Image.LANCZOS)
+    x, y = (nw - w) // 2, (nh - h) // 2
+    return im.crop((x, y, x + w, y + h))
+
+
+def background_png(src: bytes, dark: int, bg: str) -> bytes:
+    """Imagen de fondo lista para el tema: hasta 1920 × 1200, oscurecida, y que no pese demasiado."""
+    from PIL import Image
+    im = load_frames(src, max_side=1920)[0][0].convert("RGB")
+    mw, mh = npt.IMAGE_SLOTS["fondo"]
+    k = min(1.0, mw / im.width, mh / im.height)
+    if k < 1:
+        im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.LANCZOS)
+    if dark:
+        im = Image.blend(im, Image.new("RGB", im.size, hex2rgb(bg)), dark / 100)
+    data = to_png(im)
+    while len(data) > BG_LIMIT and max(im.size) > 480:
+        im = im.resize((round(im.width * .8), round(im.height * .8)), Image.LANCZOS)
+        data = to_png(im)
+    return data
+
+
+def background_from_palette(palette, dark: bool, size=(1600, 1000)) -> bytes:
+    """Fondo generado con los colores de la paleta: manchas suaves de color, como pintura difuminada."""
+    from PIL import Image, ImageDraw, ImageFilter
+    w, h = size
+    cols = [c for c, _n in palette] or ["#202430"]
+    base = cols[0]
+    base = mix("#000000", base, .45) if dark else mix("#ffffff", base, .35)
+    im = Image.new("RGB", (w // 4, h // 4), hex2rgb(base))
+    d = ImageDraw.Draw(im)
+    spots = ((.15, .2, .55), (.8, .25, .5), (.55, .75, .6), (.1, .85, .45), (.9, .9, .4), (.45, .35, .35))
+    for i, (x, y, r) in enumerate(spots):
+        c = cols[(i + 1) % len(cols)]
+        c = mix("#000000", c, .6) if dark else mix("#ffffff", c, .55)
+        rr = r * min(w, h) / 4
+        cx, cy = x * w / 4, y * h / 4
+        d.ellipse([cx - rr, cy - rr * .8, cx + rr, cy + rr * .8], fill=hex2rgb(c))
+    im = im.filter(ImageFilter.GaussianBlur(min(w, h) / 4 / 7))
+    im = im.resize((w, h), Image.BICUBIC)
+    return to_png(im)
+
+
+def image_avg(img) -> str:
+    small = img.convert("RGB").resize((1, 1), 4)          # 4 = BOX
+    return rgb2hex(small.getpixel((0, 0)))
+
+
+def background_colors(img, k: int = 5) -> list:
+    """Colores principales de la imagen de fondo (para revisar que el texto se lea)."""
+    return [c for c, _n in extract_palette(img, k)]
+
+
+def tint_panel(e: dict, under: str, tint: int) -> str:
+    """Color con que se tiñen los paneles en el «fondo de una pieza» (como Numpad Macros)."""
+    return mix(under, e["panel"], max(.35, tint / 100))
+
+
+def one_piece_check(e: dict, colors: list, under: str, tint: int):
+    """Texto sobre los paneles de una pieza, en el color más difícil del fondo: (contraste, fondo, estado)."""
+    panel = tint_panel(e, under, tint)
+    worst = min(((ratio(e["text"], mix(c, panel, tint / 100)), mix(c, panel, tint / 100)) for c in colors),
+                key=lambda x: x[0])
+    r = worst[0]
+    return r, worst[1], "ok" if r >= 4.5 else ("warn" if r >= 3.4 else "bad")
+
+
+def colors_check(e: dict, colors: list):
+    """Texto directamente sobre el fondo (encabezado, pie y bordes): (contraste, color, estado)."""
+    worst = min(((ratio(e["text"], c), c) for c in colors), key=lambda x: x[0])
     r = worst[0]
     return r, worst[1], "ok" if r >= 4.5 else ("warn" if r >= 3.4 else "bad")
 
