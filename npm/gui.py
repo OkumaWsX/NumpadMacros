@@ -604,6 +604,7 @@ class App:
         for wdg in self.sub.winfo_children():
             wdg.destroy()
         self.pick_lb = None
+        self.btn_test = None
 
     def _build_file_sub(self, act):
         f = self.sub
@@ -662,8 +663,9 @@ class App:
                         command=self._on_file_opt).pack(side="left")
         ttk.Checkbutton(lines, text="Por el micrófono", variable=self.mic_var,
                         command=self._on_file_opt).pack(side="left", padx=16)
-        ttk.Button(lines, text="▶ Probar", style="Accent.TButton",
-                   command=self._test_action).pack(side="left", padx=(24, 0))
+        self.btn_test = ttk.Button(lines, text="▶ Probar", style="Accent.TButton", width=11,
+                                   command=self._test_action)
+        self.btn_test.pack(side="left", padx=(24, 0))
         self._refresh_file_header(act)
         self._fill_pick()
 
@@ -1854,10 +1856,51 @@ class App:
             mode = LABEL_MODE.get(self.mode_cb.get(), "overlap")
             self._store(dict(act, speakers=self.spk_var.get(), mic=self.mic_var.get(), mode=mode))
 
+    def _test_tag(self, act=None):
+        """Etiqueta del sonido de la tecla elegida (la misma que usa el motor)."""
+        act = act if act is not None else self._current_action()
+        if not act or act.get("type") != "file":
+            return None
+        return self.engine._tag(act, self.selected)
+
     def _test_action(self):
+        """▶ Probar / ■ Detener: si el sonido de esta tecla ya está sonando, lo detiene."""
         act = self._current_action()
-        if act:
-            self.engine.run_action(act, self.selected)
+        if not act:
+            return
+        tag = self._test_tag(act)
+        if tag and self.board.playing(tag):
+            self.board.stop_tag(tag)
+            self._test_pending = 0
+            self._set_test_btn(False)
+            return
+        self.engine.run_action(act, self.selected)
+        if tag:
+            self._test_pending = time.monotonic()        # el motor lo lanza en un instante
+            self._set_test_btn(True)
+
+    def _set_test_btn(self, playing):
+        btn = getattr(self, "btn_test", None)
+        try:
+            if btn is not None and btn.winfo_exists():
+                want = "■ Detener" if playing else "▶ Probar"
+                if btn.cget("text") != want:
+                    btn.configure(text=want)
+        except tk.TclError:
+            pass
+
+    def _paint_test_btn(self):
+        """Muestra «■ Detener» mientras suena el sonido de la tecla elegida (llamado ~20 veces/s)."""
+        if getattr(self, "btn_test", None) is None:
+            return
+        tag = self._test_tag()
+        try:
+            playing = bool(tag) and self.board.playing(tag)
+        except Exception:
+            playing = False
+        if not playing and time.monotonic() - getattr(self, "_test_pending", 0) < 0.6:
+            return                                      # todavía no empieza: no parpadear
+        self._set_test_btn(playing)
 
     # ================================================================ dibujo
     def _layer_dict(self, layer=None):
@@ -2858,6 +2901,7 @@ class App:
 
     # ================================================================ medidores
     def _tick_meters(self):
+        self._paint_test_btn()
         try:
             lv = self.board.levels() if self.board.available()[0] else {}
         except Exception:
