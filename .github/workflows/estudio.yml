@@ -7,7 +7,7 @@ on:
   push:
     branches: [main]
     paths: ["tools/estudio/**", "npm/npt.py", "npm/config.py", "npm/desktop_linux.py", "docs/temas/temas.json", "tests/test_npt.py",
-            "tests/test_estudio.py", ".github/workflows/estudio.yml"]
+            "tests/test_estudio.py", "assets/icon-estudio.*", ".github/workflows/estudio.yml"]
   workflow_dispatch:
   workflow_call:
 
@@ -38,7 +38,7 @@ jobs:
         shell: bash
         run: |
           python -m pip install --upgrade pip
-          pip install -r tools/estudio/requirements.txt pyinstaller==6.22.3
+          pip install -r tools/estudio/requirements.txt pyinstaller==6.22.3 pillow   # pillow: convierte el icono
 
       - name: Pruebas
         shell: bash
@@ -88,7 +88,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           mkdir -p pkg/EstudioTemas
-          cp tools/estudio/dist/EstudioTemas-NumpadMacros tools/estudio/LEEME.md assets/icon.png pkg/EstudioTemas/
+          cp tools/estudio/dist/EstudioTemas-NumpadMacros tools/estudio/LEEME.md assets/icon-estudio.png pkg/EstudioTemas/
           chmod +x pkg/EstudioTemas/EstudioTemas-NumpadMacros
           tar -C pkg -czf "${{ matrix.name }}.tar.gz" EstudioTemas
 

@@ -154,3 +154,7 @@ class DesktopLinuxTest(unittest.TestCase):
             # sin cambios: no vuelve a escribir
             self.assertFalse(desktop_linux.install("numpad-macros", "Numpad Macros", "x", "/opt/nm bin", icon,
                                                    "NumpadMacros"))
+            # icono nuevo (otra versión): se vuelve a copiar
+            other = os.path.join(here, "assets", "icon-estudio.png")
+            self.assertTrue(desktop_linux.install("numpad-macros", "Numpad Macros", "x", "/opt/nm bin", other,
+                                                  "NumpadMacros"))

@@ -8,6 +8,7 @@ El escritorio reconoce la ventana por su clase (WM_CLASS = «NumpadMacros») y l
 relaciona con el archivo .desktop que tiene StartupWMClass=NumpadMacros e Icon=.
 Todo se guarda en la carpeta del usuario (~/.local/share): no pide contraseña.
 """
+import hashlib
 import os
 import shutil
 import subprocess
@@ -38,6 +39,11 @@ def install(app_id, name, comment, exec_path, icon_png, wm_class,
     apps = os.path.join(data_dir(), "applications")
     desktop = os.path.join(apps, f"{app_id}.desktop")
     text = desktop_text(name, comment, exec_path, app_id, wm_class, categories)
+    try:                       # si el icono cambia entre versiones, se vuelve a copiar
+        with open(icon_png, "rb") as f:
+            text += f"X-NumpadMacros-Icon={hashlib.sha1(f.read()).hexdigest()[:12]}\n"
+    except OSError:
+        pass
     try:
         from PIL import Image
     except Exception:          # sin Pillow: un solo icono grande (el escritorio lo escala)

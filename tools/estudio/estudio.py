@@ -78,7 +78,7 @@ try:
 except Exception:          # sin la librería se elige la imagen con un botón
     TkinterDnD = None
 
-VERSION = "1.0.1"
+VERSION = "1.1.0"
 APP = "Estudio de Temas"
 if _IMPORT_ERROR:
     _fatal(_IMPORT_ERROR)
@@ -1720,7 +1720,7 @@ class Dialog:
 
 def _icon_path():
     for base in (getattr(sys, "_MEIPASS", ""), HERE, os.path.join(HERE, "..", "..", "assets")):
-        path = os.path.join(base, "icon.png")
+        path = os.path.join(base, "icon-estudio.png")
         if base and os.path.isfile(path):
             return os.path.abspath(path)
     return None
