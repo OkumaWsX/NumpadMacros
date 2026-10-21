@@ -94,3 +94,19 @@ def _sign_raw(content: bytes, key) -> bytes:
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UnaPiezaTest(unittest.TestCase):
+    def test_fondo_de_imagen_de_una_pieza(self):
+        key = npt.SigningKey.generate("autor", "@kaori")
+        t = theme(images={"fondo": png(160, 100)}, background={"tipo": "imagen", "una_pieza": True, "tinte": 30})
+        d, _ = npt.unpack(npt.write(t, key), images=True)
+        self.assertEqual(d["background"], {"tipo": "imagen", "una_pieza": True, "tinte": 30})
+        self.assertIn("fondo", d["images"])
+
+    def test_fondo_de_imagen_sin_imagen(self):
+        key = npt.SigningKey.generate("autor", "@kaori")
+        with self.assertRaises(npt.NptError):
+            npt.write(theme(background={"tipo": "imagen", "una_pieza": True}), key)
+        with self.assertRaises(npt.NptError):
+            npt.write(theme(images={"fondo": png(10, 10)}, background={"tipo": "imagen", "tinte": 95}), key)

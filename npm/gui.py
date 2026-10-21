@@ -112,6 +112,9 @@ def make_listbox(parent, height, width=20):
     return box, lb
 
 
+SCROLL_HOOKS: list = []          # se llaman al desplazar (fondo de una pieza)
+
+
 def scroll_frame(parent):
     """Marco con barra de desplazamiento vertical (para pestañas con muchas opciones)."""
     parent.columnconfigure(0, weight=1)
@@ -120,7 +123,15 @@ def scroll_frame(parent):
     sb = ttk.Scrollbar(parent, orient="vertical", command=cv.yview)
     inner = ttk.Frame(cv, style="Panel.TFrame")
     win = cv.create_window(0, 0, window=inner, anchor="nw")
-    cv.configure(yscrollcommand=sb.set)
+
+    def on_scroll(a, b):
+        sb.set(a, b)
+        for hook in list(SCROLL_HOOKS):
+            try:
+                hook()
+            except Exception:
+                pass
+    cv.configure(yscrollcommand=on_scroll)
     cv.grid(row=0, column=0, sticky="nsew")
 
     def resize(_e=None):
@@ -413,13 +424,15 @@ class App:
     # ================================================================ estructura
     def _build(self):
         r = self.root
+        self._u_orig, self._u_lbl = {}, {}          # fondo de una pieza (se rehace con la ventana)
+        SCROLL_HOOKS.clear()
         r.columnconfigure(0, weight=0)
         r.columnconfigure(1, weight=1)
         r.rowconfigure(1, weight=1)
 
         # ---------- fondo de toda la ventana (degradado del tema)
         self.win_bg = None
-        if self.art.gradient:
+        if self.art.has_window_bg:
             self.win_bg = tk.Label(r, bd=0, highlightthickness=0, bg=C["bg"])
             self.win_bg.place(x=0, y=0, relwidth=1, relheight=1)
             self.win_bg.lower()
@@ -430,6 +443,7 @@ class App:
         # ---------- izquierda: numpad
         left = ttk.Frame(r, style="Panel.TFrame", padding=16)
         left.grid(row=1, column=0, sticky="ns", padx=(18, 8), pady=(0, 8))
+        self.left_panel = left
 
         # dos pestañas: el numpad (y la fila 1–0) o las teclas virtuales del celular
         self.left_view = "virt" if self._phone_only() else "numpad"
@@ -522,6 +536,13 @@ class App:
         self._build_foot(r)
         # ---------- espacios libres del tema: final de las pestañas y abajo del panel de teclas
         self._place_free_slots(left)
+        if self.art.one_piece:
+            SCROLL_HOOKS.append(lambda: self._unify_soon(90))
+            if not getattr(self, "_map_bound", False):
+                r.bind_all("<Map>", lambda e: self._unify_soon(120), add="+")
+                self._map_bound = True
+            nb.bind("<<NotebookTabChanged>>", lambda e: self._unify_soon(30), add="+")
+            self._unify_soon(200)
         self._refresh_layer_combo()
 
     # ---------------------------------------------------------------- cabecera y pie dibujados
@@ -819,6 +840,9 @@ class App:
         """Degradado de toda la ventana (se ve en los bordes y entre los paneles)."""
         if self.win_bg is None:
             return
+        if self.art.one_piece:
+            self._unify_soon(0)
+            return
         W, H = self.root.winfo_width(), self.root.winfo_height()
         img = self.art.window_gradient(W, H)
         if img is not None:
@@ -869,6 +893,145 @@ class App:
         art.show("tabsend", lambda ph: tl.configure(image=ph), w, h, key="tabsend", backdrop=back)
         tl.place(x=x, y=y)
         tl.lift()
+
+    # ---------------------------------------------------------------- fondo de una pieza
+    def _unify_soon(self, delay=60):
+        art = getattr(self, "art", None)
+        if art is None or not art.one_piece:
+            return
+        job = getattr(self, "_unify_job", None)
+        if job:
+            try:
+                self.root.after_cancel(job)
+            except tk.TclError:
+                pass
+        try:
+            self._unify_job = self.root.after(delay, self._unify)
+        except tk.TclError:
+            pass
+
+    def _rect(self, w):
+        rx, ry = self.root.winfo_rootx(), self.root.winfo_rooty()
+        return w.winfo_rootx() - rx, w.winfo_rooty() - ry, w.winfo_width(), w.winfo_height()
+
+    def _unify(self):
+        """«Fondo de una pieza»: el fondo del tema pasa por detrás de todos los paneles.
+        Los contenedores muestran su recorte del fondo y los textos y casillas toman el color
+        del fondo justo donde están; campos, botones, listas y tarjetas quedan como siempre."""
+        self._unify_job = None
+        art = self.art
+        if not art.one_piece:
+            return
+        r = self.root
+        try:
+            W, H = r.winfo_width(), r.winfo_height()
+        except tk.TclError:
+            return
+        if W < 50 or H < 50:
+            return
+        plates = []
+        for w in (self.left_panel, self.nb):
+            try:
+                x, y, ww, hh = self._rect(w)
+            except tk.TclError:
+                continue
+            plates.append((x, y, x + ww, y + hh))
+        m = art.window_map(W, H, plates)
+        if m is None:
+            return
+        if self.win_bg is not None:
+            ph = art.map_photo("u:win", 0, 0, W, H)
+            self.win_bg.configure(image=ph)
+            self.win_bg.lower()
+        self._head_dirty = self._foot_dirty = True
+        self._schedule_head()
+        self._schedule_foot()
+        s = ttk.Style(r)
+        surface = {C["bg"], C["panel"]}
+        orig = self.__dict__.setdefault("_u_orig", {})
+        labels = self.__dict__.setdefault("_u_lbl", {})
+        skip = {self.head_cv, self.foot_cv, self.win_bg, getattr(self, "tabsend_lbl", None)}
+        stack = list(r.winfo_children())
+        while stack:
+            w = stack.pop()
+            if w in skip or isinstance(w, tk.Toplevel) or getattr(w, "_u_bg", False):
+                continue
+            try:
+                if not w.winfo_ismapped():
+                    continue
+                x, y, ww, hh = self._rect(w)
+            except tk.TclError:
+                continue
+            stack.extend(w.winfo_children())
+            key = str(w)
+            cls = w.winfo_class()
+            if isinstance(w, ttk.Widget):
+                if cls not in ("TFrame", "TLabel", "TCheckbutton", "TRadiobutton", "TLabelframe"):
+                    continue
+                base = orig.get(key)
+                if base is None:
+                    base = w.cget("style") or cls
+                    if str(s.lookup(base, "background")) not in surface:
+                        orig[key] = ""
+                        continue
+                    orig[key] = base
+                if not base:
+                    continue
+                if cls == "TFrame" and ww * hh >= 2500:
+                    lbl = labels.get(key)
+                    if lbl is None or not lbl.winfo_exists():
+                        lbl = tk.Label(w, bd=0, highlightthickness=0)
+                        lbl._u_bg = True
+                        lbl.place(x=0, y=0, relwidth=1, relheight=1, bordermode="outside")
+                        labels[key] = lbl
+                    lbl.configure(image=art.map_photo("u:" + key, x, y, ww, hh))
+                    lbl.lower()
+                    col = art.sample(x, y, ww, hh)
+                else:
+                    col = art.sample(x, y, ww, hh)
+                name = f"U{abs(hash(key)) % 10 ** 9}.{base}"
+                s.configure(name, background=col)
+                if cls in ("TCheckbutton", "TRadiobutton"):
+                    s.map(name, background=[("active", col)])
+                if w.cget("style") != name:
+                    w.configure(style=name)
+            else:
+                if cls not in ("Frame", "Label", "Canvas"):
+                    continue
+                base = orig.get(key)
+                if base is None:
+                    try:
+                        bg = str(w.cget("bg"))
+                    except tk.TclError:
+                        orig[key] = ""
+                        continue
+                    orig[key] = bg if bg in surface else ""
+                    base = orig[key]
+                if not base:
+                    continue
+                if cls == "Canvas" and w in (self.canvas, self.virt_canvas):
+                    w.configure(bg=art.sample(x, y, ww, hh))
+                    continue
+                if cls == "Frame" and ww * hh >= 2500:
+                    lbl = labels.get(key)
+                    if lbl is None or not lbl.winfo_exists():
+                        lbl = tk.Label(w, bd=0, highlightthickness=0)
+                        lbl._u_bg = True
+                        lbl.place(x=0, y=0, relwidth=1, relheight=1, bordermode="outside")
+                        labels[key] = lbl
+                    lbl.configure(image=art.map_photo("u:" + key, x, y, ww, hh))
+                    lbl.lower()
+                col = art.sample(x, y, ww, hh)
+                try:
+                    w.configure(bg=col)
+                except tk.TclError:
+                    pass
+        try:
+            s.configure("TNotebook", background=art.sample(*self._rect(self.nb)[:2], self._rect(self.nb)[2], 30))
+        except tk.TclError:
+            pass
+        self.__dict__.pop("_keysbg_ok", None)
+        self._redraw()
 
     # ---------------------------------------------------------------- editor
     def _build_editor(self):
@@ -2434,15 +2597,24 @@ class App:
     def _draw_keys_bg(self, cv):
         """Imagen del tema detrás de la tabla de teclas (y la plancha de la sección «keys»)."""
         art = getattr(self, "art", None)
-        if art is None or not (art.has("keys") or art.section("keys")):
+        if art is None or not (art.has("keys") or art.section("keys") or art.one_piece):
             return
         try:
             w, h = int(cv.cget("width")), int(cv.cget("height"))
         except (tk.TclError, ValueError):
             return
-        key = ("keysbg", id(cv), w, h)
-        img = art._photos.get(key)
-        if img is None:
+        if art.one_piece:
+            try:
+                x, y, _ww, _hh = self._rect(cv)
+            except tk.TclError:
+                x = y = 0
+            img = art.photo(("keysbg", id(cv)), art.compose(w, h, box=(x, y), slot="keys", section="keys",
+                                                            base_color=C["panel"]))
+            key = None
+        else:
+            key = ("keysbg", id(cv), w, h)
+            img = art._photos.get(key)
+        if img is None and key is not None:
             img = art.photo(key, art.compose(w, h, slot="keys", section="keys", base_color=C["panel"]))
         if img is not None:
             cv.create_image(0, 0, image=img, anchor="nw")
@@ -2637,6 +2809,7 @@ class App:
 
     # ================================================================ editor: carga
     def _load_editor(self):
+        self.root.after_idle(lambda: self._unify_soon(80))
         kid = self.selected
         act = self._layer_dict().get(kid) or {"type": "none"}
         where = "Global" if self.layer == "global" else self.cfg["banks"][self.layer]["name"]

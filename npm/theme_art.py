@@ -133,6 +133,9 @@ class ThemeArt:
         self.slots: dict[str, _Slot] = {}
         bg = theme.get("background") or {}
         self.gradient = bg if (bg.get("tipo", "degradado") == "degradado" and bg.get("colores")) else None
+        self.bg_info = bg
+        self.tint = int(bg.get("tinte", 35)) if isinstance(bg.get("tinte", 35), int) else 35
+        self._map = None                            # (clave, imagen) del fondo de una pieza
         self.sections = theme.get("sections") or {}
         self.layer_alpha = theme.get("layer_alpha") or {}
         self._anims: list[dict] = []
@@ -157,8 +160,24 @@ class ThemeArt:
                 continue
 
     @property
+    def bg_image(self):
+        """Imagen de fondo de toda la ventana (fondo.tipo = "imagen")."""
+        if self.bg_info.get("tipo") == "imagen" and "fondo" in self.slots:
+            return self.slots["fondo"].frames[0]
+        return None
+
+    @property
+    def has_window_bg(self) -> bool:
+        return bool(self.gradient or self.bg_image is not None)
+
+    @property
+    def one_piece(self) -> bool:
+        """«Fondo de una pieza»: el fondo pasa también por detrás de los paneles."""
+        return bool(self.bg_info.get("una_pieza")) and self.has_window_bg and HAVE_PIL
+
+    @property
     def active(self) -> bool:
-        return bool(self.slots or self.gradient or self.sections)
+        return bool(self.slots or self.gradient or self.sections or self.bg_image is not None)
 
     def has(self, slot) -> bool:
         return slot in self.slots
@@ -166,7 +185,12 @@ class ThemeArt:
     # ------------------------------------------------------------------ colores
     def under(self) -> str:
         """Color que queda debajo de los paneles (promedio del degradado o el fondo)."""
-        return gradient_average(self.gradient["colores"]) if self.gradient else C["bg"]
+        if self.gradient:
+            return gradient_average(self.gradient["colores"])
+        img = self.bg_image
+        if img is not None:
+            return self.average(img.convert("RGB"))
+        return C["bg"]
 
     def layer(self, token) -> float:
         """Opacidad propia de una capa del tema (0–1); 1 si no tiene."""
@@ -186,8 +210,10 @@ class ThemeArt:
         body = self.section("body") or self.section("left")
         if body and body.get("fondo", 100) < 100:
             C["panel"] = mix(base, C["panel"], body["fondo"] / 100)
-        if self.gradient:
+        if self.has_window_bg:
             C["bg"] = base                         # lo que no se dibuja con el degradado
+        if self.one_piece:
+            C["panel"] = mix(base, C["panel"], max(.35, self.tint / 100))
         tabs = self.section("tabs")
         C["tab_bg"] = mix(base, mix(C["bg"], C["panel"], .5), (tabs.get("fondo", 100) / 100) if tabs else 1)
         if tabs and tabs.get("fondo", 100) < 100:
@@ -206,11 +232,14 @@ class ThemeArt:
 
     # ------------------------------------------------------------------ fondos compuestos
     def window_gradient(self, W, H):
-        if not (self.gradient and HAVE_PIL) or W < 2 or H < 2:
+        if not (self.has_window_bg and HAVE_PIL) or W < 2 or H < 2:
             return None
         if self._grad_full and self._grad_full[0] == (W, H):
             return self._grad_full[1]
-        img = gradient_image(W, H, self.gradient["colores"], self.gradient.get("desde", "tl"))
+        if self.gradient:
+            img = gradient_image(W, H, self.gradient["colores"], self.gradient.get("desde", "tl"))
+        else:
+            img = cover(self.bg_image.convert("RGB"), W, H)
         self._grad_full = ((W, H), img)
         return img
 
@@ -220,7 +249,10 @@ class ThemeArt:
         if not HAVE_PIL or w < 2 or h < 2:
             return None
         base = None
-        if self.gradient and box is not None:
+        if self.one_piece and box is not None and self._map is not None:
+            x, y = box
+            base = self._map[1].crop((x, y, x + w, y + h)).convert("RGBA")
+        elif self.has_window_bg and box is not None:
             g = self.window_gradient(self.root.winfo_width(), self.root.winfo_height())
             if g is not None:
                 x, y = box
@@ -234,6 +266,57 @@ class ThemeArt:
         if slot and slot in self.slots:
             base.alpha_composite(cover(self.slots[slot].frames[0], w, h))
         return base.convert("RGB")
+
+    # ------------------------------------------------------------------ fondo de una pieza
+    def window_map(self, W, H, plates):
+        """Fondo completo de la ventana: degradado o imagen + el tinte de los paneles
+        (`plates` = rectángulos x0, y0, x1, y1 donde hay panel)."""
+        key = (W, H, tuple(plates), C["panel"], self.tint)
+        if self._map and self._map[0] == key:
+            return self._map[1]
+        base = self.window_gradient(W, H)
+        if base is None:
+            return None
+        img = base.convert("RGBA")
+        # dentro de los paneles el fondo se suaviza: los textos y casillas toman un solo color
+        # cada uno, y así no se notan como bloques
+        from PIL import ImageFilter
+        soft = img.filter(ImageFilter.GaussianBlur(max(12, min(W, H) // 25)))
+        for x0, y0, x1, y1 in plates:
+            box = (max(0, x0), max(0, y0), min(W, x1), min(H, y1))
+            if box[2] > box[0] and box[3] > box[1]:
+                img.paste(soft.crop(box), box[:2])
+        if self.tint > 0:
+            tint = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            from PIL import ImageDraw
+            d = ImageDraw.Draw(tint)
+            col = _rgb(C["panel"]) + (int(255 * self.tint / 100),)
+            for x0, y0, x1, y1 in plates:
+                d.rectangle((x0, y0, x1 - 1, y1 - 1), fill=col)
+            img.alpha_composite(tint)
+        img = img.convert("RGB")
+        self._map = (key, img)
+        self._small = (img.resize((max(1, W // 4), max(1, H // 4)), Image.BOX), W, H)
+        return img
+
+    def sample(self, x, y, w, h) -> str:
+        """Color promedio del fondo de una pieza en un rectángulo de la ventana."""
+        sm = getattr(self, "_small", None)
+        if not sm:
+            return C["panel"]
+        img, W, H = sm
+        k = img.size[0] / max(1, W)
+        return self.average(img, (x * k, y * k, (x + w) * k + 1, (y + h) * k + 1))
+
+    def map_photo(self, key, x, y, w, h):
+        """Recorte del fondo de una pieza como PhotoImage (PPM: rápido, sin comprimir)."""
+        if not self._map or w < 1 or h < 1:
+            return None
+        crop = self._map[1].crop((x, y, x + w, y + h))
+        data = b"P6 %d %d 255\n" % crop.size + crop.tobytes()
+        ph = tk.PhotoImage(master=self.root, data=data, format="PPM")
+        self._photos[key] = ph
+        return ph
 
     @staticmethod
     def average(img, box=None) -> str:

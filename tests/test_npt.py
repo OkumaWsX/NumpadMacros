@@ -190,7 +190,7 @@ class FormatTest(unittest.TestCase):
         with self.assertRaises(npt.NptError):
             npt.write(theme(images={"logo": png(128, 128)}), self.key)
         with self.assertRaises(npt.NptError):
-            npt.write(theme(images={"fondo": png(10, 10)}), self.key)
+            npt.write(theme(images={"desconocido": png(10, 10)}), self.key)
         with self.assertRaises(npt.NptError):
             npt.write(theme(images={"logo": b"GIF89a" + b"\0" * 30}), self.key)
 

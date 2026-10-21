@@ -63,6 +63,7 @@ firma Ed25519 de `OFFICIAL_KEY` (64, si va firmado). El contenido es el JSON del
   | `tabsend` ★ | Pestañas · espacio al final | 240 × 28 |
   | `leftbot` ★ | Panel de teclas · espacio de abajo | 360 × 160 |
   | `foot` ★ | Pie · espacio libre | 420 × 28 |
+  | `fondo` | Fondo de toda la ventana (con `fondo.tipo` = `"imagen"`) | 1920 × 1200 |
 
   El Estudio guarda los GIF que importas como **PNG animado** (APNG: conserva la transparencia), ya
   recortados y oscurecidos, hasta 120 cuadros; `imagenes.<espacio>.cuadros` dice cuántos tiene. En los
@@ -74,6 +75,11 @@ firma Ed25519 de `OFFICIAL_KEY` (64, si va firmado). El contenido es el JSON del
   ```
   De 2 a 5 colores, cada uno con su posición 0–100. `desde` = dónde empieza: `tl` `t` `tr` `l` `c` `r` `bl`
   `b` `br` (4 esquinas, 4 lados y el centro). Termina en el lado opuesto; desde `c` es circular.
+  - `{"tipo": "imagen"}`: el fondo es la imagen del espacio `fondo` (cubre la ventana, recortada al centro).
+  - **Fondo de una pieza** (`"una_pieza": true`, con degradado o imagen): el fondo pasa también por detrás
+    del panel de teclas, de las pestañas y de su contenido, como si toda la ventana fuera una sola imagen.
+    `"tinte"` (0–90, por defecto 35) es cuánto se tiñen los paneles con su color para que el texto se lea.
+    Los controles (campos, botones, listas, tarjetas) siguen con sus colores encima.
 - `secciones` (opcional): transparencia propia de cada sección de la ventana.
   ```json
   "secciones": {"head": {"fondo": 70, "contenido": 100, "realce": true}, "foot": {"fondo": 60}}
@@ -126,6 +132,7 @@ Código: `npm/theme_art.py` (y el encabezado y el pie en `npm/gui.py`).
 | `corner` | Al fondo de la pestaña Tecla, detrás del contenido (se ve en el espacio libre de abajo). |
 | `footband`, `foot` | El pie también es un lienzo: la banda lo cubre entero y `foot` va a la izquierda de los botones. |
 | `secciones` | `head`, `foot` y `keys`: plancha del color del panel con su opacidad sobre el fondo, y el texto según `contenido`. `left`, `body` y `tabs`: su color se mezcla con el de debajo (Tk no tiene transparencia real en los paneles). `realce`: borde del color de acento. |
+| `fondo.una_pieza` | El fondo (degradado o imagen) se dibuja para toda la ventana y cada panel, pestaña y marco muestra su recorte; dentro de los paneles se suaviza y se tiñe con `tinte`. Textos y casillas toman el color del fondo donde están; campos, botones, listas y tarjetas quedan como siempre. Se rehace al cambiar el tamaño, de pestaña o de vista, y al desplazar. |
 | GIF | Se animan y se **pausan** cuando el mouse sale de la ventana (como «cuando no usas la ventana» en el Estudio) o la ventana está oculta. |
 
 ## Pendiente en Numpad Macros

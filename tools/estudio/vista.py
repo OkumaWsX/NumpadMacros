@@ -248,6 +248,8 @@ class Preview:
         # imágenes (detrás del contenido y en los espacios libres)
         behind, free = {}, {}
         for slot in npt.IMAGE_SLOTS:
+            if slot not in zones():                # p. ej. «fondo» (toda la ventana): se dibuja aparte
+                continue
             fr = slot_frames(slot, zone_size(slot))
             if fr:
                 (behind if slot in npt.SLOTS_BEHIND else free)[slot] = fr

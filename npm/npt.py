@@ -78,6 +78,7 @@ IMAGE_SLOTS = {
     "corner": (600, 200),      # pestaña · parte de abajo, detrás de los botones
     "footband": (1200, 40),    # pie · banda completa, detrás de los botones
     "foot": (420, 28),         # pie · espacio libre
+    "fondo": (1920, 1200),     # fondo de toda la ventana (con fondo.tipo = "imagen")
 }
 # Espacios que aceptan GIF animado (stickers); los demás, solo PNG.
 ANIMATED_SLOTS = frozenset({"headmid", "tabsend", "leftbot", "foot"})
@@ -461,7 +462,8 @@ def validate(theme: Theme, strict: bool = True) -> None:
             if isinstance(theme.images, dict) else theme.images
         if isinstance(theme.sections, dict):
             theme.sections = {k: v for k, v in theme.sections.items() if k in SECTIONS}
-        if isinstance(theme.background, dict) and theme.background.get("tipo") not in (None, "solido", "degradado"):
+        if isinstance(theme.background, dict) and theme.background.get("tipo") not in (None, "solido", "degradado",
+                                                                                       "imagen"):
             theme.background = {}
 
     if not isinstance(theme.name, str) or not theme.name.strip() or len(theme.name) > 32:
@@ -517,6 +519,14 @@ def validate(theme: Theme, strict: bool = True) -> None:
                 bad("Un color del degradado no es válido.")
         if bg.get("desde", "tl") not in GRADIENT_FROM:
             bad("No se sabe desde dónde empieza el degradado.")
+    if bg and bg.get("tipo") == "imagen" and "fondo" not in theme.images:
+        bad("El fondo de imagen necesita la imagen «fondo».")
+    if bg:
+        if not isinstance(bg.get("una_pieza", False), bool):
+            bad("«Fondo de una pieza» no es válido.")
+        t = bg.get("tinte", 35)
+        if type(t) is not int or not 0 <= t <= 90:
+            bad("El tinte de los paneles debe estar entre 0 y 90.")
     if not isinstance(theme.sections, dict):
         bad("Las secciones no tienen el formato correcto.")
     for k, sec in theme.sections.items():
