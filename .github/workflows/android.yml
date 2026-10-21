@@ -51,7 +51,12 @@ jobs:
           [ -n "$ANDROID_KEYSTORE_PASS" ] || unset ANDROID_KEYSTORE_PASS
           [ -n "$ANDROID_KEY_ALIAS" ] || unset ANDROID_KEY_ALIAS
           [ -n "$ANDROID_KEY_PASS" ] || unset ANDROID_KEY_PASS
-          ./gradlew --no-daemon assembleRelease
+          # si falla, cada error de Kotlin / Gradle queda como aviso visible en la página de la ejecución
+          set -o pipefail
+          if ! ./gradlew --no-daemon assembleRelease 2>&1 | tee ../gradle.log; then
+            grep -E "^e: |^> |What went wrong|AAPT: error" ../gradle.log | head -40 | while IFS= read -r l; do echo "::error::$l"; done
+            exit 1
+          fi
           mkdir -p ../dist
           cp app/build/outputs/apk/release/app-release.apk "../dist/NumpadMacros-Android-${{ steps.ver.outputs.version }}.apk"
           (cd ../dist && sha256sum *.apk)
