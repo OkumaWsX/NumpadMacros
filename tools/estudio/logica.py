@@ -245,14 +245,24 @@ TEMPLATE_SAMPLES = {"headmid": "ecualizador", "foot": "ecualizador", "tabsend": 
 MAX_SOURCE = 1600                     # lado máximo de la imagen original que se guarda en el proyecto
 
 
-def load_frames(data: bytes) -> list:
-    """Cuadros de una imagen (GIF, PNG animado o imagen fija): [(imagen RGBA, milisegundos)]."""
+MAX_DECODE = 160_000_000              # píxeles en total (todos los cuadros) que se aceptan al abrir
+
+
+def load_frames(data: bytes, max_side: int = MAX_SOURCE) -> list:
+    """Cuadros de una imagen (GIF, PNG animado o imagen fija): [(imagen RGBA, milisegundos)].
+    Cada cuadro se achica a ``max_side`` apenas se lee, y se rechazan imágenes gigantes."""
     from PIL import Image, ImageSequence
     im = Image.open(io.BytesIO(data))
+    n = min(getattr(im, "n_frames", 1), npt.MAX_FRAMES)
+    if im.width * im.height * n > MAX_DECODE:
+        raise ValueError("La imagen es demasiado grande (o tiene demasiados cuadros de ese tamaño).")
     frames = []
     for fr in ImageSequence.Iterator(im):
         dur = int(fr.info.get("duration") or im.info.get("duration") or 100)
-        frames.append((fr.convert("RGBA"), max(20, dur)))
+        f = fr.convert("RGBA")
+        if max(f.size) > max_side:
+            f.thumbnail((max_side, max_side))
+        frames.append((f, max(20, dur)))
         if len(frames) >= npt.MAX_FRAMES:
             break
     return frames or [(im.convert("RGBA"), 100)]
@@ -288,14 +298,7 @@ def encode(frames) -> bytes:
 
 def prepare_source(data: bytes) -> bytes:
     """Imagen importada lista para guardar en el proyecto: tamaño razonable y todos sus cuadros."""
-    frames = load_frames(data)
-    out = []
-    for im, d in frames:
-        if max(im.size) > MAX_SOURCE:
-            im = im.copy()
-            im.thumbnail((MAX_SOURCE, MAX_SOURCE))
-        out.append((im, d))
-    return encode(out)
+    return encode(load_frames(data))
 
 
 def render_slot(src, slot: str, fit: str, op: int, dark: int, blur: int, bg: str, size=None):

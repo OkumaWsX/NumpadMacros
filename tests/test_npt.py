@@ -227,6 +227,19 @@ class FormatTest(unittest.TestCase):
         with self.assertRaises(npt.NptError):
             npt.write(theme(images={"footband": anim}), self.key)
 
+    def test_too_many_frames_and_bad_hex_rejected_on_read(self):
+        from PIL import Image
+        frames = [Image.new("RGBA", (40, 20), (i, 0, 0, 255)) for i in range(npt.MAX_FRAMES + 5)]
+        buf = io.BytesIO()
+        frames[0].save(buf, "PNG", save_all=True, append_images=frames[1:], duration=40)
+        t = theme(images={"foot": buf.getvalue()})
+        with mock.patch.object(npt, "validate"):            # un archivo hecho a mano, sin pasar por el Estudio
+            data = npt.write(t, self.key)
+        with self.assertRaises(npt.NptError):
+            npt.read(data)
+        with self.assertRaises(npt.NptError):
+            npt.write(theme(colors={**base_colors(), "acc": "#aabbcc\n"}), self.key)
+
     def test_invalid_gradient_and_sections(self):
         bad = [
             dict(background={"tipo": "degradado", "colores": [["#112233", 0]], "desde": "c"}),

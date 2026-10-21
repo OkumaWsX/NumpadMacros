@@ -100,7 +100,7 @@ SECTION_MIN_CONTENT = 30          # el Estudio no deja bajar el contenido de aqu
 WINDOW_MIN = 50                   # opacidad mínima de la ventana, igual que el Laboratorio
 
 _PUB_LEN, _NONCE_LEN, _SIG_LEN = 32, 12, 64
-_HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
+_HEX = re.compile(r"^#[0-9a-fA-F]{6}\Z")
 
 
 class NptError(ValueError):
@@ -496,9 +496,11 @@ def validate(theme: Theme, strict: bool = True) -> None:
         mw, mh = IMAGE_SLOTS[slot]
         if not (0 < w <= mw and 0 < h <= mh):
             bad(f"La imagen de «{slot}» mide {w}×{h}; el máximo es {mw}×{mh}.")
-        if strict and image_frames(data) > 1 and (slot not in ANIMATED_SLOTS or image_frames(data) > MAX_FRAMES):
-            bad(f"La imagen de «{slot}» no puede ser animada." if slot not in ANIMATED_SLOTS
-                else f"La animación de «{slot}» tiene más de {MAX_FRAMES} cuadros.")
+        n = image_frames(data)
+        if n > MAX_FRAMES:                       # también al leer: nadie decodifica cientos de cuadros
+            bad(f"La animación de «{slot}» tiene más de {MAX_FRAMES} cuadros.")
+        if strict and n > 1 and slot not in ANIMATED_SLOTS:
+            bad(f"La imagen de «{slot}» no puede ser animada.")
     if not isinstance(theme.gif_pause, bool):
         bad("El contenido del tema no tiene el formato correcto.")
     bg = theme.background

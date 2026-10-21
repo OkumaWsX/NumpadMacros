@@ -212,7 +212,8 @@ class App:
         self.auto = bool(s.get("auto", False))
         self.images = {k: v for k, v in (s.get("imagenes") or {}).items() if k in npt.IMAGE_SLOTS}
         g = s.get("degradado") or {}
-        stops = [[str(c).lower(), int(p)] for c, p in (g.get("colores") or []) if npt._HEX.match(str(c))]
+        stops = [[str(c).lower(), L.clamp(int(p), 0, 100)] for c, p in (g.get("colores") or [])
+                 if npt._HEX.match(str(c))]
         self.grad = {"on": bool(g.get("on")) and len(stops) >= 2, "colores": stops[:5],
                      "desde": g.get("desde") if g.get("desde") in npt.GRADIENT_FROM else "tl"}
         self.sections = {}
@@ -633,7 +634,7 @@ class App:
                 out = tk.Label(line, text="", bg=C["panel"], fg=C["muted"], font=fnt(-2, mono=True))
                 out.pack(side="right")
                 var = tk.IntVar(value=100)
-                self.scale(fr, var, a, 100, 5, lambda kk=k: self.on_section(kk)).grid(row=3 + j * 2, column=0,
+                self.scale(fr, var, a, 100, 1, lambda kk=k: self.on_section(kk)).grid(row=3 + j * 2, column=0,
                                                                                     sticky="ew")
                 vars_[key] = (var, out, line)
             rv = tk.BooleanVar(value=False)
@@ -1883,7 +1884,13 @@ class App:
             except Exception as e:
                 messagebox.showerror(APP, f"No se pudo abrir el proyecto:\n{e}", parent=self.root)
                 return
-            self.apply_state(s)
+            backup = self.state()
+            try:
+                self.apply_state(s)
+            except Exception as e:                # proyecto dañado: se vuelve a lo que había
+                self.apply_state(backup)
+                messagebox.showerror(APP, f"El proyecto tiene datos que no se pueden usar:\n{e}", parent=self.root)
+                return
             self.project_path = path
             self._title()
             self.toast(f"Proyecto abierto: {os.path.basename(path)}")
