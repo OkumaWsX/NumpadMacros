@@ -1,21 +1,31 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 # Copyright (C) 2026 OkumaWsX
-"""Vista previa de la ventana principal de Numpad Macros 3.4, dibujada en un Canvas.
+"""Vista previa de la ventana principal de Numpad Macros 3.4.1.
 
-Cada parte lleva la etiqueta «t:<capa>» con el color que la pinta (al tocarla se
-elige esa capa) y las zonas con imagen llevan «z:<espacio>».
+Se dibuja como imagen (al doble de tamaño y luego reducida, para bordes suaves) con
+transparencia real: el degradado del fondo, la transparencia de cada capa y de cada
+sección, las 9 zonas con imagen (también animadas) y la opacidad de la ventana sobre
+un fondo de escritorio de ejemplo.
+
+Cada parte deja una zona «tocable»: «t:<capa>» (el color que la pinta), «z:<espacio>»
+(zona de imagen) y «s:<sección>».
 """
 from __future__ import annotations
 
+import os
 import sys
 
-from PIL import Image, ImageTk
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 import logica as L
+from logica import npt
 
-W, H = 640, 420
+W, H = 700, 560                    # lienzo
+OX, OY = 10, 10                    # la ventana dentro del lienzo
+WW, WH = 680, 540                  # la ventana
+S = 2                              # se dibuja al doble y se reduce
 FONT = "Segoe UI" if sys.platform == "win32" else ("Helvetica Neue" if sys.platform == "darwin" else "DejaVu Sans")
-FS = 2 if sys.platform == "darwin" else 0          # macOS dibuja las fuentes más chicas
+FS = 2 if sys.platform == "darwin" else 0          # (para la interfaz del Estudio)
 
 # Colores por botón (los mismos 12 del PC y del celular)
 KEY_COLORS = {
@@ -23,102 +33,441 @@ KEY_COLORS = {
     "Turquesa": "#3cc7c0", "Celeste": "#6aa8ff", "Azul": "#4a6cf0", "Morado": "#9b7fe0",
     "Rosa": "#e06fb8", "Rojo": "#e5534b", "Café": "#b07a4a", "Gris": "#8b909b",
 }
-# Teclas virtuales de ejemplo: número -> (texto, color o None, es global)
+# Teclas virtuales de ejemplo: número -> (texto, color o None, global, sin icono de sonido)
 SAMPLE_KEYS = {
-    1: ("Aplausos", "Verde", False), 2: ("Vine boom", "Azul", False), 3: ("Air horn", "Rojo", False),
-    4: ("Risas", "Amarillo", False), 5: ("Detener", "Rojo", True), 6: ("Suspenso", "Morado", False),
-    7: ("Tambores", "Turquesa", False), 8: ("Ctrl+F16", "Celeste", False), 9: ("Wow", None, False),
-    11: ("Bruh", "Naranja", False), 12: ("Sad trombone", None, False), 16: ("Error", "Rosa", False),
-    21: ("Banco ▶", None, True), 26: ("Victoria", "Lima", False),
+    1: ("Aplausos", "Verde", False, False), 2: ("Vine boom", "Azul", False, False),
+    3: ("Air horn", "Rojo", False, False), 4: ("Risas", "Amarillo", False, False),
+    5: ("■ Detener", "Rojo", True, True), 6: ("Suspenso", "Morado", False, False),
+    7: ("Tambores", "Turquesa", False, False), 8: ("Ctrl+F16", "Celeste", False, True),
+    9: ("Wow", None, False, False), 11: ("Bruh", "Naranja", False, False),
+    12: ("Sad trombone", None, False, False), 13: ("Cri cri", "Gris", False, False),
+    16: ("Error de Windows", "Rojo", False, False), 21: ("Banco ▶", None, True, True),
+    26: ("Victoria", "Lima", False, False),
 }
-# Zonas de los espacios con imagen (x1, y1, x2, y2)
-ZONES = {"banner": (0, 0, W, 56), "keys": (22, 162, 258, 384), "logo": (14, 10, 40, 36)}
+TABS = ("Tecla", "Sonidos", "Numpad y opciones", "Audio", "Celular", "Temas")
+
+# ---------------------------------------------------------------- fuentes
+_FONTS: dict = {}
 
 
-def f(size, bold=False):
-    return (FONT, size + FS, "bold") if bold else (FONT, size + FS)
+def _font_file(bold):
+    name = "Inter-Bold.ttf" if bold else "Inter-Regular.ttf"
+    for p in (os.path.join(getattr(sys, "_MEIPASS", ""), "fonts", name),
+              os.path.join(L.ROOT, "assets", "fonts", name)):
+        if os.path.isfile(p):
+            return p
+    return None
 
 
-def rrect(cv, x1, y1, x2, y2, r, **kw):
-    pts = [x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y2 - r, x2, y2, x2 - r, y2,
-           x1 + r, y2, x1, y2, x1, y2 - r, x1, y1 + r, x1, y1]
-    return cv.create_polygon(pts, smooth=True, **kw)
+def font(size, bold=False):
+    key = (size, bold)
+    if key not in _FONTS:
+        path = _font_file(bold)
+        try:
+            _FONTS[key] = ImageFont.truetype(path, round(size * S)) if path else ImageFont.load_default(size * S)
+        except Exception:
+            _FONTS[key] = ImageFont.load_default()
+    return _FONTS[key]
+
+
+def text_w(s, size, bold=False):
+    return font(size, bold).getlength(s) / S
+
+
+# ---------------------------------------------------------------- zonas (coordenadas de la ventana)
+def _layout():
+    """Las 9 zonas de imagen y las 6 secciones, en coordenadas de la ventana."""
+    x = 300
+    for name in TABS:
+        x += text_w(name, 9, True) + 14 - 1
+    tabs_end = round(x)
+    zones = {
+        "banner": (0, 0, WW, 60), "logo": (12, 8, 38, 34), "headmid": (352, 6, 444, 36),
+        "keys": (22, 166, 268, 443), "leftbot": (16, 468, 282, 506),
+        "tabsend": (min(tabs_end + 8, 620), 66, 672, 85), "corner": (301, 362, 671, 511),
+        "footband": (8, 516, 672, 537), "foot": (60, 518, 340, 535),
+    }
+    secs = {"head": (0, 0, WW, 60), "left": (8, 64, 290, 512), "keys": (28, 172, 262, 437),
+            "tabs": (300, 64, tabs_end, 86), "body": (300, 86, 672, 512), "foot": (8, 516, 672, 537)}
+    return zones, secs, tabs_end
+
+
+ZONES, SECTION_BOXES, TABS_END = None, None, None
+
+
+def zones():
+    global ZONES, SECTION_BOXES, TABS_END
+    if ZONES is None:
+        ZONES, SECTION_BOXES, TABS_END = _layout()
+    return ZONES
+
+
+def zone_size(slot):
+    x1, y1, x2, y2 = zones()[slot]
+    return x2 - x1, y2 - y1
+
+
+# ---------------------------------------------------------------- dibujo
+def rgba(h, a=1.0):
+    r, g, b = L.hex2rgb(h)
+    return (r, g, b, max(0, min(255, round(a * 255))))
+
+
+class _Pen:
+    """Dibuja en una capa al doble de tamaño, con coordenadas de la ventana."""
+
+    def __init__(self, size=(WW, WH), fill=(0, 0, 0, 0)):
+        self.im = Image.new("RGBA", (size[0] * S, size[1] * S), fill)
+        self.d = ImageDraw.Draw(self.im)
+
+    @staticmethod
+    def _b(x1, y1, x2, y2):
+        return [round(x1 * S), round(y1 * S), round(x2 * S) - 1, round(y2 * S) - 1]
+
+    def rect(self, x1, y1, x2, y2, fill=None, outline=None, width=1, r=0):
+        box = self._b(x1, y1, x2, y2)
+        if box[2] <= box[0] or box[3] <= box[1]:
+            return
+        kw = dict(fill=fill, outline=outline, width=round(width * S) if outline else 0)
+        if r:
+            self.d.rounded_rectangle(box, round(r * S), **kw)
+        else:
+            self.d.rectangle(box, **kw)
+
+    def oval(self, cx, cy, r, fill=None, outline=None, width=1):
+        self.d.ellipse(self._b(cx - r, cy - r, cx + r, cy + r), fill=fill, outline=outline,
+                       width=round(width * S) if outline else 0)
+
+    def line(self, pts, fill, width=1):
+        self.d.line([(round(x * S), round(y * S)) for x, y in pts], fill=fill, width=round(width * S))
+
+    def text(self, x, y, s, fill, size, bold=False, anchor="lm", maxw=None):
+        f = font(size, bold)
+        if maxw and f.getlength(s) / S > maxw:
+            while s and f.getlength(s + "…") / S > maxw:
+                s = s[:-1]
+            s = s.rstrip() + "…"
+        mask, (bx, by) = _text_mask(s, size, bold, anchor)
+        if mask is None:
+            return
+        if fill[3] < 255:
+            a = fill[3] / 255
+            mask = mask.point(lambda v: round(v * a))
+        self.im.paste(fill[:3] + (255,), (round(x * S) + bx, round(y * S) + by), mask)
+
+    def down(self):
+        return self.im.reduce(S)
+
+
+_MASKS: dict = {}
+
+
+def _text_mask(s, size, bold, anchor):
+    """Texto ya dibujado (máscara en gris) y su desplazamiento, guardado para no volver a dibujarlo."""
+    key = (s, size, bold, anchor)
+    if key not in _MASKS:
+        if len(_MASKS) > 600:
+            _MASKS.clear()
+        f = font(size, bold)
+        x0, y0, x1, y1 = f.getbbox(s, anchor=anchor)
+        if x1 <= x0 or y1 <= y0:
+            _MASKS[key] = (None, (0, 0))
+        else:
+            m = Image.new("L", (x1 - x0, y1 - y0), 0)
+            ImageDraw.Draw(m).text((-x0, -y0), s, font=f, fill=255, anchor=anchor)
+            _MASKS[key] = (m, (x0, y0))
+    return _MASKS[key]
+
+
+def _alpha_mul(im, a):
+    if a >= 1:
+        return im
+    ch = im.getchannel("A").point(lambda v: round(v * a))
+    im = im.copy()
+    im.putalpha(ch)
+    return im
+
+
+_WALL = None
+
+
+def wallpaper():
+    """Fondo de escritorio de ejemplo (cielo, sol y cerros) para ver la opacidad de la ventana."""
+    global _WALL
+    if _WALL is None:
+        im = Image.new("RGBA", (W, H))
+        d = ImageDraw.Draw(im)
+        for y in range(H):
+            t = y / H
+            if t < .45:
+                c = L.mix("#6aa9d8", "#a7d0c4", t / .45)
+            else:
+                c = L.mix("#3c6e5a", "#25463a", (t - .46) / .54)
+            d.line([(0, y), (W, y)], fill=c)
+        d.ellipse([W * .18 - 46, H * .3 - 46, W * .18 + 46, H * .3 + 46], fill="#f4c56a")
+        d.polygon([(0, H * .62), (W * .2, H * .5), (W * .45, H * .6), (W * .7, H * .48), (W, H * .58), (W, H), (0, H)],
+                  fill="#2f5a49")
+        _WALL = im
+    return _WALL
 
 
 class Preview:
-    """Dibuja la vista previa. ``slot_image(slot, size, bg)`` devuelve una imagen PIL RGBA o None."""
+    """Vista previa en un Canvas de Tk.
+
+    ``slot_frames(slot, size)`` devuelve los cuadros ya preparados de un espacio,
+    [(imagen RGBA del tamaño pedido, milisegundos)], o None si el espacio está vacío.
+    """
 
     def __init__(self, cv):
         self.cv = cv
-        self._photos = []
+        self.hits: list = []
+        self._photo = None
+        self._item = None
+        self._job = None
+        self._t = 0
+        self._layers = None
 
-    def _photo(self, im):
-        p = ImageTk.PhotoImage(im)
-        self._photos.append(p)
-        return p
+    # ------------------------------------------------------------ armado
+    def draw(self, e: dict, slot_frames=None, gradient=None, sections=None, opacity=100, wall=False,
+             hover=False, mode="edit", sel=None, paused=False):
+        zones()
+        slot_frames = slot_frames or (lambda *a: None)
+        sections = sections or {}
+        sec = {k: L.section(sections, k) for k in npt.SECTIONS}
+        self.hits = []
+        self.e = e
+        under = L.gradient_avg(gradient, e["bg"])
 
-    def _img(self, slot, under, slot_image, tags):
-        x1, y1, x2, y2 = ZONES[slot]
-        im = slot_image(slot, (x2 - x1, y2 - y1), under)
-        if im is None:
-            return False
-        base = Image.new("RGBA", im.size, L.hex2rgb(under) + (255,))
-        self.cv.create_image(x1, y1, anchor="nw", image=self._photo(Image.alpha_composite(base, im)), tags=tags)
-        return True
+        # capa 1: fondo de la ventana (sólido o degradado) y las planchas de cada sección
+        base = _Pen(fill=rgba(e["bg"]))
+        if gradient:
+            base.im.paste(L.gradient_image(gradient, (WW * S, WH * S)), (0, 0))
+        self._hit(0, 0, WW, WH, "t:bg")
+        self._plates(base.im, e, sec)
 
-    def draw(self, e: dict, slot_image=None, zones=False, sel_zone=None, hover=False):
-        cv = self.cv
-        cv.delete("all")
-        self._photos = []
-        slot_image = slot_image or (lambda *a: None)
-        T = lambda t: ("t:" + t,)  # noqa: E731
-        cv.create_rectangle(0, 0, W, H, fill=e["bg"], width=0, tags=T("bg"))
+        # imágenes (detrás del contenido y en los espacios libres)
+        behind, free = {}, {}
+        for slot in npt.IMAGE_SLOTS:
+            fr = slot_frames(slot, zone_size(slot))
+            if fr:
+                (behind if slot in npt.SLOTS_BEHIND else free)[slot] = fr
 
-        # ---- encabezado
-        self._img("banner", e["bg"], slot_image, T("bg"))
-        x = 16
-        if self._img("logo", e["bg"], slot_image, T("bg")):
-            x = 48
-        cv.create_text(x, 11, anchor="nw", text="Numpad Macros", fill=e["text"], font=f(14, True), tags=T("text"))
-        cv.create_text(x, 37, anchor="nw", text="● Numpad conectado", fill=e["ok"], font=f(8), tags=T("ok"))
-        cv.create_text(x + 128, 37, anchor="nw", text="● Celular conectado: Pixel 7", fill=e["ok"], font=f(8),
-                       tags=T("ok"))
-        for x1, ch in ((372, "◀"), (494, "▶")):
-            rrect(cv, x1, 12, x1 + 34, 36, 4, fill=e["panel2"], outline=e["line"], tags=T("panel2"))
-            cv.create_text(x1 + 17, 24, text=ch, fill=e["text"], font=f(9), tags=T("panel2"))
-        cv.create_text(450, 24, text="1. Stream", fill=e["text"], font=f(10, True), tags=T("text"))
-        rrect(cv, 538, 12, 628, 36, 4, fill=e["ok"], outline="", tags=T("ok"))
-        cv.create_text(583, 24, text="● ACTIVO", fill=e["on_ok"], font=f(9, True), tags=T("on_ok"))
+        # capa 2: contenido de cada sección (con su propia transparencia)
+        mid = _Pen()
+        glow = _Pen()
+        for k in npt.SECTIONS:
+            if sec[k]["realce"]:
+                self._glow(glow, k, e)
+        if any(sec[k]["realce"] for k in sec):
+            g2 = glow.im.reduce(4).filter(ImageFilter.GaussianBlur(7 * S / 4)).resize(glow.im.size)
+            mid.im.alpha_composite(g2)
+            mid.im.alpha_composite(glow.im)
+        tint = _Pen()
+        tint.rect(0, 0, WW, 60, fill=rgba(e["panel"], sec["head"]["fondo"] / 100))
+        mid.im.alpha_composite(tint.im)
+        for k, fn in (("head", self._head), ("left", self._left), ("keys", self._keys), ("tabs", self._tabs),
+                      ("body", self._body), ("foot", self._foot)):
+            c = sec[k]["contenido"] / 100
+            p = mid if c >= 1 else _Pen()
+            fn(p, e, sec, hover=hover, under=under, logo="logo" in free or mode == "img")
+            if p is not mid:
+                mid.im.alpha_composite(_alpha_mul(p.im, c))
 
-        # ---- panel izquierdo: teclas virtuales
-        cv.create_rectangle(12, 62, 262, 390, fill=e["panel"], width=0, tags=T("panel"))
-        cv.create_text(76, 82, text="Numpad y fila 1–0", fill=e["muted"], font=f(8), tags=T("muted"))
-        cv.create_rectangle(22, 95, 135, 97, fill=e["line"], width=0, tags=T("line"))
-        rrect(cv, 139, 70, 252, 97, 5, fill=e["panel2"], outline="", tags=T("panel2"))
-        cv.create_text(195, 82, text="Teclas virtuales", fill=e["text"], font=f(8, True), tags=T("text"))
-        cv.create_rectangle(139, 94, 252, 97, fill=e["acc"], width=0, tags=T("acc"))
-        cv.create_text(22, 104, anchor="nw", text="Capa que estás editando", fill=e["muted"], font=f(7),
-                       tags=T("muted"))
-        cv.create_rectangle(22, 118, 160, 138, fill=e["panel2"], outline=e["line"], tags=T("panel2"))
-        cv.create_text(28, 128, anchor="w", text="1. Stream", fill=e["text"], font=f(8), tags=T("text"))
-        for i, ch in enumerate("＋✎✕"):
-            x1 = 166 + i * 30
-            cv.create_rectangle(x1, 118, x1 + 26, 138, fill=e["panel2"], outline=e["line"], tags=T("panel2"))
-            cv.create_text(x1 + 13, 128, text=ch, fill=e["text"], font=f(8), tags=T("panel2"))
-        cv.create_text(22, 150, anchor="w", text="Teclas virtuales · 30", fill=e["text"], font=f(8, True),
-                       tags=T("text"))
-        cv.create_text(252, 150, anchor="e", text="G = capa Global", fill=e["muted"], font=f(7), tags=T("muted"))
-        self._img("keys", e["panel"], slot_image, T("panel"))
-        kw, kh, gap, x0, y0 = 38, 31, 6, 30, 167
+        # capa 3: marcas de las zonas o de las secciones
+        top = None
+        if mode == "img":
+            top = self._zone_marks(slot_frames, sel)
+        elif mode == "sec":
+            top = self._section_marks(sel)
+
+        self._layers = (base.down(), mid.down(), top.down() if top else None, behind, free,
+                        opacity / 100, wall)
+        self._anim = any(len(f) > 1 for f in list(behind.values()) + list(free.values())) and not paused
+        if self._job:
+            self.cv.after_cancel(self._job)
+            self._job = None
+        self._t = 0
+        self._show()
+        if self._anim:
+            self._job = self.cv.after(60, self._tick)
+
+    def _hit(self, x1, y1, x2, y2, tag):
+        self.hits.append((x1 + OX, y1 + OY, x2 + OX, y2 + OY, tag))
+
+    # ------------------------------------------------------------ composición
+    @staticmethod
+    def _frame(frames, t):
+        total = sum(d for _f, d in frames)
+        t %= max(total, 1)
+        for f, d in frames:
+            if t < d:
+                return f
+            t -= d
+        return frames[-1][0]
+
+    def compose(self, t=0):
+        base, mid, top, behind, free, op, wall = self._layers
+        win = base.copy()
+        for slot, fr in behind.items():
+            x1, y1, _x2, _y2 = ZONES[slot]
+            win.alpha_composite(self._frame(fr, t), (x1, y1))
+        win.alpha_composite(mid)
+        for slot, fr in free.items():
+            x1, y1, _x2, _y2 = ZONES[slot]
+            win.alpha_composite(self._frame(fr, t), (x1, y1))
+        if top is not None:
+            win.alpha_composite(top)
+        out = wallpaper().copy() if wall else Image.new("RGBA", (W, H), (13, 14, 17, 255))
+        out.alpha_composite(_alpha_mul(win, op), (OX, OY))
+        return out
+
+    def _show(self):
+        from PIL import ImageTk
+        self._photo = ImageTk.PhotoImage(self.compose(self._t))
+        if self._item is None or not self.cv.find_withtag(self._item):
+            self.cv.delete("all")
+            self._item = self.cv.create_image(0, 0, anchor="nw", image=self._photo)
+        else:
+            self.cv.itemconfigure(self._item, image=self._photo)
+
+    def _tick(self):
+        self._job = None
+        if not self._anim:
+            return
+        try:
+            visible = self.cv.winfo_ismapped()
+        except Exception:
+            return
+        if visible:
+            self._t += 80
+            self._show()
+        self._job = self.cv.after(80 if visible else 400, self._tick)
+
+    def stop(self):
+        if self._job:
+            self.cv.after_cancel(self._job)
+            self._job = None
+
+    # ------------------------------------------------------------ planchas
+    def _plates(self, base, e, sec):
+        """Planchas de las secciones: cada una con la transparencia de su fondo, sobre el fondo de la ventana."""
+        f = {k: sec[k]["fondo"] / 100 for k in sec}
+
+        def layer(k, draw):
+            if f[k] <= 0:
+                return
+            if f[k] >= 1:
+                p = _Pen.__new__(_Pen)
+                p.im, p.d = base, ImageDraw.Draw(base)
+                draw(p)
+                return
+            p = _Pen()
+            draw(p)
+            base.alpha_composite(_alpha_mul(p.im, f[k]))
+
+        layer("left", lambda p: p.rect(8, 64, 290, 512, fill=rgba(e["panel"])))
+        self._hit(8, 64, 290, 512, "t:panel")
+        layer("body", lambda p: p.rect(300, 86, 672, 512, fill=rgba(e["panel"])))
+        self._hit(300, 86, 672, 512, "t:panel")
+
+        def tabs(p):
+            x = 300
+            for i, name in enumerate(TABS):
+                w = text_w(name, 9, True) + 14
+                col = e["panel"] if i == 0 else L.mix(e["bg"], e["panel"], .5)
+                p.rect(x, 64 if i == 0 else 67, x + w, 87 if i == 0 else 86, fill=rgba(col))
+                x += w - 1
+        layer("tabs", tabs)
+        x = 300
+        for i, name in enumerate(TABS):
+            w = text_w(name, 9, True) + 14
+            self._hit(x, 64, x + w, 86, "t:panel" if i == 0 else "t:bg")
+            x += w - 1
+        layer("foot", lambda p: p.rect(8, 516, 672, 537, fill=rgba(e["panel"]), r=4))
+
+    def _glow(self, p, k, e):
+        x1, y1, x2, y2 = SECTION_BOXES[k]
+        w = 3 if k == "keys" else 2
+        p.rect(x1 - w, y1 - w, x2 + w, y2 + w, outline=rgba(e["acc"]), width=w, r=6 if k == "keys" else 3)
+
+    # ------------------------------------------------------------ encabezado
+    def _head(self, p, e, sec, logo=False, **_kw):
+        x = 44 if logo else 12
+        p.text(x, 21, "Numpad Macros", rgba(e["text"]), 18, True)
+        self._hit(x, 8, x + 150, 34, "t:text")
+        for i, (lab, parts) in enumerate((("Audífonos", ((.46, "ok"), (.10, "warn"))),
+                                          ("Micrófono virtual", ((.56, "ok"), (.12, "warn"), (.07, "bad"))))):
+            y = 14 + i * 14
+            p.text(264, y, lab, rgba(e["muted"]), 8, anchor="rm")
+            self._hit(196, y - 6, 264, y + 6, "t:muted")
+            p.rect(268, y - 3, 346, y + 3, fill=rgba(e["line"]))
+            x0 = 268
+            for frac, tok in parts:
+                p.rect(x0, y - 3, x0 + 78 * frac, y + 3, fill=rgba(e[tok]))
+                x0 += 78 * frac
+            for xx in range(271, 346, 4):
+                p.rect(xx, y - 3, xx + 1, y + 3, fill=rgba(e["bg"], .55))
+            self._hit(268, y - 4, 346, y + 4, "t:line")
+        for x1, ch in ((452, "◀"), (556, "▶")):
+            p.rect(x1, 9, x1 + 30, 31, fill=rgba(e["panel2"]), outline=rgba(e["line"]))
+            p.text(x1 + 15, 20, ch, rgba(e["text"]), 8, anchor="mm")
+            self._hit(x1, 9, x1 + 30, 31, "t:panel2")
+        p.text(519, 20, "1. Stream", rgba(e["text"]), 11, True, anchor="mm")
+        self._hit(484, 9, 554, 31, "t:text")
+        p.rect(592, 9, 672, 31, fill=rgba(e["ok"]))
+        p.text(632, 20, "● ACTIVO", rgba(e["on_ok"]), 10, True, anchor="mm")
+        self._hit(592, 9, 672, 31, "t:ok")
+        p.text(12, 49, "● Numpad conectado: USB Keypad", rgba(e["ok"]), 8.5)
+        p.text(178, 49, "● Audio listo", rgba(e["ok"]), 8.5)
+        self._hit(12, 43, 250, 55, "t:ok")
+        p.rect(254, 42, 448, 56, fill=rgba(e["panel2"]))
+        p.text(260, 49, "Modo macros apagado (Ctrl+Alt+M)", rgba(e["muted"]), 8.5, True)
+        self._hit(254, 42, 448, 56, "t:panel2")
+
+    # ------------------------------------------------------------ panel izquierdo
+    def _left(self, p, e, sec, **_kw):
+        p.rect(18, 94, 148, 96, fill=rgba(e["line"]))
+        p.text(83, 83, "Numpad y fila 1–0", rgba(e["muted"]), 9, True, anchor="mm")
+        self._hit(18, 72, 148, 96, "t:line")
+        p.rect(152, 72, 280, 96, fill=rgba(e["panel2"]))
+        p.rect(152, 94, 280, 96, fill=rgba(e["acc"]))
+        p.text(216, 83, "Teclas virtuales", rgba(e["text"]), 9, True, anchor="mm")
+        self._hit(152, 72, 280, 96, "t:acc")
+        p.text(18, 108, "Capa que estás editando", rgba(e["muted"]), 9)
+        self._hit(18, 102, 160, 114, "t:muted")
+        p.rect(18, 118, 170, 140, fill=rgba(e["panel2"]), outline=rgba(e["line"]))
+        p.text(26, 129, "1. Stream", rgba(e["text"]), 9.5)
+        p.text(162, 129, "▼", rgba(e["muted"]), 6, anchor="rm")
+        self._hit(18, 118, 170, 140, "t:panel2")
+        for i, ch in enumerate(("+", "edit", "×")):
+            x1 = 176 + i * 36
+            p.rect(x1, 118, x1 + 32, 140, fill=rgba(e["panel2"]), outline=rgba(e["line"]))
+            if ch == "edit":
+                p.line([(x1 + 13, 133), (x1 + 19, 125)], rgba(e["text"]), 1.8)
+                p.line([(x1 + 12, 134.5), (x1 + 13, 133)], rgba(e["muted"]), 1.4)
+            else:
+                p.text(x1 + 16, 129, ch, rgba(e["text"]), 11, anchor="mm")
+            self._hit(x1, 118, x1 + 32, 140, "t:panel2")
+        p.text(18, 155, "Teclas virtuales · 30", rgba(e["text"]), 11, True)
+        self._hit(18, 148, 170, 162, "t:text")
+        p.text(280, 155, "5 × 6 · G = Global", rgba(e["muted"]), 8.5, anchor="rm")
+        p.text(18, 456, "Solo se tocan en la app del celular.", rgba(e["muted"]), 8.5)
+        self._hit(18, 449, 280, 463, "t:muted")
+
+    def _keys(self, p, e, sec, **_kw):
+        fa = sec["keys"]["fondo"] / 100
+        kw, gap, x0, y0 = 40, 5, 34, 172
+        keys = []
         for n in range(1, 31):
             r, c = divmod(n - 1, 5)
-            x1, y1 = x0 + c * (kw + gap), y0 + r * (kh + gap)
+            x1, y1 = x0 + c * (kw + gap), y0 + r * (kw + gap)
             v = SAMPLE_KEYS.get(n)
             g = None
             if v and v[1]:
                 col = KEY_COLORS[v[1]]
-                fill, line, txt, tag = L.mix(e["panel"], col, 0.2), col, e["text"], "text"
-                g = (col, e["bg"]) if v[2] else None
+                fill, line, txt, tag = L.mix(e["panel"], col, .2), col, e["text"], "text"
+                if v[2]:
+                    g = (col, e["bg"])
             elif v and v[2]:
                 fill, line, txt, tag = e["key_global"], e["key_global_line"], e["key_global_text"], "key_global"
                 g = (e["key_global_line"], e["bg"])
@@ -126,91 +475,166 @@ class Preview:
                 fill, line, txt, tag = e["key_set"], e["key_set_line"], e["key_set_text"], "key_set"
             else:
                 fill, line, txt, tag = e["key"], e["line"], e["text"], "key"
-            if n == 7:
-                rrect(cv, x1 - 3, y1 - 3, x1 + kw + 3, y1 + kh + 3, 8, fill="", outline=e["text"], width=2,
-                      tags=T("text"))
-            rrect(cv, x1, y1, x1 + kw, y1 + kh, 7, fill=fill, outline=line, width=2, tags=T(tag))
-            cv.create_text(x1 + 5, y1 + 3, anchor="nw", text=str(n), fill=txt, font=f(7, True), tags=T(tag))
+            keys.append((n, x1, y1, v, g, fill, line, txt, tag))
+        # planchas de las teclas (con la transparencia del fondo de la sección «Teclas»)
+        plates = _Pen()
+        for n, x1, y1, v, g, fill, line, txt, tag in keys:
+            plates.rect(x1, y1, x1 + kw, y1 + kw, fill=rgba(fill), r=5)
+        p.im.alpha_composite(_alpha_mul(plates.im, fa))
+        for n, x1, y1, v, g, fill, line, txt, tag in keys:
+            p.rect(x1, y1, x1 + kw, y1 + kw, outline=rgba(e["text"] if n == 7 else line), width=2, r=5)
+            p.text(x1 + 5, y1 + 4, str(n), rgba(txt), 12, True, anchor="lt")
             if g:
-                cv.create_rectangle(x1 + kw - 12, y1 + 3, x1 + kw - 3, y1 + 12, fill=g[0], width=0, tags=T(tag))
-                cv.create_text(x1 + kw - 7, y1 + 8, text="G", fill=g[1], font=f(5, True), tags=T(tag))
+                p.rect(x1 + kw - 13, y1 + 4, x1 + kw - 4, y1 + 13, fill=rgba(g[0]), r=2)
+                p.text(x1 + kw - 8.5, y1 + 8.5, "G", rgba(g[1]), 6, True, anchor="mm")
+            elif v and not v[3]:
+                p.text(x1 + kw - 5, y1 + 9, "♪", rgba(txt, .85), 8, anchor="rm")
             if v:
-                lab = v[0] if len(v[0]) <= 8 else v[0][:7] + "…"
-                cv.create_text(x1 + kw / 2, y1 + kh - 7, text=lab, fill=txt, font=f(6), tags=T(tag))
+                p.text(x1 + kw / 2, y1 + kw - 7, v[0], rgba(txt), 6.5, anchor="mm", maxw=kw - 4)
+            self._hit(x1, y1, x1 + kw, y1 + kw, "t:" + tag)
 
-        # ---- panel derecho: pestaña Tecla
-        x = 272
-        for i, name in enumerate(("Tecla", "Sonidos", "Numpad y opciones", "Audio", "Celular", "Temas", "Creador")):
-            w = 12 + len(name) * 5.6
+    # ------------------------------------------------------------ pestañas
+    def _tabs(self, p, e, sec, **_kw):
+        x = 300
+        for i, name in enumerate(TABS):
+            w = text_w(name, 9, True) + 14
             on = i == 0
-            cv.create_rectangle(x, 62, x + w, 82, fill=e["panel"] if on else e["bg"], outline=e["line"],
-                                tags=T("panel" if on else "bg"))
-            cv.create_text(x + w / 2, 72, text=name, fill=e["text"] if on else e["muted"], font=f(7, True),
-                           tags=T("text" if on else "muted"))
-            x += w + 2
-        cv.create_rectangle(272, 82, 628, 390, fill=e["panel"], outline=e["line"], tags=T("panel"))
-        cv.create_line(273, 82, 272 + 12 + 5 * 5.6, 82, fill=e["panel"], tags=T("panel"))
-        cv.create_text(286, 92, anchor="nw", text="Virtual 7 · Stream", fill=e["text"], font=f(11, True),
-                       tags=T("text"))
-        cv.create_text(286, 114, anchor="nw", text="Tecla virtual: solo se toca en la app del celular.",
-                       fill=e["muted"], font=f(7), tags=T("muted"))
-        rows = (("Acción", "Sonido ▾"), ("Sonido", None), ("Al pulsar", "Superponer ▾"), ("Volumen", "vol"))
-        for i, (lab, val) in enumerate(rows):
-            y = 134 + i * 23
-            cv.create_text(286, y + 9, anchor="w", text=lab, fill=e["muted"], font=f(8), tags=T("muted"))
-            if val == "vol":
-                cv.create_text(352, y + 9, anchor="w", text="110 % · +0.8 dB", fill=e["acc"], font=f(9, True),
-                               tags=T("acc"))
-                continue
-            cv.create_rectangle(350, y, 614, y + 19, fill=e["panel2"], outline=e["line"], tags=T("panel2"))
-            if val is None:
-                cv.create_rectangle(355, y + 3, 420, y + 16, fill=e["acc_dim"], width=0, tags=T("acc_dim"))
-                cv.create_text(360, y + 9, anchor="w", text="Tambores", fill=e["text"], font=f(8), tags=T("acc_dim"))
+            p.rect(x, 64 if on else 67, x + w, 87 if on else 86, outline=rgba(e["line"]))
+            p.text(x + w / 2, 76 if on else 77, name, rgba(e["text"] if on else e["muted"]), 9, True, anchor="mm")
+            x += w - 1
+        tw = text_w(TABS[0], 9, True) + 14
+        p.rect(301, 85, 300 + tw - 1, 88, fill=rgba(e["panel"]))
+
+    # ------------------------------------------------------------ panel de la pestaña
+    def _body(self, p, e, sec, hover=False, **_kw):
+        tw = text_w(TABS[0], 9, True) + 14
+        p.line([(300 + tw - 1, 86), (672, 86), (672, 512), (300, 512), (300, 86)], rgba(e["line"]), 1)
+        p.text(314, 102, "Virtual 7  ·  Stream", rgba(e["text"]), 14, True)
+        self._hit(314, 92, 520, 112, "t:text")
+        p.text(314, 121, "Tecla virtual 7: no es una tecla física, solo se toca en la app del celular.",
+               rgba(e["muted"]), 8.5, maxw=344)
+        self._hit(314, 114, 658, 128, "t:muted")
+
+        def field(y, label, val, x1=376, x2=658, arrow=True):
+            p.text(314, y + 10, label, rgba(e["muted"]), 9)
+            self._hit(314, y, 372, y + 20, "t:muted")
+            p.rect(x1, y, x2, y + 20, fill=rgba(e["panel2"]), outline=rgba(e["line"]))
+            p.text(x1 + 8, y + 10, val, rgba(e["text"]), 9, maxw=x2 - x1 - 24)
+            if arrow:
+                p.text(x2 - 8, y + 10, "▼", rgba(e["muted"]), 6, anchor="rm")
+            self._hit(x1, y, x2, y + 20, "t:panel2")
+
+        field(136, "Acción", "♪ Reproducir sonido")
+        p.text(314, 172, "♪ Tambores", rgba(e["text"]), 11.5, True)
+        self._hit(314, 164, 450, 180, "t:text")
+        field(186, "Buscar", "", x2=530, arrow=False)
+        p.rect(536, 186, 658, 206, fill=rgba(e["panel2"]), outline=rgba(e["line"]))
+        p.text(597, 196, "+ Agregar archivos…", rgba(e["text"]), 8.5, anchor="mm")
+        self._hit(536, 186, 658, 206, "t:panel2")
+        p.rect(376, 212, 658, 292, fill=rgba(e["panel2"]), outline=rgba(e["line"]))
+        self._hit(376, 212, 658, 292, "t:panel2")
+        for i, name in enumerate(("Air horn", "Risas", "Suspenso", "Tambores", "Wow", "Bruh")):
+            y = 219 + i * 12.6
+            if name == "Tambores":
+                p.rect(377, y - 6, 657, y + 6.5, fill=rgba(e["acc_bg"]))
+                p.text(384, y, name, rgba(e["acc"]), 9)
+                self._hit(377, y - 6, 657, y + 6.5, "t:acc_bg")
             else:
-                cv.create_text(356, y + 9, anchor="w", text=val, fill=e["text"], font=f(8), tags=T("panel2"))
-        cv.create_rectangle(286, 228, 614, 250, fill=e["acc_bg"], outline=e["acc_dim"], tags=T("acc_bg"))
-        cv.create_text(292, 239, anchor="w", text="Igualar volumen: este sonido se ajusta −4.3 dB para quedar en −16 LUFS.",
-                       fill=e["text"], font=f(7), tags=T("acc_bg"))
-        cv.create_text(286, 264, anchor="w", text="Color del botón", fill=e["text"], font=f(8, True), tags=T("text"))
-        cv.create_text(614, 264, anchor="e", text="Elegido: Turquesa", fill=e["muted"], font=f(7), tags=T("muted"))
-        cx = 294
-        cv.create_oval(cx - 7, 280, cx + 7, 294, outline=e["muted"], dash=(2, 2), tags=T("muted"))
-        for name, col in KEY_COLORS.items():
-            cx += 22
-            if name == "Turquesa":
-                cv.create_oval(cx - 10, 277, cx + 10, 297, outline=e["text"], width=2, tags=T("text"))
-            cv.create_oval(cx - 7, 280, cx + 7, 294, fill=col, width=0, tags=T("panel"))
-        cv.create_text(286, 312, anchor="w", text="✕ No se encontró el archivo", fill=e["bad"], font=f(8),
-                       tags=T("bad"))
-        cv.create_text(450, 312, anchor="w", text="▲ Volumen alto", fill=e["warn"], font=f(8), tags=T("warn"))
-        rrect(cv, 468, 344, 530, 368, 4, fill=e["panel2"], outline=e["line"], tags=T("panel2"))
-        cv.create_text(499, 356, text="Quitar", fill=e["text"], font=f(8), tags=T("panel2"))
+                p.text(384, y, name, rgba(e["text"]), 9)
+        field(298, "Al pulsar", "Superponer (cada pulsación suena encima)")
+        p.text(314, 334, "Volumen", rgba(e["muted"]), 9)
+        p.rect(376, 332, 548, 337, fill=rgba(e["panel2"]), r=2.5)
+        p.rect(376, 332, 482, 337, fill=rgba(e["acc_dim"]), r=2.5)
+        p.oval(482, 334.5, 6.5, fill=rgba(e["text"]))
+        self._hit(376, 326, 548, 342, "t:acc_dim")
+        p.text(658, 334, "100 % · 0.0 dB", rgba(e["acc"]), 10, True, anchor="rm")
+        self._hit(560, 326, 658, 342, "t:acc")
+        p.text(376, 352, "Igualar volumen: mide −21.5 LUFS → se ajusta +5.5 dB.", rgba(e["muted"]), 8.5)
+        # parte de abajo (la zona «corner» va detrás)
+        for i, lab in enumerate(("Por mis audífonos", "Por el micrófono")):
+            x1 = 314 + i * 118
+            p.rect(x1, 384, x1 + 13, 397, fill=rgba(e["acc"]), r=3)
+            p.text(x1 + 6.5, 390.5, "✓", rgba(e["on_acc"]), 8, True, anchor="mm")
+            p.text(x1 + 18, 390.5, lab, rgba(e["text"]), 9)
+            self._hit(x1, 384, x1 + 110, 397, "t:acc")
         btn = "acc_hover" if hover else "acc"
-        rrect(cv, 538, 344, 614, 368, 4, fill=e[btn], outline="", tags=T(btn))
-        cv.create_text(576, 356, text="▶ Probar", fill=e["on_acc"], font=f(9, True), tags=T("on_acc"))
+        p.rect(580, 379, 658, 402, fill=rgba(e[btn]))
+        p.text(619, 390.5, "▶ Probar", rgba(e["on_acc"]), 10, True, anchor="mm")
+        self._hit(580, 379, 658, 402, "t:" + btn)
+        p.rect(314, 412, 658, 470, fill=rgba(e["panel2"]))
+        self._hit(314, 412, 658, 470, "t:panel2")
+        p.text(324, 426, "Color del botón", rgba(e["text"]), 9.5, True)
+        p.text(414, 426, "Turquesa", rgba(e["muted"]), 9)
+        p.text(648, 426, "Se ve igual en el PC y en el celular", rgba(e["muted"]), 8, anchor="rm")
+        cx = 333
+        p.oval(cx, 451, 8, outline=rgba(e["muted"]), width=1)
+        for name, col in KEY_COLORS.items():
+            cx += 24
+            if name == "Turquesa":
+                p.oval(cx, 451, 11, outline=rgba(e["text"]), width=2)
+            p.oval(cx, 451, 8, fill=rgba(col))
 
-        # ---- pie
-        cv.create_rectangle(250, 398, 380, 416, fill=e["bg"], outline=e["line"], tags=T("line"))
-        cv.create_text(315, 407, text="v3.4.0 beta · Novedades", fill=e["muted"], font=f(7), tags=T("muted"))
-        cv.create_rectangle(386, 398, 554, 416, fill=e["panel2"], width=0, tags=T("panel2"))
-        cv.create_text(470, 407, text="Creado por OkumaWsX · Soporte", fill=e["text"], font=f(7), tags=T("panel2"))
-        cv.create_rectangle(560, 398, 628, 416, fill=e["acc"], width=0, tags=T("acc"))
-        cv.create_text(594, 407, text="♥ Donar", fill=e["on_acc"], font=f(7, True), tags=T("on_acc"))
+    # ------------------------------------------------------------ pie
+    def _foot(self, p, e, sec, **_kw):
+        p.text(16, 526.5, "Listo.", rgba(e["muted"]), 8.5)
+        self._hit(16, 520, 54, 533, "t:muted")
+        p.rect(348, 519, 446, 534, outline=rgba(e["line"]))
+        p.text(397, 526.5, "v3.4.1 · Novedades", rgba(e["muted"]), 8, anchor="mm")
+        self._hit(348, 519, 446, 534, "t:line")
+        p.rect(452, 519, 606, 534, fill=rgba(e["panel2"]))
+        p.text(529, 526.5, "Creado por OkumaWsX · Soporte", rgba(e["text"]), 8, anchor="mm")
+        self._hit(452, 519, 606, 534, "t:panel2")
+        p.rect(612, 519, 668, 534, fill=rgba(e["acc"]))
+        p.text(640, 526.5, "♥ Donar", rgba(e["on_acc"]), 8.5, True, anchor="mm")
+        self._hit(612, 519, 668, 534, "t:on_acc")
 
-        # ---- zonas de imágenes (pantalla «Imágenes y plantillas»)
-        if zones:
-            for slot in ("banner", "keys", "logo"):
-                x1, y1, x2, y2 = ZONES[slot]
-                on = slot == sel_zone
-                cv.create_rectangle(x1 + 1, y1 + 1, x2 - 1, y2 - 1, outline="#f2a33a" if on else "#ffffff",
-                                    width=2 if on else 1, dash=() if on else (4, 3), fill="", tags=("z:" + slot,))
-                # rectángulo invisible pero «tocable» encima de la zona
-                cv.create_rectangle(x1, y1, x2, y2, outline="", fill="", tags=("z:" + slot, "hit"))
+    # ------------------------------------------------------------ marcas
+    def _zone_marks(self, slot_frames, sel):
+        p = _Pen()
+        for slot, (x1, y1, x2, y2) in ZONES.items():
+            on = slot == sel
+            has = slot_frames(slot, zone_size(slot)) is not None
+            if not has:
+                p.rect(x1 + 1, y1 + 1, x2 - 1, y2 - 1, fill=(255, 255, 255, 18))
+                p.text((x1 + x2) / 2, (y1 + y2) / 2, "+", (255, 255, 255, 170), 12, True, anchor="mm")
+            if on:
+                p.rect(x1, y1, x2, y2, outline=(242, 163, 58, 255), width=2)
+            else:
+                self._dashed(p, x1 + 1, y1 + 1, x2 - 1, y2 - 1, (255, 255, 255, 140))
+        # las zonas chicas quedan encima de las grandes al tocar
+        order = sorted(ZONES, key=lambda s: -(zone_size(s)[0] * zone_size(s)[1]))
+        for slot in order:
+            x1, y1, x2, y2 = ZONES[slot]
+            self._hit(x1, y1, x2, y2, "z:" + slot)
+        return p
 
+    def _section_marks(self, sel):
+        p = _Pen()
+        for k, (x1, y1, x2, y2) in SECTION_BOXES.items():
+            if k == sel:
+                self._dashed(p, x1 - 2, y1 - 2, x2 + 2, y2 + 2, (242, 163, 58, 255), 2)
+        order = ("head", "foot", "left", "body", "tabs", "keys")
+        for k in order:
+            x1, y1, x2, y2 = SECTION_BOXES[k]
+            self._hit(x1, y1, x2, y2, "s:" + k)
+        return p
+
+    @staticmethod
+    def _dashed(p, x1, y1, x2, y2, col, w=1):
+        dash, gap = 4, 3
+        for (ax, ay, bx, by) in ((x1, y1, x2, y1), (x2, y1, x2, y2), (x2, y2, x1, y2), (x1, y2, x1, y1)):
+            ln = abs(bx - ax) + abs(by - ay)
+            dx, dy = (bx - ax) / ln if ln else 0, (by - ay) / ln if ln else 0
+            t = 0
+            while t < ln:
+                u = min(t + dash, ln)
+                p.line([(ax + dx * t, ay + dy * t), (ax + dx * u, ay + dy * u)], col, w)
+                t += dash + gap
+
+    # ------------------------------------------------------------ toque
     def tag_at(self, x, y, prefix):
-        """Etiqueta (sin el prefijo) del elemento más arriba bajo el mouse."""
-        for item in reversed(self.cv.find_overlapping(x, y, x, y)):
-            for t in self.cv.gettags(item):
-                if t.startswith(prefix):
-                    return t[len(prefix):]
+        """Etiqueta (sin el prefijo) de la zona más arriba bajo el mouse."""
+        for x1, y1, x2, y2, tag in reversed(self.hits):
+            if tag.startswith(prefix) and x1 <= x < x2 and y1 <= y < y2:
+                return tag[len(prefix):]
         return None

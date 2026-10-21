@@ -7,7 +7,11 @@ from PyInstaller.utils.hooks import collect_data_files
 HERE = os.path.abspath(SPECPATH)
 ROOT = os.path.dirname(os.path.dirname(HERE))
 datas = [(os.path.join(ROOT, "assets", "icon-estudio.png"), "."),
-         (os.path.join(ROOT, "docs", "temas", "temas.json"), ".")]
+         (os.path.join(ROOT, "docs", "temas", "temas.json"), "."),
+         # letra Inter: la vista previa se dibuja igual que Numpad Macros 3.4.1
+         (os.path.join(ROOT, "assets", "fonts", "Inter-Regular.ttf"), "fonts"),
+         (os.path.join(ROOT, "assets", "fonts", "Inter-Bold.ttf"), "fonts"),
+         (os.path.join(ROOT, "assets", "fonts", "OFL-Inter.txt"), "fonts")]
 try:
     datas += collect_data_files("tkinterdnd2")      # arrastrar y soltar (tkdnd)
 except Exception:

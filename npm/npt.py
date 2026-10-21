@@ -81,11 +81,22 @@ IMAGE_SLOTS = {
 }
 # Espacios que aceptan GIF animado (stickers); los demás, solo PNG.
 ANIMATED_SLOTS = frozenset({"headmid", "tabsend", "leftbot", "foot"})
+SLOTS_BEHIND = ("banner", "keys", "corner", "footband")          # detrás del contenido
+SLOTS_FREE = ("logo", "headmid", "tabsend", "leftbot", "foot")    # en huecos sin botones
+MAX_FRAMES = 120                  # cuadros por imagen animada
 # Fondo de la ventana con degradado: desde dónde empieza (4 esquinas, 4 lados o el centro).
 GRADIENT_FROM = ("tl", "t", "tr", "l", "c", "r", "bl", "b", "br")
 GRADIENT_STOPS = (2, 5)
 # Secciones con transparencia propia (fondo de la sección y su contenido) y borde de realce.
 SECTIONS = ("head", "left", "keys", "tabs", "body", "foot")
+# Cómo se ve una sección sin ajustes (encabezado y pie sin plancha; el resto, normal)
+SECTION_DEFAULTS = {"head": {"fondo": 0, "contenido": 100, "realce": False},
+                    "left": {"fondo": 100, "contenido": 100, "realce": False},
+                    "keys": {"fondo": 100, "contenido": 100, "realce": False},
+                    "tabs": {"fondo": 100, "contenido": 100, "realce": False},
+                    "body": {"fondo": 100, "contenido": 100, "realce": False},
+                    "foot": {"fondo": 0, "contenido": 100, "realce": False}}
+SECTION_MIN_CONTENT = 30          # el Estudio no deja bajar el contenido de aquí (para que se lea algo)
 WINDOW_MIN = 50                   # opacidad mínima de la ventana, igual que el Laboratorio
 
 _PUB_LEN, _NONCE_LEN, _SIG_LEN = 32, 12, 64
@@ -259,6 +270,7 @@ class Theme:
     background: dict = field(default_factory=dict)
     # sección -> {"fondo": 0..100, "contenido": 0..100, "realce": bool}
     sections: dict = field(default_factory=dict)
+    gif_pause: bool = True        # pausar las animaciones cuando no se usa la ventana
 
     @property
     def transparency(self) -> bool:
@@ -266,6 +278,23 @@ class Theme:
         return (any(v < 100 for v in self.alpha.values())
                 or self.window.get("opacidad", 100) < 100 or self.window.get("sin_usar", 100) < 100
                 or any(min(s.get("fondo", 100), s.get("contenido", 100)) < 100 for s in self.sections.values()))
+
+    @property
+    def gradient(self) -> dict:
+        """El degradado ({"colores", "desde"}) o {} si el fondo es de color sólido."""
+        bg = self.background
+        if bg and bg.get("tipo", "degradado") == "degradado" and bg.get("colores"):
+            return {"colores": [list(s) for s in bg["colores"]], "desde": bg.get("desde", "tl")}
+        return {}
+
+    def section(self, name: str) -> dict:
+        """Ajustes de una sección, con los valores normales donde falten."""
+        return {**SECTION_DEFAULTS[name], **self.sections.get(name, {})}
+
+    @property
+    def animated(self) -> list:
+        """Espacios cuya imagen es animada (GIF o PNG animado)."""
+        return sorted(k for k, v in self.images.items() if image_frames(v) > 1)
 
 
 @dataclass
@@ -292,6 +321,7 @@ class ReadResult:
             out["alpha"] = {"window": t.window.get("opacidad", 100) / 100, "idle": t.window.get("sin_usar", 100) / 100}
         out.update(description=t.description, kind=t.kind, layer_alpha=dict(t.alpha), image_slots=sorted(t.images),
                    background=dict(t.background), sections={k: dict(v) for k, v in t.sections.items()},
+                   animated_slots=t.animated, gif_pause=t.gif_pause,
                    author_key=self.author_key, reserved_name=self.reserved_name, format=self.format)
         if images:
             out["images"] = dict(t.images)
@@ -466,6 +496,11 @@ def validate(theme: Theme, strict: bool = True) -> None:
         mw, mh = IMAGE_SLOTS[slot]
         if not (0 < w <= mw and 0 < h <= mh):
             bad(f"La imagen de «{slot}» mide {w}×{h}; el máximo es {mw}×{mh}.")
+        if strict and image_frames(data) > 1 and (slot not in ANIMATED_SLOTS or image_frames(data) > MAX_FRAMES):
+            bad(f"La imagen de «{slot}» no puede ser animada." if slot not in ANIMATED_SLOTS
+                else f"La animación de «{slot}» tiene más de {MAX_FRAMES} cuadros.")
+    if not isinstance(theme.gif_pause, bool):
+        bad("El contenido del tema no tiene el formato correcto.")
     bg = theme.background
     if not isinstance(bg, dict):
         bad("El fondo de la ventana no tiene el formato correcto.")
@@ -503,6 +538,25 @@ def image_format(data: bytes) -> str | None:
     return None
 
 
+def image_frames(data: bytes) -> int:
+    """Cuadros de una imagen sin abrirla: 1, los del PNG animado (bloque acTL) o los del GIF."""
+    fmt = image_format(data)
+    if fmt == "gif":
+        return max(1, data.count(b"\x21\xf9\x04"))
+    if fmt != "png":
+        return 0
+    i = 8
+    while i + 8 <= len(data):
+        ln = struct.unpack(">I", data[i:i + 4])[0]
+        kind = data[i + 4:i + 8]
+        if kind == b"acTL" and ln >= 8 and i + 16 <= len(data):
+            return max(1, struct.unpack(">I", data[i + 8:i + 12])[0])
+        if kind in (b"IDAT", b"IEND") or ln > len(data):
+            break
+        i += 12 + ln
+    return 1
+
+
 def image_size(data: bytes) -> tuple[int, int]:
     """Ancho y alto leídos del encabezado PNG (sin abrir la imagen)."""
     fmt = image_format(data)
@@ -518,6 +572,8 @@ def _pack_content(theme: Theme) -> bytes:
     for slot in sorted(theme.images):
         data = bytes(theme.images[slot])
         index[slot] = {"inicio": off, "largo": len(data), "formato": image_format(data)}
+        if image_frames(data) > 1:
+            index[slot]["cuadros"] = image_frames(data)
         blobs.append(data)
         off += len(data)
     meta = {
@@ -530,9 +586,13 @@ def _pack_content(theme: Theme) -> bytes:
         "imagenes": index,
     }
     if theme.background:
-        meta["fondo"] = theme.background
+        meta["fondo"] = dict(theme.background)
+        if isinstance(meta["fondo"].get("colores"), list):
+            meta["fondo"]["colores"] = [[str(c).lower(), p] for c, p in meta["fondo"]["colores"]]
     if theme.sections:
         meta["secciones"] = {k: v for k, v in sorted(theme.sections.items())}
+    if not theme.gif_pause:
+        meta["pausar_animaciones"] = False
     js = json.dumps(meta, ensure_ascii=False, separators=(",", ":")).encode()
     return b"NPTC" + struct.pack(">I", len(js)) + js + b"".join(blobs)
 
@@ -559,7 +619,8 @@ def _unpack_content(raw: bytes) -> Theme:
                    version=meta.get("version", "1.0"), description=meta.get("descripcion", ""),
                    kind=meta.get("tipo", "oscuro"), alpha=meta.get("alfa") or {},
                    window=meta.get("ventana") or {}, images=images, created=str(meta.get("creado", "")),
-                   background=meta.get("fondo") or {}, sections=meta.get("secciones") or {})
+                   background=meta.get("fondo") or {}, sections=meta.get("secciones") or {},
+                   gif_pause=meta.get("pausar_animaciones", True) is not False)
     except Exception:
         raise NptError("El contenido del tema no se puede leer.", "contenido")
     validate(th, strict=False)

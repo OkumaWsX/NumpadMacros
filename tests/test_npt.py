@@ -194,6 +194,54 @@ class FormatTest(unittest.TestCase):
         with self.assertRaises(npt.NptError):
             npt.write(theme(images={"logo": b"GIF89a" + b"\0" * 30}), self.key)
 
+    def test_gradient_sections_and_animation(self):
+        from PIL import Image
+        frames = [Image.new("RGBA", (360, 48), (i * 40, 80, 200, 255)) for i in range(5)]
+        buf = io.BytesIO()
+        frames[0].save(buf, "PNG", save_all=True, append_images=frames[1:], duration=80, loop=0)
+        anim = buf.getvalue()
+        self.assertEqual(npt.image_frames(anim), 5)
+        self.assertEqual(npt.image_frames(png(10, 10)), 1)
+        t = theme(background={"tipo": "degradado", "colores": [["#112233", 0], ["#AA5500", 60], ["#000000", 100]],
+                              "desde": "c"},
+                  sections={"keys": {"fondo": 100, "contenido": 100, "realce": True},
+                            "body": {"fondo": 40, "contenido": 55, "realce": False}},
+                  images={"headmid": anim, "footband": png(1200, 40)}, gif_pause=False)
+        res = npt.read(npt.write(t, self.key))
+        th = res.theme
+        self.assertEqual(th.gradient, {"colores": [["#112233", 0], ["#aa5500", 60], ["#000000", 100]], "desde": "c"})
+        self.assertEqual(th.section("keys"), {"fondo": 100, "contenido": 100, "realce": True})
+        self.assertEqual(th.section("head"), npt.SECTION_DEFAULTS["head"])
+        self.assertEqual(th.animated, ["headmid"])
+        self.assertFalse(th.gif_pause)
+        self.assertTrue(th.transparency)                      # una sección con fondo al 40 %
+        d = res.to_dict(images=False)
+        self.assertEqual(d["background"]["desde"], "c")
+        self.assertEqual(d["sections"]["body"]["contenido"], 55)
+        self.assertEqual(d["animated_slots"], ["headmid"])
+        # sin cambios: el contenido no lleva fondo ni secciones
+        plain = npt.read(npt.write(theme(), self.key))
+        self.assertEqual(plain.theme.gradient, {})
+        self.assertEqual(plain.to_dict()["background"], {})
+        # un PNG animado solo va en los espacios libres
+        with self.assertRaises(npt.NptError):
+            npt.write(theme(images={"footband": anim}), self.key)
+
+    def test_invalid_gradient_and_sections(self):
+        bad = [
+            dict(background={"tipo": "degradado", "colores": [["#112233", 0]], "desde": "c"}),
+            dict(background={"tipo": "degradado", "colores": [["#112233", 0], ["#000000", 100]], "desde": "arriba"}),
+            dict(background={"tipo": "degradado", "colores": [["#112233", 0], ["azul", 100]], "desde": "t"}),
+            dict(background={"tipo": "degradado", "colores": [["#112233", 0], ["#000000", 140]], "desde": "t"}),
+            dict(background={"tipo": "degradado", "colores": [["#111111", i * 20] for i in range(6)], "desde": "t"}),
+            dict(sections={"menu": {"fondo": 50}}),
+            dict(sections={"keys": {"fondo": 120}}),
+            dict(sections={"keys": {"realce": "si"}}),
+        ]
+        for kw in bad:
+            with self.assertRaises(npt.NptError, msg=kw):
+                npt.write(theme(**kw), self.key)
+
     def test_size_limit(self):
         noise = os.urandom(npt.MAX_FILE)
         with self.assertRaises(npt.NptError) as cm:

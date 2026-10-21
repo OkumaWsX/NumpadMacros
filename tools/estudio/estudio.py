@@ -158,6 +158,7 @@ class App:
         self.screen = "edit"
         self.sel = "acc"
         self.slot_sel = "keys"
+        self.sec_sel = "keys"
         self.template = "keys"
         self.project_path = None
         self.dirty = False
@@ -181,6 +182,9 @@ class App:
         self.base_name = base["nombre"]
         self.auto = True
         self.images: dict = {}
+        self.grad = {"on": False, "colores": [], "desde": "tl"}
+        self.sections: dict = {}
+        self.gif_pause = True
         self.pal_img = L.to_png(L.sample_image())
         self.pal_name = "ejemplo-atardecer.png"
         self.palette = L.extract_palette(L.sample_image())
@@ -194,7 +198,8 @@ class App:
         return {"nombre": self.meta["nombre"], "version": self.meta["version"], "descripcion": self.meta["descripcion"],
                 "base": self.base_name, "colores": self.colors, "alfa": self.alpha, "ventana": self.window,
                 "auto": self.auto, "imagenes": self.images, "imagen_colores": self.pal_img,
-                "imagen_colores_nombre": self.pal_name}
+                "imagen_colores_nombre": self.pal_name, "degradado": self.grad,
+                "secciones": L.sections_clean(self.sections), "pausar_animaciones": self.gif_pause}
 
     def apply_state(self, s: dict):
         self.colors = {**self.themes[0]["colores"], **s.get("colores", {})}
@@ -205,7 +210,18 @@ class App:
                      "descripcion": s.get("descripcion", "")}
         self.base_name = s.get("base", self.themes[0]["nombre"])
         self.auto = bool(s.get("auto", False))
-        self.images = dict(s.get("imagenes") or {})
+        self.images = {k: v for k, v in (s.get("imagenes") or {}).items() if k in npt.IMAGE_SLOTS}
+        g = s.get("degradado") or {}
+        stops = [[str(c).lower(), int(p)] for c, p in (g.get("colores") or []) if npt._HEX.match(str(c))]
+        self.grad = {"on": bool(g.get("on")) and len(stops) >= 2, "colores": stops[:5],
+                     "desde": g.get("desde") if g.get("desde") in npt.GRADIENT_FROM else "tl"}
+        self.sections = {}
+        for k, v in (s.get("secciones") or {}).items():
+            if k in npt.SECTIONS and isinstance(v, dict):
+                self.sections[k] = {"fondo": L.clamp(int(v.get("fondo", 100)), 0, 100),
+                                    "contenido": L.clamp(int(v.get("contenido", 100)), npt.SECTION_MIN_CONTENT, 100),
+                                    "realce": bool(v.get("realce", False))}
+        self.gif_pause = bool(s.get("pausar_animaciones", True))
         if s.get("imagen_colores"):
             self.pal_img = s["imagen_colores"]
             self.pal_name = s.get("imagen_colores_nombre", "imagen")
@@ -230,8 +246,8 @@ class App:
     def _style(self):
         r = self.root
         r.configure(bg=C["bg"])
-        r.geometry("1380x880")
-        r.minsize(1300, 760)
+        r.geometry("1420x900")
+        r.minsize(1360, 700)
         s = ttk.Style(r)
         s.theme_use("clam")
         s.configure(".", background=C["panel"], foreground=C["text"], fieldbackground=C["panel2"],
@@ -246,6 +262,9 @@ class App:
         s.map("Nav.TButton", background=[("active", C["panel2"])])
         s.configure("NavOn.TButton", background=C["acc"], foreground=C["on_acc"], font=fnt(0, True), padding=(12, 6))
         s.map("NavOn.TButton", background=[("active", "#ffb855")])
+        s.configure("Small.TButton", background=C["panel2"], foreground=C["text"], padding=(4, 2), font=fnt(-1))
+        s.map("Small.TButton", background=[("active", C["line"]), ("disabled", C["panel"])],
+              foreground=[("disabled", C["muted"])])
         s.configure("Link.TButton", background=C["panel"], foreground=C["acc"], padding=(0, 0), borderwidth=0)
         s.map("Link.TButton", background=[("active", C["panel"])])
         for st, bg in (("TCheckbutton", C["panel"]), ("Bg.TCheckbutton", C["bg"])):
@@ -328,9 +347,9 @@ class App:
         nav = tk.Frame(r, bg=C["bg"])
         nav.grid(row=1, column=0, sticky="ew", padx=16, pady=(0, 8))
         self.nav = {}
-        key_title = "4 · Clave de firma" if self.mode == "creador" else "4 · Mi firma de autor"
-        for sid, text in (("edit", "1 · Editar tema"), ("img", "2 · Imágenes y plantillas"),
-                          ("exp", "3 · Exportar"), ("key", key_title)):
+        key_title = "5 · Clave de firma" if self.mode == "creador" else "5 · Mi firma de autor"
+        for sid, text in (("edit", "1 · Editar tema"), ("sec", "2 · Transparencia por sección"),
+                          ("img", "3 · Imágenes y plantillas"), ("exp", "4 · Exportar"), ("key", key_title)):
             b = ttk.Button(nav, text=text, style="Nav.TButton", command=lambda s=sid: self.show(s))
             b.pack(side="left", padx=(0, 6))
             self.nav[sid] = b
@@ -339,8 +358,8 @@ class App:
         self.body.grid(row=2, column=0, sticky="nsew", padx=16)
         self.body.rowconfigure(0, weight=1)
         self.body.columnconfigure(0, weight=1)
-        self.views = {"edit": self._build_edit(), "img": self._build_img(), "exp": self._build_exp(),
-                      "key": self._build_key()}
+        self.views = {"edit": self._build_edit(), "sec": self._build_sec(), "img": self._build_img(),
+                      "exp": self._build_exp(), "key": self._build_key()}
         self.status = tk.Label(r, text="Listo.", bg=C["bg"], fg=C["muted"], font=fnt(-1), anchor="w")
         self.status.grid(row=3, column=0, sticky="ew", padx=16, pady=(6, 10))
         self.show(self.screen)
@@ -383,6 +402,11 @@ class App:
                 self.rows[tok] = self._token_row(L_, tok, label)
                 self.rows[tok]["frame"].grid(row=row, column=0, padx=6, sticky="ew")
                 row += 1
+        self.grad_box = tk.Frame(L_, bg=C["panel"])
+        self.grad_box.grid(row=row, column=0, pady=(14, 0), **pad)
+        self._build_grad(self.grad_box)
+        self.edit_left = left
+        row += 1
         wf = tk.Frame(L_, bg=C["panel"])
         wf.grid(row=row, column=0, pady=(14, 14), **pad)
         wf.columnconfigure(0, weight=1)
@@ -408,24 +432,22 @@ class App:
                      "transparente cuando el mouse sale. Cada color de arriba tiene además su propia transparencia: "
                      "tócalo y aparece su barra.", -2, color="muted", wrap=260).grid(row=6, column=0, sticky="ew",
                                                                                         pady=(6, 0))
+        self.lbl(wf, "Para resaltar una parte de la ventana, usa la pantalla «2 · Transparencia por sección».", -2,
+                 color="muted", wrap=260).grid(row=7, column=0, sticky="ew", pady=(6, 0))
         # centro: vista previa
-        mid = tk.Frame(f, bg=C["panel"], highlightthickness=0)
-        mid.grid(row=0, column=1, sticky="nsew", padx=10)
-        top = tk.Frame(mid, bg=C["panel"])
-        top.pack(fill="x", pady=(12, 4))
-        self.caps(top, "Vista previa · ventana principal").pack(side="left")
+        mid = self._stage(f, "Vista previa · ventana principal",
+                          "Toca cualquier parte de la ventana para editar su color.")
+        top = mid.top
         self.hover_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(top, text="Botón al pasar el mouse", variable=self.hover_var, command=self.render).pack(
             side="right")
-        self.lbl(mid, "Toca cualquier parte de la ventana para editar su color.", -1, color="muted").pack(fill="x")
-        holder = tk.Frame(mid, bg="#0d0e11", padx=10, pady=10)
-        holder.pack(pady=8)
-        self.cv_edit = tk.Canvas(holder, width=V.W, height=V.H, highlightthickness=0, bd=0, cursor="hand2")
-        self.cv_edit.pack()
-        self.pv_edit = V.Preview(self.cv_edit)
+        self.wall_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(top, text="Fondo de escritorio", variable=self.wall_var, command=self.render).pack(
+            side="right", padx=10)
+        self.cv_edit, self.pv_edit = mid.pcv, mid.pv
         self.cv_edit.bind("<Button-1>", self.on_preview_click)
         # derecha
-        right = Scrollable(f, C["panel"], width=290)
+        right = Scrollable(f, C["panel"], width=320)
         right.grid(row=0, column=2, sticky="nse")
         R = right.inner
         R.columnconfigure(0, weight=1)
@@ -439,7 +461,7 @@ class App:
         self.pal_thumb.pack(side="left")
         side = tk.Frame(top, bg=C["panel"])
         side.pack(side="left", padx=10, fill="x", expand=True)
-        ttk.Button(side, text="Importar imagen…", command=self.import_palette_image).pack(anchor="w")
+        ttk.Button(side, text="Importar…", command=self.import_palette_image).pack(anchor="w")
         self.pal_name_lbl = self.lbl(side, "", -2, color="muted")
         self.pal_name_lbl.pack(anchor="w", pady=(6, 0))
         self.pal_row = tk.Frame(pc, bg=C["panel"])
@@ -451,7 +473,7 @@ class App:
         self.pal_mode = tk.StringVar(value="Tema oscuro")
         ttk.Combobox(line, textvariable=self.pal_mode, state="readonly", width=12,
                      values=("Tema oscuro", "Tema claro")).pack(side="left")
-        ttk.Button(line, text="Aplicar al tema", style="Accent.TButton", command=self.apply_palette).pack(
+        ttk.Button(line, text="Aplicar", style="Accent.TButton", command=self.apply_palette).pack(
             side="right")
         self.pal_fix = tk.BooleanVar(value=True)
         ttk.Checkbutton(pc, text="Corregir solo lo que quede ilegible", variable=self.pal_fix).pack(anchor="w",
@@ -507,6 +529,152 @@ class App:
         self._paint_palette()
         return f
 
+    def _stage(self, f, title, hint):
+        """Columna central con la vista previa (se desplaza si la pantalla es baja)."""
+        sc = Scrollable(f, C["panel"])
+        sc.grid(row=0, column=1, sticky="nsew", padx=10)
+        mid = sc.inner
+        top = tk.Frame(mid, bg=C["panel"])
+        top.pack(fill="x", pady=(12, 4))
+        self.caps(top, title).pack(side="left")
+        self.lbl(mid, hint, -1, color="muted", wrap=V.W).pack(fill="x")
+        cv = tk.Canvas(mid, width=V.W, height=V.H, highlightthickness=0, bd=0, cursor="hand2", bg="#0d0e11")
+        cv.pack(pady=8)
+        sc.top, sc.pcv, sc.pv = top, cv, V.Preview(cv)
+        return sc
+
+    # ---------------------------------------------------------------- fondo de la ventana (degradado)
+    def _build_grad(self, box):
+        box.columnconfigure(0, weight=1)
+        self.lbl(box, "Fondo de la ventana", 0, True).grid(row=0, column=0, sticky="w")
+        seg = tk.Frame(box, bg=C["line"])
+        seg.grid(row=1, column=0, sticky="ew", pady=(4, 6))
+        seg.columnconfigure(0, weight=1, uniform="g")
+        seg.columnconfigure(1, weight=1, uniform="g")
+        self.grad_seg = {}
+        for i, (key, txt) in enumerate(((False, "Color sólido"), (True, "Degradado"))):
+            b = tk.Label(seg, text=txt, font=fnt(-1), cursor="hand2", pady=5, width=10)
+            b.grid(row=0, column=i, sticky="ew", padx=(0 if i else 1, 1), pady=1)
+            b.bind("<Button-1>", lambda e, on=key: self.grad_mode(on))
+            self.grad_seg[key] = b
+        self.grad_ed = tk.Frame(box, bg=C["panel"])
+        self.grad_ed.columnconfigure(0, weight=1)
+        self.grad_bar = tk.Canvas(self.grad_ed, width=200, height=20, highlightthickness=1,
+                                  highlightbackground="#3a3e48", bd=0)
+        self.grad_bar.grid(row=0, column=0, sticky="ew")
+        self.grad_bar.bind("<Configure>", lambda e: self._paint_grad_bar())
+        self.grad_rows = tk.Frame(self.grad_ed, bg=C["panel"])
+        self.grad_rows.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        self.grad_rows.columnconfigure(1, weight=1)
+        btns = tk.Frame(self.grad_ed, bg=C["panel"])
+        btns.grid(row=2, column=0, sticky="ew", pady=(4, 0))
+        btns.columnconfigure(0, weight=1, uniform="b")
+        btns.columnconfigure(1, weight=1, uniform="b")
+        self.grad_add = ttk.Button(btns, text="＋ Agregar color", style="Small.TButton", command=self.grad_add_stop)
+        self.grad_add.grid(row=0, column=0, columnspan=2, sticky="ew")
+        ttk.Button(btns, text="Colores del tema", style="Small.TButton", command=self.grad_theme).grid(
+            row=1, column=0, sticky="ew", pady=(4, 0), padx=(0, 2))
+        ttk.Button(btns, text="De la imagen", style="Small.TButton", command=self.grad_image).grid(
+            row=1, column=1, sticky="ew", pady=(4, 0), padx=(2, 0))
+        self.lbl(self.grad_ed, "Desde dónde empieza: termina en el lado opuesto. El centro hace un degradado circular.",
+                 -2, color="muted", wrap=255).grid(row=3, column=0, sticky="ew", pady=(8, 4))
+        dirs = tk.Frame(self.grad_ed, bg=C["panel"])
+        dirs.grid(row=4, column=0, sticky="ew")
+        grid = tk.Frame(dirs, bg=C["panel"])
+        grid.pack(side="left")
+        self.grad_dirs = {}
+        for i, d in enumerate(npt.GRADIENT_FROM):
+            b = tk.Label(grid, text=L.GRADIENT_DIRS[d][0], font=fnt(1), width=3, pady=3, cursor="hand2",
+                         highlightthickness=1, highlightbackground=C["line"])
+            b.grid(row=i // 3, column=i % 3, padx=2, pady=2)
+            b.bind("<Button-1>", lambda e, dd=d: self.grad_from(dd))
+            self.grad_dirs[d] = b
+        self.grad_note = self.lbl(dirs, "", -2, color="muted", wrap=140)
+        self.grad_note.pack(side="left", padx=10)
+        self.lbl(self.grad_ed, "En Numpad Macros se ve en el borde de la ventana, el encabezado, el pie y detrás de las "
+                               "teclas. Los paneles se mezclan con el color promedio del degradado.", -2, color="muted",
+                 wrap=255).grid(row=5, column=0, sticky="ew", pady=(8, 0))
+        self._grad_count = -1
+
+    # ---------------------------------------------------------------- 2 · secciones
+    def _build_sec(self):
+        f = tk.Frame(self.body, bg=C["panel"])
+        f.columnconfigure(1, weight=1, minsize=V.W + 40)
+        f.rowconfigure(0, weight=1)
+        left = Scrollable(f, C["panel"], width=290)
+        left.grid(row=0, column=0, sticky="nsw")
+        LL = left.inner
+        LL.columnconfigure(0, weight=1)
+        self.caps(LL, "Secciones").grid(row=0, column=0, padx=12, pady=(12, 4), sticky="ew")
+        self.lbl(LL, "Cada sección tiene su propia transparencia: el fondo (la plancha de la sección) y el contenido "
+                     "(textos, campos y botones). Toca una sección en la lista o en la vista previa.", -2,
+                 color="muted", wrap=260).grid(row=1, column=0, padx=12, sticky="ew")
+        self.sec_rows = {}
+        for i, (k, (name, note)) in enumerate(L.SECTIONS.items()):
+            fr = tk.Frame(LL, bg=C["panel"], highlightthickness=1, highlightbackground=C["panel"], padx=8, pady=6,
+                          cursor="hand2")
+            fr.grid(row=2 + i, column=0, padx=6, pady=2, sticky="ew")
+            fr.columnconfigure(0, weight=1)
+            head = tk.Frame(fr, bg=C["panel"])
+            head.grid(row=0, column=0, sticky="ew")
+            nm = tk.Label(head, text=name, bg=C["panel"], fg=C["text"], font=fnt(0, True), anchor="w")
+            nm.pack(side="left")
+            code = tk.Label(head, text="", bg=C["panel"], fg=C["muted"], font=fnt(-3, mono=True))
+            code.pack(side="right")
+            nt = tk.Label(fr, text=note, bg=C["panel"], fg=C["muted"], font=fnt(-2), anchor="w", justify="left",
+                          wraplength=245)
+            nt.grid(row=1, column=0, sticky="ew")
+            vars_ = {}
+            for j, (key, txt, a) in enumerate((("fondo", "Fondo", 0), ("contenido", "Contenido",
+                                                                        npt.SECTION_MIN_CONTENT))):
+                line = tk.Frame(fr, bg=C["panel"])
+                line.grid(row=2 + j * 2, column=0, sticky="ew", pady=(4, 0))
+                tk.Label(line, text=txt, bg=C["panel"], fg=C["text"], font=fnt(-1)).pack(side="left")
+                out = tk.Label(line, text="", bg=C["panel"], fg=C["muted"], font=fnt(-2, mono=True))
+                out.pack(side="right")
+                var = tk.IntVar(value=100)
+                self.scale(fr, var, a, 100, 5, lambda kk=k: self.on_section(kk)).grid(row=3 + j * 2, column=0,
+                                                                                    sticky="ew")
+                vars_[key] = (var, out, line)
+            rv = tk.BooleanVar(value=False)
+            cb = ttk.Checkbutton(fr, text="Borde de realce", variable=rv, command=lambda kk=k: self.on_section(kk))
+            cb.grid(row=6, column=0, sticky="w", pady=(4, 0))
+            for w in (fr, head, nm, code, nt):
+                w.bind("<Button-1>", lambda e, kk=k: self.select_section(kk))
+            self.sec_rows[k] = {"frame": fr, "head": head, "name": nm, "code": code, "note": nt, "vars": vars_,
+                                "realce": rv, "check": cb}
+        mid = self._stage(f, "Vista previa · toca una sección",
+                          "Las secciones con transparencia se mezclan con lo que tienen debajo. Prueba «Destacar» "
+                          "para resaltar una sola.")
+        self.cv_sec, self.pv_sec = mid.pcv, mid.pv
+        self.cv_sec.bind("<Button-1>", self.on_section_click)
+        right = Scrollable(f, C["panel"], width=320)
+        right.grid(row=0, column=2, sticky="nse")
+        R = right.inner
+        R.columnconfigure(0, weight=1)
+        self.caps(R, "Resaltar").grid(row=0, column=0, padx=12, pady=(12, 4), sticky="ew")
+        c = self.card(R)
+        c.grid(row=1, column=0, padx=12, sticky="ew")
+        self.focus_btn = ttk.Button(c, text="", style="Accent.TButton", command=self.focus_section)
+        self.focus_btn.pack(fill="x")
+        self.lbl(c, "Deja la sección elegida a todo color, con borde de realce, y atenúa las demás.", -2,
+                 color="muted", wrap=250).pack(fill="x", pady=(6, 8))
+        self.caps(c, "Estilos rápidos").pack(fill="x", pady=(0, 4))
+        for pid, (name, _v) in L.PRESETS.items():
+            ttk.Button(c, text=name, command=lambda q=pid: self.apply_preset(q)).pack(fill="x", pady=2)
+        self.caps(R, "Legibilidad de las secciones").grid(row=2, column=0, padx=12, pady=(16, 4), sticky="ew")
+        c2 = self.card(R)
+        c2.grid(row=3, column=0, padx=12, sticky="ew")
+        self.sec_checks = tk.Frame(c2, bg=C["panel"])
+        self.sec_checks.pack(fill="x")
+        self.sec_sum = self.lbl(c2, "", -1, wrap=250)
+        self.sec_sum.pack(fill="x", pady=(8, 0))
+        self.lbl(R, "En Numpad Macros, el encabezado y las teclas dejan ver su imagen (si tienen una) a través del "
+                    "fondo. Las demás secciones se mezclan con el fondo de la ventana. El escritorio se ve con la "
+                    "opacidad de la ventana (pantalla 1).", -2, color="muted", wrap=260).grid(
+            row=4, column=0, padx=12, pady=(12, 14), sticky="ew")
+        return f
+
     def _token_row(self, parent, tok, label):
         fr = tk.Frame(parent, bg=C["panel"], highlightthickness=1, highlightbackground=C["panel"], cursor="hand2")
         fr.columnconfigure(1, weight=1)
@@ -539,50 +707,61 @@ class App:
         sw.bind("<Button-1>", lambda e, t=tok: self.pick_color(t))
         return {"frame": fr, "sw": sw, "name": name, "val": val, "extra": extra, "hex": hexv, "alpha": av}
 
-    # ---------------------------------------------------------------- 2 · imágenes
+    # ---------------------------------------------------------------- 3 · imágenes
     def _build_img(self):
         f = tk.Frame(self.body, bg=C["panel"])
         f.columnconfigure(1, weight=1, minsize=V.W + 40)
         f.rowconfigure(0, weight=1)
-        left = tk.Frame(f, bg=C["panel"], width=270)
-        left.grid(row=0, column=0, sticky="nsw", padx=12)
-        self.caps(left, "Plantillas").pack(fill="x", pady=(12, 6))
-        self.tpl_box = tk.Frame(left, bg=C["panel"])
-        self.tpl_box.pack(fill="x")
-        self.caps(left, "Espacios para imágenes").pack(fill="x", pady=(16, 6))
-        self.slot_box = tk.Frame(left, bg=C["panel"])
-        self.slot_box.pack(fill="x")
-        na = tk.Frame(left, bg=C["panel"])
-        na.pack(fill="x", pady=(8, 0))
-        self.lbl(na, "Fondo de toda la ventana", -1, color="muted").pack(anchor="w")
-        self.lbl(na, "No disponible: los paneles y campos de Numpad Macros se pintan con color sólido. Las imágenes "
-                     "van en las zonas que el programa ya dibuja a mano.", -2, color="muted", wrap=260).pack(anchor="w")
-        mid = tk.Frame(f, bg=C["panel"])
-        mid.grid(row=0, column=1, sticky="nsew", padx=10)
-        self.caps(mid, "Vista previa · toca un espacio para editarlo").pack(fill="x", pady=(12, 4))
-        self.lbl(mid, "Las imágenes van dentro del .npt, cifradas y firmadas junto con los colores.", -1,
-                 color="muted").pack(fill="x")
-        holder = tk.Frame(mid, bg="#0d0e11", padx=10, pady=10)
-        holder.pack(pady=8)
-        self.cv_img = tk.Canvas(holder, width=V.W, height=V.H, highlightthickness=0, bd=0, cursor="hand2")
-        self.cv_img.pack()
-        self.pv_img = V.Preview(self.cv_img)
+        left = Scrollable(f, C["panel"], width=290)
+        left.grid(row=0, column=0, sticky="nsw")
+        LL = left.inner
+        LL.columnconfigure(0, weight=1)
+        self.caps(LL, "Plantillas").grid(row=0, column=0, padx=12, pady=(12, 6), sticky="ew")
+        self.tpl_box = tk.Frame(LL, bg=C["panel"])
+        self.tpl_box.grid(row=1, column=0, padx=9, sticky="ew")
+        self.caps(LL, "Espacios para imágenes").grid(row=2, column=0, padx=12, pady=(14, 2), sticky="ew")
+        self.slot_box = tk.Frame(LL, bg=C["panel"])
+        self.slot_box.grid(row=3, column=0, padx=6, sticky="ew")
+        self.caps(LL, "Toda la ventana").grid(row=4, column=0, padx=12, pady=(10, 2), sticky="ew")
+        gr = tk.Frame(LL, bg=C["panel"], padx=6, pady=4, cursor="hand2")
+        gr.grid(row=5, column=0, padx=6, pady=(0, 14), sticky="ew")
+        self.grad_mini = tk.Canvas(gr, width=40, height=26, highlightthickness=1, highlightbackground="#4a505c", bd=0)
+        self.grad_mini.pack(side="left")
+        box = tk.Frame(gr, bg=C["panel"])
+        box.pack(side="left", padx=8)
+        a1 = tk.Label(box, text="Fondo de toda la ventana", bg=C["panel"], fg=C["text"], font=fnt(-1), anchor="w")
+        a1.pack(anchor="w")
+        self.grad_mini_t = tk.Label(box, text="", bg=C["panel"], fg=C["muted"], font=fnt(-2), anchor="w",
+                                    justify="left", wraplength=200)
+        self.grad_mini_t.pack(anchor="w")
+        for w in (gr, self.grad_mini, box, a1, self.grad_mini_t):
+            w.bind("<Button-1>", lambda e: self.goto_gradient())
+
+        mid = self._stage(f, "Vista previa · toca un espacio para editarlo",
+                          "Los espacios marcados con + están libres: una imagen ahí nunca tapa botones. Admiten PNG, "
+                          "JPG y GIF animado.")
+        self.idle_view = tk.BooleanVar(value=False)
+        ttk.Checkbutton(mid.top, text="Ver como cuando no usas la ventana", variable=self.idle_view,
+                        command=self.render).pack(side="right")
+        self.cv_img, self.pv_img = mid.pcv, mid.pv
         self.cv_img.bind("<Button-1>", self.on_zone_click)
-        right = tk.Frame(f, bg=C["panel"], width=300)
-        right.grid(row=0, column=2, sticky="nse", padx=12)
-        self.slot_title = self.caps(right, "")
-        self.slot_title.pack(fill="x", pady=(12, 6))
-        sc = self.card(right)
-        sc.pack(fill="x")
+
+        right = Scrollable(f, C["panel"], width=320)
+        right.grid(row=0, column=2, sticky="nse")
+        R = right.inner
+        R.columnconfigure(0, weight=1)
+        self.slot_title = self.caps(R, "")
+        self.slot_title.grid(row=0, column=0, padx=12, pady=(12, 6), sticky="ew")
+        sc = self.card(R)
+        sc.grid(row=1, column=0, padx=12, sticky="ew")
         top = tk.Frame(sc, bg=C["panel"])
         top.pack(fill="x")
         self.slot_thumb = tk.Label(top, bg="#0d0e11", image=self._blank(96, 60), width=96, height=60)
         self.slot_thumb.pack(side="left")
         side = tk.Frame(top, bg=C["panel"])
         side.pack(side="left", padx=10)
-        ttk.Button(side, text="Importar imagen…", command=self.import_slot_image).pack(anchor="w", fill="x")
-        ttk.Button(side, text="Usar la imagen de los colores", command=self.slot_use_palette).pack(anchor="w",
-                                                                                                    fill="x", pady=4)
+        ttk.Button(side, text="Imagen o GIF…", command=self.import_slot_image).pack(anchor="w", fill="x")
+        ttk.Button(side, text="La de los colores", command=self.slot_use_palette).pack(anchor="w", fill="x", pady=4)
         self.slot_size = self.lbl(sc, "", -2, color="muted", wrap=260)
         self.slot_size.pack(fill="x", pady=(8, 4))
         self.lbl(sc, "Ajuste", -1, color="muted").pack(anchor="w")
@@ -591,29 +770,39 @@ class App:
         self.fit_cb.pack(fill="x")
         self.fit_cb.bind("<<ComboboxSelected>>", lambda e: self.on_slot_setting())
         self.slot_vars = {}
-        for key, txt, a, b, step, unit in (("op", "Opacidad", 10, 100, 5, " %"),
-                                           ("dark", "Oscurecer con el color de fondo", 0, 90, 5, " %"),
-                                           ("blur", "Desenfoque", 0, 12, 1, " px")):
+        for key, txt, a, b_, step, unit in (("op", "Opacidad", 10, 100, 5, " %"),
+                                            ("dark", "Oscurecer con el color de fondo", 0, 90, 5, " %"),
+                                            ("blur", "Desenfoque", 0, 12, 1, " px")):
             line = tk.Frame(sc, bg=C["panel"])
             line.pack(fill="x", pady=(8, 0))
             self.lbl(line, txt, -1).pack(side="left")
             out = self.lbl(line, "", -1, color="muted", mono=True)
             out.pack(side="right")
             var = tk.IntVar()
-            s = self.scale(sc, var, a, b, step, self.on_slot_setting)
+            s = self.scale(sc, var, a, b_, step, self.on_slot_setting)
             s.pack(fill="x")
             self.slot_vars[key] = (var, out, unit, s)
         self.slot_del = ttk.Button(sc, text="Quitar imagen", command=self.slot_remove)
         self.slot_del.pack(anchor="w", pady=(10, 0))
-        self.caps(right, "Peso del tema").pack(fill="x", pady=(16, 6))
-        self.weight_lbl = self.lbl(right, "", -1, wrap=280)
-        self.weight_lbl.pack(fill="x")
-        self.lbl(right, "El Estudio deja cada imagen lista (recortada, oscurecida y desenfocada) antes de guardarla, "
-                        "así Numpad Macros solo tiene que mostrarla.", -2, color="muted", wrap=280).pack(fill="x",
-                                                                                                 pady=(12, 0))
+
+        self.caps(R, "Animaciones (GIF)").grid(row=2, column=0, padx=12, pady=(16, 6), sticky="ew")
+        ac = self.card(R)
+        ac.grid(row=3, column=0, padx=12, sticky="ew")
+        self.gif_pause_var = tk.BooleanVar(value=self.gif_pause)
+        ttk.Checkbutton(ac, text="Pausar al no usar la ventana", variable=self.gif_pause_var,
+                        command=self.on_gif_pause).pack(anchor="w")
+        self.lbl(ac, "Ahorra procesador y batería. Se reproducen en bucle a su velocidad original. Máximo "
+                     f"{npt.MAX_FRAMES} cuadros por GIF.", -2,
+                 color="muted", wrap=260).pack(fill="x", pady=(6, 0))
+        self.caps(R, "Peso del tema").grid(row=4, column=0, padx=12, pady=(16, 6), sticky="ew")
+        self.weight_lbl = self.lbl(R, "", -1, wrap=270)
+        self.weight_lbl.grid(row=5, column=0, padx=12, sticky="ew")
+        self.lbl(R, "El Estudio deja cada imagen lista (recortada, oscurecida y desenfocada) antes de guardarla, "
+                    "así Numpad Macros solo tiene que mostrarla.", -2, color="muted", wrap=270).grid(
+            row=6, column=0, padx=12, pady=(12, 14), sticky="ew")
         return f
 
-    # ---------------------------------------------------------------- 3 · exportar
+    # ---------------------------------------------------------------- 4 · exportar
     def _build_exp(self):
         f = tk.Frame(self.body, bg=C["panel"], padx=18, pady=16)
         f.columnconfigure(0, weight=1, uniform="c")
@@ -654,7 +843,10 @@ class App:
                      ("Contenido", "Nombre, autor, descripción, los 22 colores con la transparencia de cada uno y la "
                                    "opacidad de la ventana, comprimidos y cifrados (AES-256-GCM). Con un editor de "
                                    "texto solo se ven símbolos."),
-                     ("Imágenes", "Las de cada espacio, ya preparadas, en PNG. También van cifradas."),
+                     ("Fondo", "Color sólido o degradado: sus colores, dónde va cada uno y desde dónde empieza."),
+                     ("Secciones", "Fondo, contenido y borde de realce de cada una de las 6 secciones."),
+                     ("Imágenes", "Las de los 9 espacios, ya preparadas, en PNG o animadas (con todos sus cuadros). "
+                                  "También van cifradas."),
                      ("Firma", firma)):
             row = tk.Frame(b, bg=C["panel"], highlightthickness=0)
             row.pack(fill="x", pady=3)
@@ -682,7 +874,7 @@ class App:
                     "el tema después.", -2, color="muted", wrap=480).pack(fill="x", pady=(12, 0))
         return f
 
-    # ---------------------------------------------------------------- 4 · clave
+    # ---------------------------------------------------------------- 5 · clave
     def _build_key(self):
         f = tk.Frame(self.body, bg=C["panel"], padx=18, pady=16)
         f.columnconfigure(0, weight=1, uniform="c")
@@ -790,6 +982,12 @@ class App:
     def eff(self):
         return L.effective(self.colors, self.alpha)
 
+    def gradient(self) -> dict:
+        """El degradado que se usa (vacío si el fondo es de color sólido)."""
+        if self.grad["on"] and len(self.grad["colores"]) >= 2:
+            return {"colores": [list(s) for s in self.grad["colores"]], "desde": self.grad["desde"]}
+        return {}
+
     def render(self):
         if not hasattr(self, "rows"):
             return
@@ -805,11 +1003,25 @@ class App:
         self.win_out.configure(text=f"{self.window['opacidad']} %")
         self.idle_out.configure(text=f"{self.window['sin_usar']} %")
         self.kind_lbl.configure(text="Oscuro" if L.is_dark(self.colors) else "Claro")
+        self._paint_grad()
+        common = dict(gradient=self.gradient() or None, sections=self.sections, wall=self.wall_var.get())
         if self.screen == "edit":
-            self.pv_edit.draw(e, self.slot_image, hover=self.hover_var.get())
+            self.pv_edit.draw(e, self.slot_frames, opacity=self.window["opacidad"], hover=self.hover_var.get(),
+                              **common)
+        elif self.screen == "sec":
+            self.pv_sec.draw(e, self.slot_frames, opacity=self.window["opacidad"], mode="sec", sel=self.sec_sel,
+                             **common)
+            self._paint_secs()
         elif self.screen == "img":
-            self.pv_img.draw(e, self.slot_image, zones=True, sel_zone=self.slot_sel)
+            idle = self.idle_view.get()
+            paused = idle and self.gif_pause
+            self.pv_img.draw(e, (lambda s, z: self.slot_frames(s, z, still=True)) if paused else self.slot_frames,
+                             opacity=self.window["sin_usar"] if idle else self.window["opacidad"], mode="img",
+                             sel=self.slot_sel, **common)
             self._paint_slots()
+        for k, pv in (("edit", self.pv_edit), ("sec", self.pv_sec), ("img", self.pv_img)):
+            if k != self.screen:
+                pv.stop()
         self._paint_legibility()
         self._paint_author()
         if self.screen == "exp":
@@ -851,16 +1063,16 @@ class App:
         for w in self.leg_rows.winfo_children():
             w.destroy()
         e = self.eff()
-        rows = L.legibility(self.colors, self.alpha, self.window)
+        rows = self.legibility_rows()
         bad = sum(1 for r in rows if r[3] == "bad")
         warn = sum(1 for r in rows if r[3] == "warn")
-        pairs = {p[0]: (p[1], p[2]) for p in L.PAIRS}
-        for name, rv, _mn, st in rows:
+        pairs = {p[0]: (e[p[2]], e[p[1]]) for p in L.PAIRS}
+        for name, rv, demo, st in rows:
             fr = tk.Frame(self.leg_rows, bg=C["panel"])
             fr.pack(fill="x", pady=1)
-            if name in pairs:
-                fg, bgk = pairs[name]
-                tk.Label(fr, text="Aa", bg=e[bgk], fg=e[fg], font=fnt(-2, True), padx=4).pack(side="left")
+            demo = pairs.get(name) or demo
+            if demo:
+                tk.Label(fr, text="Aa", bg=demo[0], fg=demo[1], font=fnt(-2, True), padx=4).pack(side="left")
                 val = f"{rv:.1f}:1"
             else:
                 val = f"{int(rv)} %"
@@ -879,6 +1091,19 @@ class App:
             self.leg_sum.configure(text="Todo legible. Mínimo 4.5:1 para texto y 3:1 para texto secundario, ya con la "
                                         "transparencia aplicada.", fg=C["ok_text"])
         self.leg_bad = bad
+
+    def legibility_rows(self):
+        """Filas de legibilidad: (nombre, valor, (fondo, texto) o None, estado). Incluye el degradado y las
+        secciones que cambiaron (estas solo avisan: atenuar una sección es a propósito)."""
+        rows = [(n, r, None, st) for n, r, _mn, st in L.legibility(self.colors, self.alpha, self.window)]
+        g = L.gradient_check(self.colors, self.alpha, self.gradient())
+        if g:
+            rows.append(("Texto sobre el degradado", g[0], (g[1], self.eff()["text"]), g[2]))
+        for k, name, r, pe, te, st, changed, img in L.section_rows(self.colors, self.alpha, self.sections,
+                                                                    self.gradient(), self.images):
+            if changed:
+                rows.append((f"Sección · {name}{' (con imagen)' if img else ''}", r, (pe, te), st))
+        return rows
 
     def _paint_author(self):
         if self.mode == "creador":
@@ -913,6 +1138,11 @@ class App:
             sw.bind("<Button-1>", lambda e, j=i: self.set_pal_acc(j))
             tk.Label(cell, text=f"{round(n * 100)}%", bg=C["panel"], fg=C["muted"], font=fnt(-3, mono=True)).pack()
 
+    # mini dibujo de cada plantilla (en un lienzo de 110 × 52): paneles y zonas
+    _SK = {"banner": (0, 0, 110, 11), "logo": (3, 3, 6, 6), "headmid": (40, 3, 30, 6), "keys": (4, 15, 38, 22),
+           "leftbot": (4, 39, 38, 6), "tabsend": (88, 13, 20, 5), "corner": (47, 31, 61, 14),
+           "footband": (47, 47, 61, 5), "foot": (48, 48, 30, 3)}
+
     def _paint_slots(self):
         for w in self.tpl_box.winfo_children():
             w.destroy()
@@ -920,52 +1150,96 @@ class App:
         for i, (tid, name, slots) in enumerate(tpls):
             on = tid == self.template
             fr = tk.Frame(self.tpl_box, bg=C["acc_bg"] if on else C["panel2"], highlightthickness=1,
-                          highlightbackground=C["acc"] if on else C["line"], padx=6, pady=6, cursor="hand2")
-            fr.grid(row=i // 2, column=i % 2, padx=3, pady=3, sticky="ew")
-            sk = tk.Canvas(fr, width=110, height=40, bg="#0f1115", highlightthickness=0)
+                          highlightbackground=C["acc"] if on else C["line"], padx=5, pady=5, cursor="hand2")
+            last = tid == "custom"
+            fr.grid(row=i // 2, column=0 if last else i % 2, columnspan=2 if last else 1, padx=3, pady=3, sticky="ew")
+            sk = tk.Canvas(fr, width=110, height=52, bg="#0f1115", highlightthickness=0)
             sk.pack()
+            for x, y, w, h in ((2, 13, 42, 34), (47, 13, 39, 5), (47, 19, 61, 26)):
+                sk.create_rectangle(x, y, x + w, y + h, fill="#1d2028", width=0)
             has = (lambda s: s in slots) if slots is not None else (lambda s: s in self.images)
-            sk.create_rectangle(4, 4, 106, 12, fill=C["acc"] if has("banner") else "#2a2e37", width=0)
-            sk.create_rectangle(4, 15, 44, 36, fill=C["acc"] if has("keys") else "#2a2e37", width=0)
-            sk.create_rectangle(48, 15, 106, 36, fill="#2a2e37", width=0)
-            lab = tk.Label(fr, text=name, bg=fr["bg"], fg=C["text"], font=fnt(-1, True), anchor="w")
+            for slot, (x, y, w, h) in self._SK.items():
+                sk.create_rectangle(x, y, x + w, y + h, fill=C["acc"] if has(slot) else "#2a2e37", width=0)
+            lab = tk.Label(fr, text=name, bg=fr["bg"], fg=C["text"], font=fnt(-2, True), anchor="w")
             lab.pack(fill="x", pady=(4, 0))
             for w in (fr, sk, lab):
-                w.bind("<Button-1>", lambda e, t=tid: self.apply_template(t))
+                w.bind("<Button-1>", lambda e, tt=tid: self.apply_template(tt))
+        self.tpl_box.columnconfigure(0, weight=1, uniform="t")
+        self.tpl_box.columnconfigure(1, weight=1, uniform="t")
         for w in self.slot_box.winfo_children():
             w.destroy()
         self._slot_photos = []
-        for slot, name in L.SLOT_NAMES.items():
-            on = slot == self.slot_sel
-            s = self.images.get(slot)
-            fr = tk.Frame(self.slot_box, bg=C["acc_bg"] if on else C["panel"], highlightthickness=1,
-                          highlightbackground=C["acc_dim"] if on else C["panel"], padx=6, pady=4, cursor="hand2")
-            fr.pack(fill="x", pady=1)
-            th = tk.Label(fr, bg="#0d0e11", image=self._blank(40, 26), width=40, height=26)
-            if s:
-                im = L.from_bytes(s["src"]).convert("RGB")
-                im.thumbnail((40, 26))
-                p = ImageTk.PhotoImage(im)
-                self._slot_photos.append(p)
-                th.configure(image=p, width=40, height=26)
-            th.pack(side="left")
-            box = tk.Frame(fr, bg=fr["bg"])
-            box.pack(side="left", padx=8)
-            w, h = npt.IMAGE_SLOTS[slot]
-            a = tk.Label(box, text=name, bg=fr["bg"], fg=C["text"], font=fnt(-1), anchor="w")
-            a.pack(anchor="w")
-            b = tk.Label(box, text=f"{'Con imagen' if s else 'Vacío'} · {w} × {h} px", bg=fr["bg"], fg=C["muted"],
-                         font=fnt(-2), anchor="w")
-            b.pack(anchor="w")
-            for wdg in (fr, th, box, a, b):
-                wdg.bind("<Button-1>", lambda e, sl=slot: self.pick_slot(sl))
+        for grp, title in (("Detrás", "Detrás del contenido"), ("Libre", "En espacios libres")):
+            tk.Label(self.slot_box, text=title.upper(), bg=C["panel"], fg=C["muted"], font=fnt(-3, True),
+                     anchor="w").pack(fill="x", padx=6, pady=(8, 2))
+            for slot, (name, g, _d) in L.SLOTS.items():
+                if g != grp:
+                    continue
+                on = slot == self.slot_sel
+                s = self.images.get(slot)
+                fr = tk.Frame(self.slot_box, bg=C["acc_bg"] if on else C["panel"], highlightthickness=1,
+                              highlightbackground=C["acc_dim"] if on else C["panel"], padx=6, pady=4, cursor="hand2")
+                fr.pack(fill="x", pady=1)
+                th = tk.Label(fr, bg="#0d0e11", image=self._blank(40, 26), width=40, height=26)
+                if s:
+                    im = L.from_bytes(s["src"]).convert("RGB")
+                    im.thumbnail((40, 26))
+                    p = ImageTk.PhotoImage(im)
+                    self._slot_photos.append(p)
+                    th.configure(image=p, width=40, height=26)
+                th.pack(side="left")
+                box = tk.Frame(fr, bg=fr["bg"])
+                box.pack(side="left", padx=8, fill="x", expand=True)
+                row1 = tk.Frame(box, bg=fr["bg"])
+                row1.pack(anchor="w", fill="x")
+                a = tk.Label(row1, text=name, bg=fr["bg"], fg=C["text"], font=fnt(-1), anchor="w", justify="left",
+                             wraplength=170)
+                a.pack(side="left")
+                ws = [fr, th, box, row1, a]
+                if s and self.is_animated(slot):
+                    gl = tk.Label(row1, text="GIF", bg=C["sig_bg"], fg=C["sig_text"], font=fnt(-4, True), padx=3)
+                    gl.pack(side="left", padx=4)
+                    ws.append(gl)
+                w_, h_ = npt.IMAGE_SLOTS[slot]
+                b = tk.Label(box, text=f"{'Con imagen' if s else 'Vacío'} · {w_} × {h_} px", bg=fr["bg"],
+                             fg=C["muted"], font=fnt(-2), anchor="w")
+                b.pack(anchor="w")
+                ws.append(b)
+                for wdg in ws:
+                    wdg.bind("<Button-1>", lambda e, sl=slot: self.pick_slot(sl))
+        # degradado (fila «Toda la ventana»)
+        self.grad_mini.delete("all")
+        g = self.gradient()
+        if g:
+            gi = L.gradient_image(g, (40, 26))
+            self._grad_mini_photo = ImageTk.PhotoImage(gi)
+            self.grad_mini.create_image(0, 0, anchor="nw", image=self._grad_mini_photo)
+            self.grad_mini_t.configure(text=f"Degradado de {len(g['colores'])} colores · desde "
+                                            f"{L.GRADIENT_DIRS[g['desde']][1]}")
+        else:
+            self.grad_mini.create_rectangle(0, 0, 42, 28, fill=self.colors["bg"], width=0)
+            self.grad_mini_t.configure(text="Color sólido · tócalo para usar un degradado")
         # ajustes del espacio elegido
         s = self.images.get(self.slot_sel)
         d = s or L.SLOT_DEFAULTS[self.slot_sel]
         self.slot_title.configure(text=L.SLOT_NAMES[self.slot_sel].upper())
         w, h = npt.IMAGE_SLOTS[self.slot_sel]
-        self.slot_size.configure(text=f"Se guarda a {w} × {h} px." + ("" if s else
-                                 " Importa una imagen o usa la de los colores."))
+        txt = ""
+        if s and self.is_animated(self.slot_sel):
+            n = L.frame_count(s["src"])
+            txt = (f"GIF animado · {n} cuadros · {max(1, len(s['src']) // 1024)} KB. Se guarda con todos sus cuadros, "
+                   "ya preparados. ")
+            if s.get("cuadros_originales", 0) > npt.MAX_FRAMES:
+                txt += f"Tenía {s['cuadros_originales']} cuadros: se recortó a {npt.MAX_FRAMES}. "
+        elif s and self.is_animated(self.slot_sel, source=True):
+            txt = ("Este espacio usa el primer cuadro del GIF: los GIF se mueven en los espacios libres (centro del "
+                   "encabezado, final de las pestañas, debajo de las teclas y el pie). ")
+        txt += f"Se guarda a {w} × {h} px."
+        if self.slot_sel in npt.SLOTS_FREE:
+            txt += " Se adapta al espacio libre y nunca tapa botones."
+        if not s:
+            txt += " Importa una imagen o un GIF, o usa la imagen de los colores."
+        self.slot_size.configure(text=txt)
         if s:
             im = L.from_bytes(s["src"]).convert("RGB")
             im.thumbnail((96, 60))
@@ -982,11 +1256,116 @@ class App:
             out.configure(text=f"{d[key]}{unit}")
             sc.configure(state=state)
         self.slot_del.configure(state=state)
+        if self.gif_pause_var.get() != self.gif_pause:
+            self.gif_pause_var.set(self.gif_pause)
         kb = self.theme_weight() // 1024
         n = len(self.images)
-        self.weight_lbl.configure(text=f"{max(kb, 3)} KB aprox. · {n} imagen{'' if n == 1 else 'es'}. "
-                                       f"Límite por tema: {npt.MAX_FILE // 1024 // 1024} MB.",
+        ng = sum(1 for k in self.images if self.is_animated(k))
+        self.weight_lbl.configure(text=f"{max(kb, 3)} KB aprox. · colores 3 KB + {n} imagen{'' if n == 1 else 'es'}"
+                                       f"{f' ({ng} GIF)' if ng else ''}. Límite por tema: "
+                                       f"{npt.MAX_FILE // 1024 // 1024} MB.",
                                   fg=C["bad_text"] if kb * 1024 > npt.MAX_FILE else C["text"])
+
+    def _paint_grad(self):
+        on = self.grad["on"]
+        for key, b in self.grad_seg.items():
+            sel = key == on
+            b.configure(bg=C["panel2"] if sel else C["bg"], fg=C["text"] if sel else C["muted"],
+                        font=fnt(-1, sel))
+        if not on:
+            self.grad_ed.grid_remove()
+            return
+        self.grad_ed.grid(row=2, column=0, sticky="ew")
+        self._paint_grad_bar()
+        stops = self.grad["colores"]
+        if self._grad_count != len(stops):
+            self._grad_count = len(stops)
+            for w in self.grad_rows.winfo_children():
+                w.destroy()
+            self.grad_widgets = []
+            for i in range(len(stops)):
+                sw = tk.Canvas(self.grad_rows, width=26, height=18, highlightthickness=1,
+                               highlightbackground="#3a3e48", bd=0, cursor="hand2")
+                sw.grid(row=i, column=0, padx=(0, 6), pady=2)
+                sw.bind("<Button-1>", lambda e, j=i: self.grad_pick(j))
+                var = tk.IntVar(value=stops[i][1])
+                sc = self.scale(self.grad_rows, var, 0, 100, 1, lambda j=i: self.grad_pos(j))
+                sc.configure(length=60)
+                sc.grid(row=i, column=1, sticky="ew")
+                out = tk.Label(self.grad_rows, text="", bg=C["panel"], fg=C["muted"], font=fnt(-2, mono=True),
+                               width=5)
+                out.grid(row=i, column=2)
+                x = ttk.Button(self.grad_rows, text="✕", width=2, style="Small.TButton",
+                               command=lambda j=i: self.grad_remove(j))
+                x.grid(row=i, column=3, padx=(4, 0))
+                self.grad_widgets.append((sw, var, out, x))
+        for i, (sw, var, out, x) in enumerate(self.grad_widgets):
+            c, pos = stops[i]
+            sw.configure(bg=c)
+            if var.get() != pos:
+                var.set(pos)
+            out.configure(text=f"{pos} %")
+            x.configure(state="normal" if len(stops) > npt.GRADIENT_STOPS[0] else "disabled")
+        self.grad_add.configure(state="normal" if len(stops) < npt.GRADIENT_STOPS[1] else "disabled")
+        for d, b in self.grad_dirs.items():
+            sel = d == self.grad["desde"]
+            b.configure(bg=C["acc"] if sel else C["panel2"], fg=C["on_acc"] if sel else C["muted"])
+        _arrow, start, end = L.GRADIENT_DIRS[self.grad["desde"]]
+
+        def prep(x):
+            return "a " if x in ("la izquierda", "la derecha") else ("en " if x.startswith("el ") else "")
+        if self.grad["desde"] == "c":
+            self.grad_note.configure(text="Empieza en el centro y se abre en círculo hacia los bordes.")
+        else:
+            self.grad_note.configure(text=f"Empieza {prep(start)}{start} y termina {prep(end)}{end}.")
+
+    def _paint_grad_bar(self):
+        if not self.grad["on"] or len(self.grad["colores"]) < 2:
+            return
+        cv = self.grad_bar
+        w = max(cv.winfo_width(), 40)
+        gi = L.gradient_image({"colores": self.grad["colores"], "desde": "l"}, (w, 20))
+        self._grad_bar_photo = ImageTk.PhotoImage(gi)
+        cv.delete("all")
+        cv.create_image(0, 0, anchor="nw", image=self._grad_bar_photo)
+
+    def _paint_secs(self):
+        for k, r in self.sec_rows.items():
+            s = L.section(self.sections, k)
+            sel = k == self.sec_sel
+            bg = C["acc_bg"] if sel else C["panel"]
+            for w in (r["frame"], r["head"], r["name"], r["code"], r["note"]):
+                w.configure(bg=bg)
+            r["frame"].configure(highlightbackground=C["acc_dim"] if sel else C["panel"])
+            r["code"].configure(text=f"{s['fondo']} % · {s['contenido']} %{' · realce' if s['realce'] else ''}")
+            for key, (var, out, line) in r["vars"].items():
+                if var.get() != s[key]:
+                    var.set(s[key])
+                out.configure(text=f"{s[key]} %", bg=bg)
+                line.configure(bg=bg)
+                for c in line.winfo_children():
+                    c.configure(bg=bg)
+            if r["realce"].get() != s["realce"]:
+                r["realce"].set(s["realce"])
+        self.focus_btn.configure(text=f"Destacar «{L.SECTIONS[self.sec_sel][0]}»")
+        for w in self.sec_checks.winfo_children():
+            w.destroy()
+        rows = L.section_rows(self.colors, self.alpha, self.sections, self.gradient(), self.images)
+        low = 0
+        for k, name, r, pe, te, st, changed, img in rows:
+            fr = tk.Frame(self.sec_checks, bg=C["panel"])
+            fr.pack(fill="x", pady=1)
+            tk.Label(fr, text="Aa", bg=pe, fg=te, font=fnt(-2, True), padx=4).pack(side="left")
+            self.lbl(fr, name + (" (con imagen)" if img else ""), -2).pack(side="left", padx=6)
+            fg, bgc = (C["ok_text"], C["ok_bg"]) if st == "ok" else (C["warn_text"], C["warn_bg"])
+            tk.Label(fr, text=f"{r:.1f}:1", bg=bgc, fg=fg, font=fnt(-2, mono=True), padx=5).pack(side="right")
+            low += st != "ok"
+        if low:
+            self.sec_sum.configure(text=f"{low} {'secciones' if low > 1 else 'sección'} atenuada{'s' if low > 1 else ''}. Se "
+                                        "puede exportar; es normal si las atenuaste a propósito para resaltar otra.",
+                                   fg=C["warn_text"])
+        else:
+            self.sec_sum.configure(text="Todas las secciones se leen bien.", fg=C["ok_text"])
 
     def _paint_mini(self):
         cv = self.exp_mini
@@ -1009,20 +1388,29 @@ class App:
         self._paint_mini()
         for c in self.exp_checks.winfo_children():
             c.destroy()
-        rows = L.legibility(self.colors, self.alpha, self.window)
+        rows = self.legibility_rows()
         bad = sum(1 for r in rows if r[3] == "bad")
         warn = sum(1 for r in rows if r[3] == "warn")
         reserved = self.mode != "creador" and npt.is_reserved_name(self.author)
         n = len(self.images)
+        anim = [s for s in self.images if self.is_animated(s)]
         checks = [("ok", "Los 22 colores están completos")]
         checks.append(("bad", f"{bad} combinación ilegible: vuelve a «Editar tema»") if bad else
                       ("warn", f"Legible, con {warn} combinación justa") if warn else
                       ("ok", "Texto legible en todas las capas"))
         t = self.build_theme_meta()
+        nl = sum(1 for v in self.alpha.values() if v < 100)
         checks.append(("ok", f"Admite transparencia: ventana {self.window['opacidad']} % (sin usar "
-                             f"{self.window['sin_usar']} %) · {sum(1 for v in self.alpha.values() if v < 100)} capas "
-                             "con nivel propio") if t.transparency else ("ok", "Sin transparencia (opaco)"))
-        checks.append(("ok", f"{n} imagen{'es' if n != 1 else ''}: " + ", ".join(
+                             f"{self.window['sin_usar']} %) · {nl} {'capa' if nl == 1 else 'capas'} con nivel propio")
+                      if t.transparency else ("ok", "Sin transparencia (opaco)"))
+        g = self.gradient()
+        checks.append(("ok", f"Fondo: degradado de {len(g['colores'])} colores, desde "
+                             f"{L.GRADIENT_DIRS[g['desde']][1]}" if g else "Fondo: color sólido"))
+        ns = len(L.sections_clean(self.sections))
+        checks.append(("ok", f"Transparencia por sección: {ns} {'sección' if ns == 1 else 'secciones'} "
+                             f"ajustada{'s' if ns != 1 else ''}" if ns else "Transparencia por sección: normal"))
+        gif = f" ({len(anim)} animada{'s' if len(anim) != 1 else ''})" if anim else ""
+        checks.append(("ok", f"{n} imagen{'es' if n != 1 else ''}{gif}: " + ", ".join(
             L.SLOT_NAMES[s].lower() for s in self.images)) if n else ("ok", "Sin imágenes (solo colores)"))
         kb = self.theme_weight()
         if kb > npt.MAX_FILE:
@@ -1061,21 +1449,30 @@ class App:
                                  fg=C["sig_text"] if official else C["text"])
 
     # ================================================================ imágenes
-    def slot_image(self, slot, size, under):
-        """Imagen de un espacio preparada para la vista previa (con caché)."""
+    def is_animated(self, slot, source=False) -> bool:
+        """¿La imagen del espacio se mueve? (``source``: ¿la original es animada, aunque el espacio no lo sea?)"""
+        s = self.images.get(slot)
+        if not s or (not source and slot not in npt.ANIMATED_SLOTS):
+            return False
+        key = ("n", hashlib.md5(s["src"]).digest())
+        if key not in self._cache:
+            self._cache[key] = L.frame_count(s["src"]) > 1
+        return self._cache[key]
+
+    def slot_frames(self, slot, size, still=False):
+        """Cuadros de un espacio preparados para la vista previa (con caché). ``still``: solo el primero."""
         s = self.images.get(slot)
         if not s:
             return None
         key = (slot, size, self.colors["bg"], s["fit"], s["op"], s["dark"], s["blur"], hashlib.md5(s["src"]).digest())
         if key not in self._cache:
-            if len(self._cache) > 40:
+            if len(self._cache) > 60:
                 self._cache.clear()
-            src = L.from_bytes(s["src"])
-            sw, sh = npt.IMAGE_SLOTS[slot]
-            blur = s["blur"] * size[0] / sw          # desenfoque proporcional al tamaño de la vista
-            self._cache[key] = L.render_slot(src, slot, s["fit"], s["op"], s["dark"], round(blur), self.colors["bg"],
-                                             size=size)
-        return self._cache[key]
+            sw, _sh = npt.IMAGE_SLOTS[slot]
+            self._cache[key] = L.render_slot_frames(s["src"], slot, s, self.colors["bg"], size=size,
+                                                    blur_scale=size[0] / sw)
+        fr = self._cache[key]
+        return fr[:1] if still else fr
 
     def final_images(self) -> dict:
         out = {}
@@ -1083,9 +1480,7 @@ class App:
             key = ("final", slot, self.colors["bg"], s["fit"], s["op"], s["dark"], s["blur"],
                    hashlib.md5(s["src"]).digest())
             if key not in self._cache:
-                im = L.render_slot(L.from_bytes(s["src"]), slot, s["fit"], s["op"], s["dark"], s["blur"],
-                                   self.colors["bg"])
-                self._cache[key] = L.to_png(im)
+                self._cache[key] = L.encode(L.render_slot_frames(s["src"], slot, s, self.colors["bg"]))
             out[slot] = self._cache[key]
         return out
 
@@ -1096,9 +1491,12 @@ class App:
         self.template = tid
         tpl = next((t for t in L.TEMPLATES if t[0] == tid), None)
         if tpl:
-            for slot in L.SLOT_NAMES:
+            for slot in L.SLOTS:
                 if slot in tpl[2]:
-                    self.images.setdefault(slot, {"src": self.pal_img, **L.SLOT_DEFAULTS[slot]})
+                    if slot not in self.images:
+                        sample = L.TEMPLATE_SAMPLES.get(slot) if tid == "stickers" or tid == "todo" else None
+                        src = L.sample_anim(sample) if sample else self.pal_img
+                        self.images[slot] = {"src": src, **L.SLOT_DEFAULTS[slot]}
                 else:
                     self.images.pop(slot, None)
             if tpl[2]:
@@ -1120,42 +1518,51 @@ class App:
         if not s or self._quiet:
             return
         inv = {v: k for k, v in L.FITS.items()}
-        s["fit"] = inv.get(self.fit_var.get(), "cover")
-        for key, (var, _o, _u, _s) in self.slot_vars.items():
-            s[key] = int(var.get())
+        new = {"fit": inv.get(self.fit_var.get(), "cover"),
+               **{key: int(var.get()) for key, (var, _o, _u, _s) in self.slot_vars.items()}}
+        if all(s.get(k) == v for k, v in new.items()):
+            return
+        s.update(new)
         self.template = "custom"
         self.mark()
         self.render()
 
+    def on_gif_pause(self):
+        self.gif_pause = bool(self.gif_pause_var.get())
+        self.mark()
+        self.render()
+
     def _read_image(self, path):
+        """Imagen importada (también GIF animado), lista para el proyecto. Devuelve (bytes, cuadros originales)."""
         try:
             if os.path.getsize(path) > 20 * 1024 * 1024:
                 raise ValueError("La imagen pesa más de 20 MB. Prueba con una más liviana.")
-            im = Image.open(path)
-            im.load()
-            # se guarda una copia razonable (no hace falta más para 1200 px de ancho)
-            im = im.convert("RGBA")
-            im.thumbnail((1600, 1600))
-            return L.to_png(im)
+            with open(path, "rb") as fh:
+                raw = fh.read()
+            n = L.source_count(raw)
+            return L.prepare_source(raw), n
         except Exception as e:
             messagebox.showerror(APP, f"No se pudo abrir la imagen:\n{e}", parent=self.root)
-            return None
+            return None, 0
 
     def import_slot_image(self):
-        path = filedialog.askopenfilename(parent=self.root, title="Elige una imagen", filetypes=IMG_TYPES)
+        path = filedialog.askopenfilename(parent=self.root, title="Elige una imagen o un GIF", filetypes=IMG_TYPES)
         if not path:
             return
-        data = self._read_image(path)
+        data, n = self._read_image(path)
         if data:
             self.images[self.slot_sel] = {**(self.images.get(self.slot_sel) or L.SLOT_DEFAULTS[self.slot_sel]),
-                                          "src": data}
+                                          "src": data, "cuadros_originales": n}
             self.template = "custom"
             self.mark()
             self.render()
+            if n > npt.MAX_FRAMES:
+                self.toast(f"El GIF tiene {n} cuadros: se usan los primeros {npt.MAX_FRAMES}.", "warn")
 
     def slot_use_palette(self):
         self.images[self.slot_sel] = {**(self.images.get(self.slot_sel) or L.SLOT_DEFAULTS[self.slot_sel]),
                                       "src": self.pal_img}
+        self.images[self.slot_sel].pop("cuadros_originales", None)
         self.template = "custom"
         self.mark()
         self.render()
@@ -1165,6 +1572,109 @@ class App:
         self.template = "custom"
         self.mark()
         self.render()
+
+    # ================================================================ fondo de la ventana
+    def grad_mode(self, on):
+        if on and len(self.grad["colores"]) < 2:
+            self.grad["colores"] = L.gradient_from_theme(self.colors)
+        self.grad["on"] = on
+        self.mark()
+        self.render()
+
+    def grad_set(self, stops, msg=None):
+        self.grad["colores"] = [[c, int(p)] for c, p in stops][:npt.GRADIENT_STOPS[1]]
+        self.grad["on"] = True
+        self.mark()
+        self.render()
+        if msg:
+            self.toast(msg, "ok")
+
+    def grad_add_stop(self):
+        if len(self.grad["colores"]) < npt.GRADIENT_STOPS[1]:
+            self.grad_set(L.gradient_add_stop(self.grad["colores"]))
+
+    def grad_remove(self, i):
+        if len(self.grad["colores"]) > npt.GRADIENT_STOPS[0]:
+            self.grad_set([s for j, s in enumerate(self.grad["colores"]) if j != i])
+
+    def grad_theme(self):
+        self.grad_set(L.gradient_from_theme(self.colors), "Degradado hecho con los colores del tema.")
+
+    def grad_image(self):
+        stops = L.gradient_from_palette(self.palette, L.is_dark(self.colors))
+        if stops:
+            self.grad_set(stops, f"Degradado con los colores de «{self.pal_name}», ajustados para que el texto se "
+                                 "lea.")
+
+    def grad_pick(self, i):
+        c = self.grad["colores"][i][0]
+        res = colorchooser.askcolor(color=c, parent=self.root, title=f"Color {i + 1} del degradado")
+        if res and res[1]:
+            self.grad["colores"][i][0] = res[1].lower()
+            self.mark()
+            self.render()
+
+    def grad_pos(self, i):
+        if self._quiet or i >= len(self.grad["colores"]):
+            return
+        v = int(self.grad_widgets[i][1].get())
+        if v != self.grad["colores"][i][1]:
+            self.grad["colores"][i][1] = v
+            self.mark()
+            self.render()
+
+    def grad_from(self, d):
+        self.grad["desde"] = d
+        self.mark()
+        self.render()
+
+    def goto_gradient(self):
+        self.show("edit")
+        if not self.grad["on"]:
+            self.grad_mode(True)
+        self.root.update_idletasks()
+        try:
+            cv = self.edit_left.cv
+            total = max(self.edit_left.inner.winfo_height(), 1)
+            cv.yview_moveto(max(0.0, (self.grad_box.winfo_y() - 40) / total))
+        except tk.TclError:
+            pass
+
+    # ================================================================ secciones
+    def select_section(self, k):
+        self.sec_sel = k
+        self.render()
+
+    def on_section_click(self, ev):
+        k = self.pv_sec.tag_at(ev.x, ev.y, "s:")
+        if k:
+            self.select_section(k)
+
+    def on_section(self, k):
+        if self._quiet:
+            return
+        r = self.sec_rows[k]
+        s = {"fondo": int(r["vars"]["fondo"][0].get()), "contenido": int(r["vars"]["contenido"][0].get()),
+             "realce": bool(r["realce"].get())}
+        if s == L.section(self.sections, k):
+            return
+        self.sections[k] = s
+        self.sections = L.sections_clean(self.sections)
+        self.sec_sel = k
+        self.mark()
+        self.render()
+
+    def focus_section(self):
+        self.sections = L.focus(self.sections, self.sec_sel)
+        self.mark()
+        self.render()
+        self.toast(f"«{L.SECTIONS[self.sec_sel][0]}» destacada: las demás secciones quedaron atenuadas.", "ok")
+
+    def apply_preset(self, pid):
+        self.sections = L.preset(pid)
+        self.mark()
+        self.render()
+        self.toast(f"Estilo «{L.PRESETS[pid][0]}» aplicado a las secciones.", "ok")
 
     # ================================================================ colores
     def select(self, tok):
@@ -1281,7 +1791,7 @@ class App:
         return ev.action
 
     def _palette_from_path(self, path):
-        data = self._read_image(path)
+        data, _n = self._read_image(path)
         if data:
             self._set_palette_from_bytes(data, os.path.basename(path))
 
@@ -1405,7 +1915,9 @@ class App:
         imgs = {slot: {"src": data, "fit": "cover", "op": 100, "dark": 0, "blur": 0}
                 for slot, data in t.images.items()}
         self.apply_state({"nombre": t.name, "version": _next_version(t.version), "descripcion": t.description,
-                          "colores": t.colors, "alfa": t.alpha, "ventana": t.window, "auto": False, "imagenes": imgs})
+                          "colores": t.colors, "alfa": t.alpha, "ventana": t.window, "auto": False, "imagenes": imgs,
+                          "degradado": {"on": bool(t.gradient), **t.gradient} if t.gradient else {},
+                          "secciones": t.sections, "pausar_animaciones": t.gif_pause})
         self.project_path = None
         self.dirty = True
         self._title()
@@ -1416,7 +1928,10 @@ class App:
                          colors=dict(self.colors), version=self.meta["version"].strip() or "1.0",
                          description=self.meta["descripcion"].strip(),
                          kind="oscuro" if L.is_dark(self.colors) else "claro",
-                         alpha={k: v for k, v in self.alpha.items() if v < 100}, window=dict(self.window))
+                         alpha={k: v for k, v in self.alpha.items() if v < 100}, window=dict(self.window),
+                         background={"tipo": "degradado", **self.gradient()} if self.gradient() else {},
+                         sections=L.sections_clean(self.sections),
+                         gif_pause=self.gif_pause)
 
     def export(self):
         try:
@@ -1797,12 +2312,25 @@ def main():
     if probe:
         errors = []
         root.report_callback_exception = lambda *e: (_callback_error(*e), errors.append(e))
-        def run(steps=("img", "exp", "key", "edit")):
+        def run(steps=("sec", "img", "exp", "key", "edit")):
             if steps:
                 app.show(steps[0])
                 root.after(400, lambda: run(steps[1:]))
             else:
                 app.apply_palette()
+                app.apply_template("todo")          # 8 espacios, con GIF animados
+                app.grad_mode(True)
+                app.grad_add_stop()
+                app.grad_from("c")
+                app.show("sec")
+                app.focus_section()
+                app.show("img")
+                root.update()
+                theme = app.build_theme_meta()     # se exporta y se vuelve a leer, como Numpad Macros
+                theme.images = app.final_images()
+                res = npt.read(npt.write(theme, npt.SigningKey.generate()))
+                if not (res.theme.gradient and res.theme.animated and res.theme.sections):
+                    errors.append("el tema exportado no trae degradado, secciones o animaciones")
                 root.update()
                 root.destroy()
                 if errors:

@@ -136,6 +136,7 @@ class ThemeArt:
         self.sections = theme.get("sections") or {}
         self._anims: list[dict] = []
         self._idle = False
+        self._pause = theme.get("gif_pause", True) is not False    # el tema puede pedir no pausarlos
         self._photos: dict = {}                     # referencias vivas de PhotoImage
         self._grad_full = None                      # (tamaño, imagen) del degradado de la ventana
         if HAVE_PIL and theme.get("image_slots") and theme.get("file"):
@@ -321,7 +322,7 @@ class ThemeArt:
 
     def set_idle(self, idle: bool):
         """Con la ventana sin usar (el mouse fuera) los GIF se pausan, como en el Estudio."""
-        self._idle = bool(idle)
+        self._idle = bool(idle) and self._pause
 
 
 # ================================================================ textos dibujados en un lienzo

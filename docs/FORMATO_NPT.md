@@ -64,6 +64,10 @@ firma Ed25519 de `OFFICIAL_KEY` (64, si va firmado). El contenido es el JSON del
   | `leftbot` ★ | Panel de teclas · espacio de abajo | 360 × 160 |
   | `foot` ★ | Pie · espacio libre | 420 × 28 |
 
+  El Estudio guarda los GIF que importas como **PNG animado** (APNG: conserva la transparencia), ya
+  recortados y oscurecidos, hasta 120 cuadros; `imagenes.<espacio>.cuadros` dice cuántos tiene. En los
+  espacios que no son ★ se guarda solo el primer cuadro.
+- `pausar_animaciones` (opcional, por defecto `true`): pausar las animaciones cuando la ventana no se usa.
 - `fondo` (opcional): fondo de toda la ventana. Sin la clave = color sólido (`colores.bg`).
   ```json
   "fondo": {"tipo": "degradado", "colores": [["#14161b", 0], ["#3a2c14", 55], ["#33294a", 100]], "desde": "c"}
@@ -100,6 +104,7 @@ firma Ed25519 de `OFFICIAL_KEY` (64, si va firmado). El contenido es el JSON del
 | `images` | Espacio → PNG o GIF (los 9 espacios de arriba) |
 | `background` | El `fondo` (degradado) o `{}` |
 | `sections` | Las `secciones` o `{}` |
+| `animated_slots`, `gif_pause` | Espacios con imagen animada y si se pausan cuando la ventana no se usa |
 | `description`, `kind` | Descripción y «oscuro» / «claro» |
 | `author_key` | Clave pública del autor (hex): identifica a la persona aunque cambie de nombre |
 | `reserved_name` | `True` si usa el nombre del creador oficial sin su firma: mostrar como Comunidad con aviso |

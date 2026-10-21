@@ -16,22 +16,30 @@ Viene en cada [Release](https://github.com/OkumaWsX/NumpadMacros/releases/latest
 ## Qué puedes hacer
 
 1. **Editar tema**: cambia las 22 capas de color, cada una con su propia transparencia, y la opacidad de la
-   ventana (en uso y cuando no la usas). La vista previa es la ventana de Numpad Macros 3.4: toca cualquier
-   parte para editar su color. El panel de legibilidad avisa si algún texto no se lee.
-2. **Colores desde una imagen**: importa (o arrastra) una imagen, el Estudio saca sus colores principales y
+   ventana (en uso y cuando no la usas). El **fondo de la ventana** puede ser un color o un **degradado** de
+   2 a 5 colores que empieza en una esquina, un lado o el centro. La vista previa es la ventana de Numpad
+   Macros 3.4.1, sobre un fondo de escritorio de ejemplo: toca cualquier parte para editar su color. El panel
+   de legibilidad avisa si algún texto no se lee.
+2. **Transparencia por sección**: el encabezado, el panel de teclas, las teclas, las pestañas, el panel de la
+   pestaña y el pie tienen cada uno la transparencia de su fondo y de su contenido, y un borde de realce.
+   «Destacar» deja una sección a todo color y atenúa las demás; también hay estilos rápidos.
+3. **Colores desde una imagen**: importa (o arrastra) una imagen, el Estudio saca sus colores principales y
    los reparte en el tema, oscuro o claro. Si algún texto queda ilegible, lo corrige solo.
-3. **Imágenes y plantillas**: pon imágenes en el banner del encabezado, detrás de las teclas o como logo, con
-   ajuste, opacidad, oscurecido y desenfoque. Las plantillas llenan los espacios de una vez.
-4. **Exportar**: crea el `.npt` cifrado y firmado. Con un editor de texto no se puede leer, y si alguien lo
+4. **Imágenes y plantillas**: 9 espacios. Cuatro van detrás del contenido (banner del encabezado, fondo de las
+   teclas, parte de abajo de la pestaña y banda del pie) y cinco en espacios libres que nunca tapan botones
+   (logo, centro del encabezado, final de las pestañas, debajo de las teclas y el pie). Admiten **GIF
+   animado** (hasta 120 cuadros), con ajuste, opacidad, oscurecido y desenfoque. Las plantillas llenan los
+   espacios de una vez.
+5. **Exportar**: crea el `.npt` cifrado y firmado. Con un editor de texto no se puede leer, y si alguien lo
    modifica, Numpad Macros lo rechaza.
-5. **Proyecto `.nptproj`**: guarda tu trabajo sin cifrar para seguir editándolo después.
+6. **Proyecto `.nptproj`**: guarda tu trabajo sin cifrar para seguir editándolo después.
 
 ## Comunidad y creador oficial
 
 Es el mismo programa para todos:
 
 - **Comunidad**: la primera vez el Estudio te pide un nombre de autor y crea tu **firma de autor**. Tus temas
-  salen en Numpad Macros como «Comunidad · tu nombre». Guarda una copia de tu firma (pantalla 4) para
+  salen en Numpad Macros como «Comunidad · tu nombre». Guarda una copia de tu firma (pantalla 5) para
   usarla en otra PC.
 - **Creador oficial**: si la clave oficial está en la PC, el Estudio abre en modo creador y firma los temas
   como «Oficial · OkumaWsX».
@@ -40,7 +48,7 @@ Es el mismo programa para todos:
 
 El Estudio usa la misma clave de firma de temas que el Publicador (`firma-temas-OkumaWsX.key`). Si el
 Publicador ya la tiene configurada en tu PC, el Estudio te ofrece usarla al abrirse. Si no, impórtala en
-la pantalla 4 («Importar copia…»). El Estudio solo la acepta si es la clave oficial. Esa clave **nunca** se
+la pantalla 5 («Importar copia…»). El Estudio solo la acepta si es la clave oficial. Esa clave **nunca** se
 sube a GitHub: el repositorio ignora los archivos `*.npkey` y `*.key`.
 
 Carpeta del Estudio: `%APPDATA%\NumpadMacros\estudio` (Windows), `~/Library/Application Support/NumpadMacros/estudio`

@@ -82,6 +82,83 @@ class LogicTest(unittest.TestCase):
         self.assertEqual(back["imagen_colores"], b"abc")
         self.assertEqual(back["alfa"], {"panel": 80})
 
+    def test_animated_slot(self):
+        gif = L.sample_anim("ecualizador")
+        self.assertGreater(L.frame_count(gif), 1)
+        for slot in ("headmid", "keys"):
+            fr = L.render_slot_frames(gif, slot, L.SLOT_DEFAULTS[slot], "#101010")
+            self.assertEqual(fr[0][0].size, L.npt.IMAGE_SLOTS[slot])
+            data = L.encode(fr)
+            self.assertEqual(L.npt.image_frames(data), len(fr))
+            self.assertEqual(L.npt.image_size(data), L.npt.IMAGE_SLOTS[slot])
+        # un GIF de verdad (con más de 120 cuadros) se recorta y queda animado
+        import io
+        from PIL import Image
+        frames = [Image.new("RGB", (50, 20), (i * 2 % 256, 255 - i, 40)) for i in range(130)]
+        buf = io.BytesIO()
+        frames[0].save(buf, "GIF", save_all=True, append_images=frames[1:], duration=40, loop=0)
+        self.assertEqual(L.source_count(buf.getvalue()), 130)
+        src = L.prepare_source(buf.getvalue())
+        self.assertEqual(L.frame_count(src), L.npt.MAX_FRAMES)
+        self.assertEqual(L.frame_count(L.prepare_source(L.to_png(L.sample_image()))), 1)
+
+    def test_gradient(self):
+        stops = L.gradient_from_theme(self.base)
+        self.assertEqual(len(stops), 3)
+        for d in L.npt.GRADIENT_FROM:
+            im = L.gradient_image({"colores": [["#000000", 0], ["#ffffff", 100]], "desde": d}, (40, 30))
+            self.assertEqual(im.size, (40, 30))
+        im = L.gradient_image({"colores": [["#000000", 0], ["#ffffff", 100]], "desde": "l"}, (100, 10))
+        self.assertLess(im.getpixel((2, 5))[0], 20)
+        self.assertGreater(im.getpixel((97, 5))[0], 235)
+        im = L.gradient_image({"colores": [["#000000", 0], ["#ffffff", 100]], "desde": "c"}, (100, 100))
+        self.assertLess(im.getpixel((50, 50))[0], 20)
+        self.assertGreater(im.getpixel((1, 1))[0], 200)
+        self.assertEqual(len(L.gradient_add_stop(stops)), 4)
+        self.assertEqual(L.gradient_avg({"colores": [["#000000", 0], ["#ffffff", 100]]}, "#123456"), "#808080")
+        r, _c, st = L.gradient_check(dict(self.base, text="#ffffff"), {},
+                                     {"colores": [["#ffffff", 0], ["#000000", 100]], "desde": "t"})
+        self.assertEqual(st, "bad")
+
+    def test_sections(self):
+        self.assertEqual(L.preset("normal"), {})
+        f = L.focus({}, "keys")
+        self.assertTrue(f["keys"]["realce"])
+        self.assertEqual(f["body"]["contenido"], 55)
+        rows = L.section_rows(self.base, {}, f, {}, {})
+        self.assertEqual(len(rows), 6)
+        self.assertTrue(any(r[5] == "warn" for r in rows))          # las atenuadas avisan
+        t = L.npt.Theme(name="x", author="", colors=dict(self.base), sections=f)
+        L.npt.validate(t)
+
+    def test_preview_draws(self):
+        import vista as V
+
+        class FakeCanvas:
+            def after(self, *a):
+                return 1
+
+            def after_cancel(self, *a):
+                pass
+        pv = V.Preview(FakeCanvas())
+        pv._show = lambda: None
+        e = L.effective(self.base, {})
+        gif = L.sample_anim("estrellas")
+        frames = lambda slot, size: (L.render_slot_frames(gif, slot, L.SLOT_DEFAULTS[slot], "#000000", size=size)  # noqa
+                                     if slot in ("tabsend", "keys") else None)
+        pv.draw(e, frames, gradient={"colores": [["#000000", 0], ["#334455", 100]], "desde": "b"},
+                sections=L.focus({}, "body"), opacity=80, wall=True)
+        im = pv.compose(250)
+        self.assertEqual(im.size, (V.W, V.H))
+        x1, y1, x2, y2 = V.ZONES["keys"]
+        self.assertEqual(pv.tag_at(V.OX + 300 + 20, V.OY + 400, "t:"), "panel")
+        pv.draw(e, frames, mode="img", sel="keys")
+        self.assertEqual(pv.tag_at(V.OX + (x1 + x2) / 2, V.OY + y1 + 3, "z:"), "keys")
+        self.assertEqual(pv.tag_at(V.OX + 300, V.OY + 527, "z:"), "foot")
+        pv.draw(e, frames, mode="sec", sel="keys")
+        self.assertEqual(pv.tag_at(V.OX + 100, V.OY + 300, "s:"), "keys")
+        self.assertEqual(pv.tag_at(V.OX + 500, V.OY + 300, "s:"), "body")
+
     def test_slug(self):
         self.assertEqual(L.slug("Neón Tokio!"), "neon-tokio")
         self.assertEqual(L.slug("¡¡!!"), "tema")

@@ -6,6 +6,12 @@ Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https:
 ### Añadido
 - **Estudio de Temas para descargar**: cada versión trae el Estudio listo para usar, sin instalar Python: instalador para Windows (no pide administrador), versión portátil, Linux y macOS. En Windows, los proyectos `.nptproj` se abren con doble clic.
 
+- **Estudio de Temas 1.1**, con todo lo de las maquetas:
+  - **Fondo degradado** para toda la ventana: de 2 a 5 colores, que empieza en una esquina, un lado o el centro (circular). Se arma a mano, con los colores del tema o con los de la imagen.
+  - **Transparencia por sección** (pantalla nueva): encabezado, panel de teclas, teclas, pestañas, panel de la pestaña y pie, cada una con la transparencia de su fondo y de su contenido y un borde de realce. «Destacar» resalta una sección y atenúa las demás; hay estilos rápidos (Normal, Destacar teclas, Destacar la pestaña y Cristal).
+  - **9 espacios para imágenes**: además del banner, el fondo de las teclas y el logo, la parte de abajo de la pestaña y la banda del pie (detrás de los botones, también detrás de Donar) y cuatro espacios libres que nunca tapan botones. Admiten **GIF animado** (hasta 120 cuadros), con opción de pausarlos cuando no usas la ventana. Plantillas nuevas: «Stickers animados» y «Todo».
+  - La **vista previa** es ahora la ventana de Numpad Macros 3.4.1, con la letra Inter, transparencia real y un fondo de escritorio de ejemplo.
+
 ### Cambiado
 - **Estudio de Temas con icono propio**: una «T» caligráfica y un pincel de artista con un trazo de colores, para distinguirlo de Numpad Macros en el escritorio, la barra de tareas, el instalador y el menú de aplicaciones.
 
