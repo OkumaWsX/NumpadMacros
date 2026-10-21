@@ -1,5 +1,8 @@
 # Publicador de Numpad Macros para Android
 
+> Herramienta **solo para el creador** (OkumaWsX). No se publica: no va en las Releases, no sale en las
+> novedades del CHANGELOG ni en la app de los usuarios. Sin un token con acceso a este repositorio no sirve de nada.
+
 El mismo Publicador del escritorio (`tools/publicador`), para el teléfono: sirve cuando no tienes el PC a mano.
 Hace lo mismo: conecta con GitHub con tu token, revisa la versión nueva (que sea Numpad Macros, que la versión
 sea más nueva, que tenga novedades y que no sea una entrega vieja), deja corregir las notas, sube el código,

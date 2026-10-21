@@ -1,4 +1,5 @@
 name: Compilar Publicador Android
+# Herramienta solo para el creador: no se adjunta a las Releases ni aparece en las novedades.
 
 on:
   push:
@@ -58,3 +59,4 @@ jobs:
           name: Publicador-Android
           path: tools/publicador-android/dist/*.apk
           if-no-files-found: error
+          retention-days: 30
