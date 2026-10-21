@@ -61,7 +61,6 @@ fun statusLine(vm: AppVm): Pair<String, Color> = when (vm.st) {
     St.Idle -> "Sin conectar" to C.muted
 }
 
-@Composable
 /** Alto que ocupa la barra flotante (para dejar espacio al final de cada pantalla). */
 val NAV_SPACE = 84.dp
 

@@ -107,7 +107,6 @@ fun IconBtn(icon: String, label: String, onClick: () -> Unit, bg: Color = C.pane
     ) { NIcon(icon, 22.dp, color) }
 }
 
-@Composable
 /**
  * Opción en forma de píldora. solid = true (bancos): la elegida va en el color de acento con
  * brillo. Si no, la elegida va en acento suave con borde (modos, diseño, teclas de atajo).
