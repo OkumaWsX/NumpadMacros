@@ -22,7 +22,7 @@ try:
 except Exception:          # sin la librería se puede elegir el archivo con un botón
     TkinterDnD = None
 
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 FONT = "Segoe UI" if os.name == "nt" else ("Helvetica Neue" if sys.platform == "darwin" else "DejaVu Sans")
 BASE = 13 if sys.platform == "darwin" else 10
 C = {"bg": "#14161b", "panel": "#1c1f26", "panel2": "#232730", "line": "#2e333d", "text": "#e9e9ec",
@@ -615,6 +615,13 @@ class App:
             self.q.put((lambda _r, _e, m=msg: self.stage_rows["up"][2].configure(text=m), None, None))
 
         def job():
+            state, active = core.in_flight(self.gh, rv.version)
+            if state == "publicada":              # ya la publicó otro Publicador (p. ej. el del teléfono)
+                return "publicada"
+            if state == "en-curso":               # el robot ya está trabajando: seguirlo, sin subir de nuevo
+                self.q.put((lambda _r, _e: (self._stage("up", "ok", "ya en marcha"),
+                                            self._stage("go", "ok", "ya estaba trabajando")), None, None))
+                return active["id"]
             sha = core.upload(pkg, self.gh, rv, rv.version, progress)
             self.q.put((lambda _r, _e: (self._stage("up", "ok", "listo" if sha else "ya estaba subido"),
                                         self._stage("go", "run")), None, None))
@@ -632,6 +639,9 @@ class App:
         def done(run_id, err):
             if err:
                 self._pub_failed(err, "")
+                return
+            if run_id == "publicada":
+                self._done()
                 return
             self.run_id = run_id
             self._stage("go", "ok")

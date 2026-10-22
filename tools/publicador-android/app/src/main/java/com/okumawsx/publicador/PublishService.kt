@@ -76,6 +76,21 @@ class PublishService : Service() {
         val rv = Pub.rv!!
         val ver = rv.version!!
         try {
+            val busy = inFlight(gh, ver)
+            if (busy?.first == "publicada") {          // ya la publicó otro Publicador (p. ej. el del PC)
+                STAGES.forEach { Pub.row(it.id, "ok", frac = 1f) }
+                Pub.row("up", "ok", "ya estaba publicada")
+                Pub.row("go", "ok")
+                val assets = try { releaseAssets(gh, ver) } catch (e: Exception) { null }
+                Pub.state.update { it?.copy(done = true, releaseUrl = assets?.first ?: "", assets = assets?.second) }
+                return
+            }
+            if (busy?.first == "en-curso") {           // el robot ya está trabajando: seguirlo, sin subir de nuevo
+                Pub.row("up", "ok", "ya en marcha")
+                Pub.row("go", "ok", "ya estaba trabajando")
+                follow(gh, busy.second!!.getLong("id"), ver)
+                return
+            }
             Pub.row("up", "run")
             val sha = upload(pkg, gh, rv, ver) { msg ->
                 Pub.row("up", "run", msg)

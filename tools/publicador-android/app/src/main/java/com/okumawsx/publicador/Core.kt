@@ -264,6 +264,19 @@ fun findRun(gh: GitHub, since: String): JSONObject? {
     return null
 }
 
+/** Antes de subir: evita publicar dos veces la misma versión (por ejemplo desde el PC y desde el teléfono
+ *  a la vez). Devuelve "publicada" (con null), "en-curso" (con la ejecución del robot) o null. */
+fun inFlight(gh: GitHub, version: Ver): Pair<String, JSONObject?>? {
+    val last = gh.lastPublished()
+    if (last != null && last >= version) return "publicada" to null
+    val runs = gh.obj("GET", gh.r("/actions/workflows/$WORKFLOW/runs?per_page=5")).optJSONArray("workflow_runs") ?: return null
+    for (i in 0 until runs.length()) {
+        val run = runs.getJSONObject(i)
+        if (run.optString("status") in setOf("queued", "in_progress", "waiting", "requested", "pending")) return "en-curso" to run
+    }
+    return null
+}
+
 data class Stage(val id: String, val label: String, val keys: List<String>)
 
 // Pasos que muestra el Publicador -> cómo reconocer el trabajo del robot

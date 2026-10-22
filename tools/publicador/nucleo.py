@@ -453,6 +453,19 @@ def find_run(gh: GitHub, since):
     return None
 
 
+def in_flight(gh: GitHub, version):
+    """Antes de subir: evita publicar dos veces la misma versión (por ejemplo desde el PC y desde el
+    teléfono a la vez). Devuelve ("publicada", None), ("en-curso", run) o (None, None)."""
+    last = gh.last_published()
+    if last and last >= version:
+        return "publicada", None
+    runs = gh.call("GET", gh.r(f"/actions/workflows/{WORKFLOW}/runs?per_page=5"))
+    for run in runs.get("workflow_runs", []):
+        if run.get("status") in ("queued", "in_progress", "waiting", "requested", "pending"):
+            return "en-curso", run
+    return None, None
+
+
 # Pasos que muestra el Publicador -> cómo reconocer el trabajo del robot
 STAGES = [("prep", "Revisar la versión y las novedades", ["preparar"]),
           ("win", "Pruebas y compilar Windows (instalador + portátil)", ["windows"]),
