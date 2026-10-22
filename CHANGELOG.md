@@ -3,6 +3,9 @@
 Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
+### Corregido
+- **Imágenes de los temas con el mismo recorte que en el Estudio**: el Estudio de Temas guardaba cada imagen con otra forma que la de su vista previa, así que en Numpad Macros se veía otro pedazo (por ejemplo, un texto ancho debajo de las teclas salía cortado por los lados). Ahora el tema guarda exactamente lo que ves en la vista previa (Estudio de Temas 1.1.1). Los temas ya creados se arreglan volviendo a guardarlos desde su proyecto `.nptproj`.
+- **Espacio de abajo del panel de teclas**: la imagen ocupa todo el ancho del panel, como en la vista previa, se ve completa y ya no le quita espacio a la última fila de teclas.
 
 ## [3.4.1] - 2026-10-21
 ### Añadido

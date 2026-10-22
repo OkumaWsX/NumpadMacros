@@ -797,8 +797,22 @@ class App:
         d = getattr(self, "dpi", 1.0)
         self.leftbot_lbl = None
         if art.has("leftbot"):
+            # Una franja de todo el ancho del panel, como en la vista previa del Estudio: la imagen se ve
+            # completa (sin recortes) y se ajusta cuando el panel cambia de ancho.
             lb = tk.Label(left, bg=C["panel"], bd=0, highlightthickness=0)
-            lb.pack(side="bottom", pady=(8, 0))
+            lb.pack(side="bottom", fill="x", pady=(8, 0))
+            last = {"w": 0}
+
+            def fit(_e=None):
+                try:
+                    w = left.winfo_width() - 32          # el panel tiene 16 de margen por lado
+                except tk.TclError:
+                    return
+                if w < 40 or abs(w - last["w"]) < 2:
+                    return
+                last["w"] = w
+                art.show("leftbot", lambda ph: lb.configure(image=ph), w, int(160 * d), key="leftbot")
+            left.bind("<Configure>", fit, add="+")
             art.show("leftbot", lambda ph: lb.configure(image=ph), int(300 * d), int(160 * d), key="leftbot")
             self.leftbot_lbl = lb
         self.tabsend_lbl = None

@@ -110,3 +110,22 @@ class UnaPiezaTest(unittest.TestCase):
             npt.write(theme(background={"tipo": "imagen", "una_pieza": True}), key)
         with self.assertRaises(npt.NptError):
             npt.write(theme(images={"fondo": png(10, 10)}, background={"tipo": "imagen", "tinte": 95}), key)
+
+
+class FormaDeLasImagenes(unittest.TestCase):
+    def test_estudio_guarda_con_la_forma_de_la_vista_previa(self):
+        """El tema guarda cada imagen con la misma forma que su zona en la vista previa del Estudio
+        (si no, la app mostraba otro recorte: «AQUAMAN CHILENO» salía como «MAN CH»)."""
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "tools", "estudio"))
+        try:
+            import vista as V
+        except Exception:              # pragma: no cover (sin Pillow)
+            self.skipTest('sin Pillow')
+        for slot in npt.IMAGE_SLOTS:
+            w, h = V.export_size(slot)
+            mw, mh = npt.IMAGE_SLOTS[slot]
+            assert 0 < w <= mw and 0 < h <= mh
+            if slot in V.zones():
+                zw, zh = V.zone_size(slot)
+                assert abs(w / h - zw / zh) / (zw / zh) < .05, slot
+        assert V.export_size("leftbot")[0] == 360 and V.export_size("leftbot")[1] < 80

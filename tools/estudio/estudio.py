@@ -78,7 +78,7 @@ try:
 except Exception:          # sin la librería se elige la imagen con un botón
     TkinterDnD = None
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 APP = "Estudio de Temas"
 if _IMPORT_ERROR:
     _fatal(_IMPORT_ERROR)
@@ -1303,7 +1303,7 @@ class App:
                     gl = tk.Label(row1, text="GIF", bg=C["sig_bg"], fg=C["sig_text"], font=fnt(-4, True), padx=3)
                     gl.pack(side="left", padx=4)
                     ws.append(gl)
-                w_, h_ = npt.IMAGE_SLOTS[slot]
+                w_, h_ = V.export_size(slot)
                 b = tk.Label(box, text=f"{'Con imagen' if s else 'Vacío'} · {w_} × {h_} px", bg=fr["bg"],
                              fg=C["muted"], font=fnt(-2), anchor="w")
                 b.pack(anchor="w")
@@ -1332,7 +1332,7 @@ class App:
         s = self.images.get(self.slot_sel)
         d = s or L.SLOT_DEFAULTS[self.slot_sel]
         self.slot_title.configure(text=L.SLOT_NAMES[self.slot_sel].upper())
-        w, h = npt.IMAGE_SLOTS[self.slot_sel]
+        w, h = V.export_size(self.slot_sel)
         txt = ""
         if s and self.is_animated(self.slot_sel):
             n = L.frame_count(s["src"])
@@ -1638,7 +1638,10 @@ class App:
             key = ("final", slot, self.colors["bg"], s["fit"], s["op"], s["dark"], s["blur"],
                    hashlib.md5(s["src"]).digest())
             if key not in self._cache:
-                self._cache[key] = L.encode(L.render_slot_frames(s["src"], slot, s, self.colors["bg"]))
+                # misma forma que la zona de la vista previa: el tema guarda el mismo recorte que ves
+                size = V.export_size(slot)
+                self._cache[key] = L.encode(L.render_slot_frames(s["src"], slot, s, self.colors["bg"], size=size,
+                                                                 blur_scale=size[0] / npt.IMAGE_SLOTS[slot][0]))
             out[slot] = self._cache[key]
         return out
 

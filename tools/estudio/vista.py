@@ -107,6 +107,18 @@ def zone_size(slot):
     return x2 - x1, y2 - y1
 
 
+def export_size(slot):
+    """Tamaño con que se guarda la imagen de un espacio: la misma forma que su zona en la vista previa
+    (así el tema muestra exactamente el recorte que se ve aquí), lo más grande posible sin pasar del
+    máximo del formato .npt."""
+    mw, mh = npt.IMAGE_SLOTS[slot]
+    if slot not in zones():
+        return mw, mh
+    zw, zh = zone_size(slot)
+    k = min(mw / zw, mh / zh)
+    return max(1, min(mw, round(zw * k))), max(1, min(mh, round(zh * k)))
+
+
 # ---------------------------------------------------------------- dibujo
 def rgba(h, a=1.0):
     r, g, b = L.hex2rgb(h)
