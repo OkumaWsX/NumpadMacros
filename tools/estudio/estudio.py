@@ -272,7 +272,7 @@ class App:
         r = self.root
         r.configure(bg=C["bg"])
         r.geometry("1420x900")
-        r.minsize(1360, 700)
+        r.minsize(1360, 640)
         s = ttk.Style(r)
         s.theme_use("clam")
         s.configure(".", background=C["panel"], foreground=C["text"], fieldbackground=C["panel2"],
@@ -430,7 +430,7 @@ class App:
     # ---------------------------------------------------------------- 1 · editar
     def _build_edit(self):
         f = tk.Frame(self.body, bg=C["panel"])
-        f.columnconfigure(1, weight=1, minsize=V.W + 40)
+        f.columnconfigure(1, weight=1, minsize=360)
         f.rowconfigure(0, weight=1)
         # izquierda: capas
         left = Scrollable(f, C["panel"], width=290)
@@ -582,10 +582,11 @@ class App:
         return f
 
     def _stage(self, f, title, hint):
-        """Columna central con la vista previa (se desplaza si la pantalla es baja)."""
-        sc = Scrollable(f, C["panel"])
+        """Columna central con la vista previa. No se desplaza: la vista previa se ajusta al espacio."""
+        sc = tk.Frame(f, bg=C["panel"])
         sc.grid(row=0, column=1, sticky="nsew", padx=10)
-        mid = sc.inner
+        sc.pack_propagate(False)            # su tamaño lo pone la ventana, no la vista previa
+        mid = sc
         top = tk.Frame(mid, bg=C["panel"])
         top.pack(fill="x", pady=(12, 4))
         self.caps(top, title).pack(side="left")
@@ -593,7 +594,7 @@ class App:
         cv = tk.Canvas(mid, width=V.W, height=V.H, highlightthickness=0, bd=0, cursor="hand2", bg="#0d0e11")
         cv.pack(pady=8)
         sc.top, sc.pcv, sc.pv = top, cv, V.Preview(cv)
-        sc.cv.bind("<Configure>", lambda e, s=sc: self._fit_soon(s), add="+")
+        sc.bind("<Configure>", lambda e, s=sc: self._fit_soon(s), add="+")
         self.__dict__.setdefault("stages", []).append(sc)
         return sc
 
@@ -604,11 +605,11 @@ class App:
         sc._fit_job = self.root.after(120, lambda: self._fit_stage(sc))
 
     def _fit_stage(self, sc):
-        """La vista previa crece o se achica con la ventana (sin pasar de 2× ni bajar de 0,6×)."""
+        """La vista previa crece o se achica para caber entera en su columna (hasta 2×)."""
         sc._fit_job = None
         try:
-            aw = sc.cv.winfo_width() - 16
-            ah = sc.cv.winfo_height() - sc.pcv.winfo_y() - 16
+            aw = sc.winfo_width() - 8
+            ah = sc.winfo_height() - sc.pcv.winfo_y() - 12
         except tk.TclError:
             return
         if aw < 100 or ah < 100:
@@ -718,7 +719,7 @@ class App:
     # ---------------------------------------------------------------- 2 · secciones
     def _build_sec(self):
         f = tk.Frame(self.body, bg=C["panel"])
-        f.columnconfigure(1, weight=1, minsize=V.W + 40)
+        f.columnconfigure(1, weight=1, minsize=360)
         f.rowconfigure(0, weight=1)
         left = Scrollable(f, C["panel"], width=290)
         left.grid(row=0, column=0, sticky="nsw")
@@ -829,7 +830,7 @@ class App:
     # ---------------------------------------------------------------- 3 · imágenes
     def _build_img(self):
         f = tk.Frame(self.body, bg=C["panel"])
-        f.columnconfigure(1, weight=1, minsize=V.W + 40)
+        f.columnconfigure(1, weight=1, minsize=360)
         f.rowconfigure(0, weight=1)
         left = Scrollable(f, C["panel"], width=290)
         left.grid(row=0, column=0, sticky="nsw")

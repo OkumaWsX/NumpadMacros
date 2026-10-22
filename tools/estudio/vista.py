@@ -247,7 +247,7 @@ class Preview:
 
     def set_scale(self, k):
         """Cambia el tamaño de la vista previa. Devuelve True si cambió (hay que volver a dibujar)."""
-        k = round(max(.6, min(2.0, k)), 2)
+        k = round(max(.4, min(2.0, k)), 2)
         if abs(k - self.k) < .01:
             return False
         self.k = k
