@@ -3,6 +3,8 @@
 Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
+
+## [3.4.2] - 2026-10-22
 ### Corregido
 - **Imágenes de los temas con el mismo recorte que en el Estudio**: el Estudio de Temas guardaba cada imagen con otra forma que la de su vista previa, así que en Numpad Macros se veía otro pedazo (por ejemplo, un texto ancho debajo de las teclas salía cortado por los lados). Ahora el tema guarda exactamente lo que ves en la vista previa (Estudio de Temas 1.1.1). Los temas ya creados se arreglan volviendo a guardarlos desde su proyecto `.nptproj`.
 - **Espacio de abajo del panel de teclas**: la imagen ocupa todo el ancho del panel, como en la vista previa, se ve completa y ya no le quita espacio a la última fila de teclas.
@@ -114,6 +116,7 @@ Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https:
 ### Añadido
 - Primera versión para Windows: numpad como panel de sonidos de Soundpad y atajos, con bancos.
 
+[3.4.2]: https://github.com/OkumaWsX/NumpadMacros/releases/tag/v3.4.2
 [3.4.1]: https://github.com/OkumaWsX/NumpadMacros/releases/tag/v3.4.1
 [3.4.0]: https://github.com/OkumaWsX/NumpadMacros/releases/tag/v3.4.0
 [3.3.1]: https://github.com/OkumaWsX/NumpadMacros/releases/tag/v3.3.1
