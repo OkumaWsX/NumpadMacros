@@ -3,6 +3,8 @@
 Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
+### Corregido
+- **Pestaña Temas ordenada**: todas las tarjetas miden lo mismo, así que un tema con nombre largo ya no descuadra la rejilla; el nombre se acorta con «…» (completo a la derecha) y la marca «En uso» va sobre la vista previa.
 
 ## [3.4.2] - 2026-10-22
 ### Corregido

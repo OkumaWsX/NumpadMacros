@@ -4,6 +4,7 @@
 import os
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+from tkinter import font as tkfont
 
 from . import npt, themes
 from . import aa
@@ -139,11 +140,14 @@ class ThemesTab:
         draw_preview(pv, th["colors"], self.CARD_W, self.CARD_H)
         row = tk.Frame(f, bg=C["panel2"])
         row.pack(fill="x", padx=6)
-        tk.Label(row, text=th["name"], bg=C["panel2"], fg=C["text"], font=(FONT, BASE, "bold"),
-                 anchor="w").pack(side="left")
-        badge = tk.Label(row, font=(FONT, BASE - 3, "bold"), padx=4)
-        badge.pack(side="right")
-        tk.Label(f, text=("OkumaWsX" if th.get("official") else th.get("author", "")), bg=C["panel2"],
+        # todas las tarjetas miden lo mismo (la rejilla no se descuadra con nombres largos): el nombre se
+        # acorta con «…» y la marca EN USO va sobre la vista previa; el nombre completo sale a la derecha
+        name_font = tkfont.Font(font=(FONT, BASE, "bold"))
+        tk.Label(row, text=self._fit(th["name"], name_font, self.CARD_W), bg=C["panel2"], fg=C["text"],
+                 font=name_font, anchor="w").pack(side="left")
+        badge = tk.Label(pv, font=(FONT, BASE - 3, "bold"), padx=4)
+        author = "OkumaWsX" if th.get("official") else th.get("author", "")
+        tk.Label(f, text=self._fit(author, tkfont.Font(font=(FONT, BASE - 2)), self.CARD_W), bg=C["panel2"],
                  fg=C["muted"], font=(FONT, BASE - 2), anchor="w").pack(fill="x", padx=6, pady=(0, 6))
         for w in (f, pv, row) + tuple(row.winfo_children()) + tuple(f.winfo_children()):
             w.bind("<Button-1>", lambda e, th=th: self._pick(th))
@@ -151,6 +155,16 @@ class ThemesTab:
             w.bind("<Button-4>", self._wheel)
             w.bind("<Button-5>", self._wheel)
         return f, badge, th
+
+    @staticmethod
+    def _fit(text, font, width):
+        """Acorta el texto con «…» para que quepa en `width` píxeles."""
+        text = str(text or "")
+        if font.measure(text) <= width:
+            return text
+        while text and font.measure(text + "…") > width:
+            text = text[:-1]
+        return text.rstrip() + "…"
 
     def _layout(self):
         width = max(200, self.cv.winfo_width())
@@ -176,10 +190,12 @@ class ThemesTab:
                         highlightcolor=C["accent"] if on else C["line"])
             if self._same(th, cur):
                 badge.configure(text="EN USO", bg=C["accent"], fg=C["on_accent"])
+                badge.place(relx=1, x=-4, y=4, anchor="ne")
             elif not th.get("builtin"):
                 badge.configure(text="IMPORTADO", bg=C["key_set"], fg=C["key_set_text"])
+                badge.place(relx=1, x=-4, y=4, anchor="ne")
             else:
-                badge.configure(text="", bg=C["panel2"])
+                badge.place_forget()
         th = self.sel
         draw_preview(self.big, th["colors"], 260, 150)
         self.d_name.configure(text=th["name"])
