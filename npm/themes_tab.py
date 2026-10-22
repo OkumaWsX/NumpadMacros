@@ -77,8 +77,8 @@ class ThemesTab:
         sb.grid(row=1, column=1, sticky="ns")
         self.grid = ttk.Frame(self.cv, style="Panel.TFrame")
         self.cv.create_window(0, 0, window=self.grid, anchor="nw")
-        self.grid.bind("<Configure>", lambda e: self.cv.configure(scrollregion=self.cv.bbox("all")))
-        self.cv.bind("<Configure>", lambda e: self._layout())
+        self.grid.bind("<Configure>", lambda e: self._region())
+        self.cv.bind("<Configure>", lambda e: (self._layout(), self._region()))
         for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
             self.cv.bind(seq, self._wheel)
             self.grid.bind(seq, self._wheel)
@@ -172,7 +172,20 @@ class ThemesTab:
         for i, (f, _b, _t) in enumerate(self.cards):
             f.grid(row=i // cols, column=i % cols, padx=(0, 8), pady=(0, 8), sticky="n")
 
+    def _region(self):
+        """Zona desplazable: nunca más baja que lo visible (si no, la rueda «subía» más allá del
+        principio y las tarjetas quedaban abajo con un hueco vacío arriba)."""
+        try:
+            h = max(self.grid.winfo_reqheight(), self.cv.winfo_height())
+            self.cv.configure(scrollregion=(0, 0, self.grid.winfo_reqwidth(), h))
+            if self.grid.winfo_reqheight() <= self.cv.winfo_height():
+                self.cv.yview_moveto(0)
+        except tk.TclError:
+            pass
+
     def _wheel(self, e):
+        if self.grid.winfo_reqheight() <= self.cv.winfo_height():
+            return                                # todo cabe: no hay nada que desplazar
         if getattr(e, "num", 0) in (4, 5):
             self.cv.yview_scroll(-2 if e.num == 4 else 2, "units")
         else:

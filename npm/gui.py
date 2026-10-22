@@ -805,7 +805,9 @@ class App:
 
             def fit(_e=None):
                 try:
-                    w = left.winfo_width() - 32          # el panel tiene 16 de margen por lado
+                    # el ancho lo deciden los demás elementos del panel (si no, la imagen no lo dejaría
+                    # achicarse al reducir la ventana)
+                    w = max([c.winfo_reqwidth() for c in left.winfo_children() if c is not lb] + [0])
                 except tk.TclError:
                     return
                 if w < 40 or abs(w - last["w"]) < 2:
@@ -2396,17 +2398,44 @@ class App:
             self.root.after_cancel(self._fit_job)
         self._fit_job = self.root.after(90, self._fit_keys)
 
+    def _repaint_all(self, later=(120, 600)):
+        """Pide a cada elemento que se vuelva a dibujar. En algunos escritorios Linux con efectos
+        (KWin, Mutter…) quedaban rectángulos negros después de cambiar el tema o de pasar a pantalla
+        completa: partes de la ventana que el sistema no mandó a redibujar."""
+        def run():
+            stack = [self.root]
+            while stack:
+                w = stack.pop()
+                try:
+                    if w.winfo_ismapped():
+                        w.event_generate("<Expose>", x=0, y=0, width=max(1, w.winfo_width()),
+                                         height=max(1, w.winfo_height()), count=0)
+                    stack.extend(w.winfo_children())
+                except tk.TclError:
+                    pass
+        for ms in later:
+            try:
+                self.root.after(ms, run)
+            except tk.TclError:
+                pass
+
     def _fit_keys(self):
         self._fit_job = None
         W, H = self.root.winfo_width(), self.root.winfo_height()
         if W < 50 or H < 50 or (W, H) == self._fit_size:
             return
+        resized = self._fit_size is not None
         self._fit_size = (W, H)
+        if resized:
+            self._repaint_all()
         self._paint_window_bg()
         d = self.dpi
         # alto libre para el dibujo (cabecera, pestañas y pie fuera)
         free = H - self.left_top_h()
         width_cap = W * .36 - 40 * d
+        if getattr(self, "leftbot_lbl", None) is not None:
+            # la imagen de abajo del panel ocupa su alto: las teclas se achican para que todas quepan
+            free -= self.art.fit_size("leftbot", max(1, width_cap), 160 * d)[1] + 8 * d
         # numpad: 5 filas + fila de números (2/3 del tamaño) + títulos y botón
         u = (free - 135 * d) / 6.5
         u = min(u, (width_cap - 3 * 7) / 4, 92 * d)
@@ -3406,6 +3435,7 @@ class App:
         self._fit_size = None
         self._fit_keys()
         self._send_theme()
+        self._repaint_all((120, 600, 1500))
 
     def _remote_state(self):
         if getattr(self, "remote", None):

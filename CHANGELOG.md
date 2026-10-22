@@ -3,6 +3,10 @@
 Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
+### Corregido
+- **Teclas completas con temas que traen imagen abajo del panel**: en ventana (no maximizada) la última fila de teclas quedaba cortada; ahora las teclas se achican para dejar sitio a la imagen.
+- **Rueda del mouse en la pestaña Temas**: si todos los temas caben, la rueda ya no los desplaza hacia abajo dejando un hueco vacío arriba.
+- **Rectángulos negros** después de cambiar de tema o de pasar a pantalla completa (en escritorios Linux con efectos): la ventana se vuelve a dibujar entera.
 
 ## [3.4.3] - 2026-10-22
 ### Corregido
