@@ -6,6 +6,7 @@ Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https:
 ### Corregido
 - **Estudio de Temas 1.1.2**:
   - La **vista previa se ajusta al tamaño de la ventana**: en pantalla completa crece (hasta el doble, nítida) y en pantallas chicas se achica, siempre entera y sin barra de desplazamiento ni espacio vacío. Las zonas se siguen tocando igual.
+  - **Paneles laterales ocultables y con ancho ajustable**: dos interruptores arriba a la derecha («Panel izquierdo» y «Panel derecho») muestran u ocultan cada panel, y su borde se arrastra para hacerlo más ancho o más angosto, dentro de límites para que el contenido no se deforme (los textos se reacomodan). La vista previa queda siempre centrada y aprovecha el espacio que dejan. El Estudio recuerda cómo los dejaste.
   - **Zonas a medio dibujar** (artefactos) al aplicar cambios o al maximizar, en escritorios Linux: los cambios seguidos se juntan en un solo dibujo, las listas de legibilidad, secciones, plantillas y espacios ya no se rehacen enteras en cada cambio, y las columnas se vuelven a pintar después de cambiar de tamaño o de pantalla.
 
 ## [3.4.4] - 2026-10-22

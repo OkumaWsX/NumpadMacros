@@ -36,6 +36,10 @@ Viene en cada [Release](https://github.com/OkumaWsX/NumpadMacros/releases/latest
    modifica, Numpad Macros lo rechaza.
 6. **Proyecto `.nptproj`**: guarda tu trabajo sin cifrar para seguir editándolo después.
 
+**Más espacio para la vista previa**: con los interruptores «Panel izquierdo» y «Panel derecho» (arriba a la
+derecha) ocultas los paneles laterales; arrastrando su borde los haces más anchos o más angostos. La vista
+previa queda siempre centrada y crece con el espacio libre.
+
 ## Comunidad y creador oficial
 
 Es el mismo programa para todos:

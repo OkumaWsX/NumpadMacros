@@ -126,12 +126,40 @@ class Scrollable(tk.Frame):
         self.cv.pack(side="left", fill="both", expand=True)
         self.sb.pack(side="right", fill="y")
         self.inner.bind("<Configure>", lambda e: self.cv.configure(scrollregion=self.cv.bbox("all")))
-        self.cv.bind("<Configure>", lambda e: self.cv.itemconfigure(self._win, width=e.width))
+        self.cv.bind("<Configure>", self._on_width)
         self.bind("<Enter>", self._wheel_on)
         self.bind("<Leave>", self._wheel_off)
         Scrollable.all.append(self)
 
     all: list = []
+
+    def _on_width(self, e):
+        self.cv.itemconfigure(self._win, width=e.width)
+        if not hasattr(self, "_base_w"):
+            self._base_w = e.width
+        if e.width != getattr(self, "_last_w", None):
+            self._last_w = e.width
+            job = getattr(self, "_wrap_job", None)
+            if job:
+                self.after_cancel(job)
+            self._wrap_job = self.after(60, self._rewrap)
+
+    def _rewrap(self):
+        """El panel es «responsivo»: los textos largos se reacomodan al nuevo ancho (sin deformarse)."""
+        self._wrap_job = None
+        extra = self._last_w - self._base_w
+        stack = [self.inner]
+        while stack:
+            w = stack.pop()
+            stack.extend(w.winfo_children())
+            if isinstance(w, tk.Label):
+                if not hasattr(w, "_wrap0"):
+                    try:
+                        w._wrap0 = int(str(w.cget("wraplength")) or 0)
+                    except (tk.TclError, ValueError):
+                        w._wrap0 = 0
+                if w._wrap0 > 0:
+                    w.configure(wraplength=max(120, w._wrap0 + extra))
 
     def refresh(self):
         """Vuelve a pintar todo lo de adentro (algunos escritorios Linux dejan partes sin dibujar al
@@ -159,6 +187,48 @@ class Scrollable(tk.Frame):
     def _wheel(self, e):
         d = e.delta if sys.platform == "darwin" else (int(e.delta / 120) or (1 if e.delta > 0 else -1))
         self.cv.yview_scroll(-d, "units")
+
+
+class Switch(tk.Frame):
+    """Interruptor (encendido / apagado) con su texto."""
+
+    def __init__(self, parent, text, command, value=True, bg=None):
+        bg = bg or C["bg"]
+        super().__init__(parent, bg=bg, cursor="hand2")
+        self.value = value
+        self.command = command
+        self.cv = tk.Canvas(self, width=34, height=18, bg=bg, highlightthickness=0, bd=0, cursor="hand2")
+        self.cv.pack(side="left")
+        self.lbl = tk.Label(self, text=text, bg=bg, fg=C["muted"], font=fnt(-1), cursor="hand2")
+        self.lbl.pack(side="left", padx=(6, 0))
+        for w in (self, self.cv, self.lbl):
+            w.bind("<Button-1>", self._toggle)
+        self._paint()
+
+    def _toggle(self, _e=None):
+        self.set(not self.value)
+        self.command(self.value)
+
+    def set(self, value):
+        self.value = bool(value)
+        self._paint()
+
+    def _paint(self):
+        cv = self.cv
+        cv.delete("all")
+        on = self.value
+        col = C["acc"] if on else C["line"]
+        cv.create_oval(1, 1, 17, 17, fill=col, outline=col)
+        cv.create_oval(17, 1, 33, 17, fill=col, outline=col)
+        cv.create_rectangle(9, 1, 25, 17, fill=col, outline=col)
+        x = 25 if on else 9
+        cv.create_oval(x - 6, 3, x + 6, 15, fill=C["on_acc"] if on else C["muted"], outline="")
+        self.lbl.configure(fg=C["text"] if on else C["muted"])
+
+
+# límites de ancho de los paneles laterales (así el contenido no se deforma)
+PANEL_LIMITS = {"izq": (290, 480), "der": (320, 520)}
+PANEL_DEFAULT = {"izq": 290, "der": 320}
 
 
 class App:
@@ -378,6 +448,25 @@ class App:
             b = ttk.Button(nav, text=text, style="Nav.TButton", command=lambda s=sid: self.show(s))
             b.pack(side="left", padx=(0, 6))
             self.nav[sid] = b
+        pan = self.settings.get("paneles") or {}
+        self.panel_state = {}
+        for side in ("izq", "der"):
+            st = pan.get(side) or {}
+            lo, hi = PANEL_LIMITS[side]
+            try:
+                w = L.clamp(int(st.get("ancho", PANEL_DEFAULT[side])), lo, hi)
+            except (TypeError, ValueError):
+                w = PANEL_DEFAULT[side]
+            self.panel_state[side] = {"visible": st.get("visible", True) is not False, "ancho": w}
+        self.panel_sides: dict = {"izq": [], "der": []}       # (panel, borde) de cada pantalla
+        self.switch_box = tk.Frame(nav, bg=C["bg"])
+        self.switch_box.pack(side="right")
+        self.switches = {}
+        for side, txt in (("der", "Panel derecho"), ("izq", "Panel izquierdo")):
+            s = Switch(self.switch_box, txt, lambda v, sd=side: self.toggle_panel(sd, v),
+                       value=self.panel_state[side]["visible"])
+            s.pack(side="right", padx=(14, 0))
+            self.switches[side] = s
 
         self.body = tk.Frame(r, bg=C["bg"], highlightthickness=1, highlightbackground=C["line"])
         self.body.grid(row=2, column=0, sticky="nsew", padx=16)
@@ -421,6 +510,11 @@ class App:
             b.configure(style="NavOn.TButton" if k == sid else "Nav.TButton")
         if sid == "exp":
             self.exp_done.pack_forget()
+        if sid in ("edit", "sec", "img"):
+            if not self.switch_box.winfo_manager():
+                self.switch_box.pack(side="right")
+        else:
+            self.switch_box.pack_forget()
         self.render()
         self.root.after(80, self._repaint)
         for sc in getattr(self, "stages", []):          # la vista previa de esta pantalla, a su tamaño
@@ -579,6 +673,7 @@ class App:
         self.leg_sum = self.lbl(lc, "", -1, wrap=255)
         self.leg_sum.pack(fill="x", pady=(8, 0))
         self._paint_palette()
+        self._panels(f, left, mid, right)
         return f
 
     def _stage(self, f, title, hint):
@@ -590,13 +685,80 @@ class App:
         top = tk.Frame(mid, bg=C["panel"])
         top.pack(fill="x", pady=(12, 4))
         self.caps(top, title).pack(side="left")
-        self.lbl(mid, hint, -1, color="muted", wrap=V.W).pack(fill="x")
+        sc.hint = self.lbl(mid, hint, -1, color="muted", wrap=V.W)
+        sc.hint.pack(fill="x")
         cv = tk.Canvas(mid, width=V.W, height=V.H, highlightthickness=0, bd=0, cursor="hand2", bg="#0d0e11")
-        cv.pack(pady=8)
+        cv.pack(expand=True)                # centrada en el espacio que queda
         sc.top, sc.pcv, sc.pv = top, cv, V.Preview(cv)
         sc.bind("<Configure>", lambda e, s=sc: self._fit_soon(s), add="+")
         self.__dict__.setdefault("stages", []).append(sc)
         return sc
+
+    # ---------------------------------------------------------------- paneles laterales
+    def _panels(self, f, left, mid, right):
+        """Panel izquierdo · borde · vista previa · borde · panel derecho. Los bordes se arrastran para
+        cambiar el ancho (con límites) y los interruptores de arriba muestran u ocultan cada panel."""
+        for c in range(5):
+            f.columnconfigure(c, weight=0, minsize=0)
+        f.columnconfigure(2, weight=1, minsize=360)
+        left.grid(row=0, column=0, sticky="nsw")
+        mid.grid(row=0, column=2, sticky="nsew", padx=10)
+        right.grid(row=0, column=4, sticky="nse")
+        for side, panel, col in (("izq", left, 1), ("der", right, 3)):
+            grip = tk.Frame(f, bg=C["line"], width=5, cursor="sb_h_double_arrow")
+            grip.grid(row=0, column=col, sticky="ns")
+            grip.bind("<Enter>", lambda e, g=grip: g.configure(bg=C["acc_dim"]))
+            grip.bind("<Leave>", lambda e, g=grip: g.configure(bg=C["line"]))
+            grip.bind("<ButtonPress-1>", lambda e, sd=side: self._drag_start(sd, e))
+            grip.bind("<B1-Motion>", lambda e, sd=side: self._drag(sd, e))
+            grip.bind("<ButtonRelease-1>", lambda e: self._save_panels())
+            self.panel_sides[side].append((panel, grip))
+            self._apply_panel(side)
+
+    def _apply_panel(self, side):
+        st = self.panel_state[side]
+        for panel, grip in self.panel_sides[side]:
+            if st["visible"]:
+                panel.cv.configure(width=st["ancho"])
+                if not panel.winfo_manager():
+                    panel.grid()
+                    grip.grid()
+            else:
+                panel.grid_remove()
+                grip.grid_remove()
+            # obliga a Tk a repartir otra vez el espacio (a veces no lo hace solo al ocultar)
+            f = panel.master
+            for c in (0, 1, 3, 4):
+                f.columnconfigure(c, weight=0, minsize=0)
+            f.columnconfigure(2, weight=1, minsize=360)
+            if f.winfo_manager() == "grid":      # volver a ubicar la pantalla hace que Tk la reacomode
+                f.grid_remove()
+                f.grid()
+
+    def toggle_panel(self, side, visible):
+        self.panel_state[side]["visible"] = bool(visible)
+        self._apply_panel(side)
+        self._save_panels()
+        self.root.after(80, self._repaint)
+
+    def _drag_start(self, side, e):
+        self._drag_from = (e.x_root, self.panel_state[side]["ancho"])
+
+    def _drag(self, side, e):
+        x0, w0 = getattr(self, "_drag_from", (e.x_root, self.panel_state[side]["ancho"]))
+        dx = e.x_root - x0
+        lo, hi = PANEL_LIMITS[side]
+        w = L.clamp(w0 + (dx if side == "izq" else -dx), lo, hi)
+        if w != self.panel_state[side]["ancho"]:
+            self.panel_state[side]["ancho"] = w
+            self._apply_panel(side)
+
+    def _save_panels(self):
+        self.settings["paneles"] = {k: dict(v) for k, v in self.panel_state.items()}
+        try:
+            K.save_settings(self.settings)
+        except OSError:
+            pass
 
     def _fit_soon(self, sc):
         job = getattr(sc, "_fit_job", None)
@@ -609,7 +771,8 @@ class App:
         sc._fit_job = None
         try:
             aw = sc.winfo_width() - 8
-            ah = sc.winfo_height() - sc.pcv.winfo_y() - 12
+            ah = sc.winfo_height() - (sc.hint.winfo_y() + sc.hint.winfo_height()) - 16
+            sc.hint.configure(wraplength=max(200, aw))
         except tk.TclError:
             return
         if aw < 100 or ah < 100:
@@ -793,6 +956,7 @@ class App:
                     "fondo. Las demás secciones se mezclan con el fondo de la ventana. El escritorio se ve con la "
                     "opacidad de la ventana (pantalla 1).", -2, color="muted", wrap=260).grid(
             row=4, column=0, padx=12, pady=(12, 14), sticky="ew")
+        self._panels(f, left, mid, right)
         return f
 
     def _token_row(self, parent, tok, label):
@@ -920,6 +1084,7 @@ class App:
         self.lbl(R, "El Estudio deja cada imagen lista (recortada, oscurecida y desenfocada) antes de guardarla, "
                     "así Numpad Macros solo tiene que mostrarla.", -2, color="muted", wrap=270).grid(
             row=6, column=0, padx=12, pady=(12, 14), sticky="ew")
+        self._panels(f, left, mid, right)
         return f
 
     # ---------------------------------------------------------------- 4 · exportar
