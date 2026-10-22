@@ -3,6 +3,8 @@
 Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
+
+## [3.4.3] - 2026-10-22
 ### Corregido
 - **Pestaña Temas ordenada**: todas las tarjetas miden lo mismo, así que un tema con nombre largo ya no descuadra la rejilla; el nombre se acorta con «…» (completo a la derecha) y la marca «En uso» va sobre la vista previa.
 
@@ -118,6 +120,7 @@ Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https:
 ### Añadido
 - Primera versión para Windows: numpad como panel de sonidos de Soundpad y atajos, con bancos.
 
+[3.4.3]: https://github.com/OkumaWsX/NumpadMacros/releases/tag/v3.4.3
 [3.4.2]: https://github.com/OkumaWsX/NumpadMacros/releases/tag/v3.4.2
 [3.4.1]: https://github.com/OkumaWsX/NumpadMacros/releases/tag/v3.4.1
 [3.4.0]: https://github.com/OkumaWsX/NumpadMacros/releases/tag/v3.4.0
