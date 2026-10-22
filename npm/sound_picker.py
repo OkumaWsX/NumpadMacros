@@ -396,7 +396,10 @@ class SoundPicker:
         tf, mf = self._fonts()
         lh = tf.metrics("linespace")
         show_meta = self.cols <= 8
-        card_h = cell + int(8 * d) + 2 * lh + (mf.metrics("linespace") + 2 if show_meta else 0)
+        extra = int(8 * d) + 2 * lh + (mf.metrics("linespace") + 2 if show_meta else 0)
+        # con pocas por fila, cada tarjeta entera (portada + nombre) debe caber en lo visible
+        cell = max(24, min(cell, int(self.height - 2 * pad - extra - 2), int(220 * d)))
+        card_h = cell + extra
         root = self.app.root
         y = pad
         for i, it in enumerate(self.items):

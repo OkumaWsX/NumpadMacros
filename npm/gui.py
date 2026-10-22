@@ -2433,9 +2433,25 @@ class App:
         # alto libre para el dibujo (cabecera, pestañas y pie fuera)
         free = H - self.left_top_h()
         width_cap = W * .36 - 40 * d
-        if getattr(self, "leftbot_lbl", None) is not None:
-            # la imagen de abajo del panel ocupa su alto: las teclas se achican para que todas quepan
-            free -= self.art.fit_size("leftbot", max(1, width_cap), 160 * d)[1] + 8 * d
+        lb = getattr(self, "leftbot_lbl", None)
+        if lb is not None:
+            # la imagen de abajo del panel ocupa su alto: las teclas se achican para que todas quepan.
+            # Si así quedarían demasiado chicas (ventana baja, p. ej. 1280×720), la imagen se esconde:
+            # las teclas importan más.
+            lbh = self.art.fit_size("leftbot", max(1, width_cap), 160 * d)[1] + 8 * d
+            if self.left_view == "virt":
+                room = (free - lbh - 90 * d) / 6.15
+            else:
+                room = (free - lbh - 135 * d) / 6.5
+            try:
+                if room >= 52 * d:
+                    free -= lbh
+                    if not lb.winfo_manager():
+                        lb.pack(side="bottom", fill="x", pady=(8, 0))
+                elif lb.winfo_manager():
+                    lb.pack_forget()
+            except tk.TclError:
+                pass
         # numpad: 5 filas + fila de números (2/3 del tamaño) + títulos y botón
         u = (free - 135 * d) / 6.5
         u = min(u, (width_cap - 3 * 7) / 4, 92 * d)
@@ -2677,6 +2693,9 @@ class App:
             view = "virt"
         self.left_view = view
         self._apply_view()
+        if getattr(self, "leftbot_lbl", None) is not None:
+            self._fit_size = None              # cada vista necesita otro alto: volver a medir
+            self._fit_keys()
         if view == "virt" and self.selected not in PHONE_IDS:
             self._select("m1")
         elif view == "numpad" and self.selected in PHONE_IDS:
@@ -2848,7 +2867,14 @@ class App:
 
     def _update_bank_label(self):
         i = self.engine.bank
-        self.bank_lbl.configure(text=f"{i + 1}. {self.cfg['banks'][i]['name']}")
+        text = f"{i + 1}. {self.cfg['banks'][i]['name']}"
+        f = tkfont.Font(font=(FONT, BASE + 1, "bold"))
+        room = int(146 * getattr(self, "dpi", 1.0))          # cabe entre las flechas ◀ ▶
+        if f.measure(text) > room:
+            while text and f.measure(text + "…") > room:
+                text = text[:-1]
+            text = text.rstrip() + "…"
+        self.bank_lbl.configure(text=text)
 
     # ================================================================ editor: carga
     def _load_editor(self):

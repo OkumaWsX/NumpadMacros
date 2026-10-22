@@ -6,6 +6,9 @@ Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https:
 ### Corregido
 - **Teclas completas con temas que traen imagen abajo del panel**: en ventana (no maximizada) la última fila de teclas quedaba cortada; ahora las teclas se achican para dejar sitio a la imagen.
 - **Rueda del mouse en la pestaña Temas**: si todos los temas caben, la rueda ya no los desplaza hacia abajo dejando un hueco vacío arriba.
+- **Ventanas bajas (p. ej. 1280 × 720)**: si las teclas no caben junto con la imagen de abajo del panel, la imagen se esconde y las teclas (y la fila de números) se ven completas.
+- **Selector de sonidos con pocas por fila**: cada tarjeta se ve entera, con su nombre (antes, con 3 por fila, las portadas eran más altas que el selector).
+- **Bancos con nombre largo**: en la cabecera el nombre se acorta con «…» en vez de quedar cortado bajo las flechas.
 - **Rectángulos negros** después de cambiar de tema o de pasar a pantalla completa (en escritorios Linux con efectos): la ventana se vuelve a dibujar entera.
 
 ## [3.4.3] - 2026-10-22
