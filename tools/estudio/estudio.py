@@ -78,7 +78,7 @@ try:
 except Exception:          # sin la librería se elige la imagen con un botón
     TkinterDnD = None
 
-VERSION = "1.1.1"
+VERSION = "1.1.2"
 APP = "Estudio de Temas"
 if _IMPORT_ERROR:
     _fatal(_IMPORT_ERROR)
@@ -129,6 +129,20 @@ class Scrollable(tk.Frame):
         self.cv.bind("<Configure>", lambda e: self.cv.itemconfigure(self._win, width=e.width))
         self.bind("<Enter>", self._wheel_on)
         self.bind("<Leave>", self._wheel_off)
+        Scrollable.all.append(self)
+
+    all: list = []
+
+    def refresh(self):
+        """Vuelve a pintar todo lo de adentro (algunos escritorios Linux dejan partes sin dibujar al
+        maximizar o al cambiar mucho de tamaño)."""
+        try:
+            self.cv.itemconfigure(self._win, state="hidden")
+            self.cv.update_idletasks()
+            self.cv.itemconfigure(self._win, state="normal")
+            self.cv.configure(scrollregion=self.cv.bbox("all"))
+        except tk.TclError:
+            pass
 
     def _wheel_on(self, _e):
         self.cv.bind_all("<MouseWheel>", self._wheel)
@@ -375,6 +389,29 @@ class App:
         self.status.grid(row=3, column=0, sticky="ew", padx=16, pady=(6, 10))
         self.show(self.screen)
         self._title()
+        r.bind("<Configure>", self._on_root_configure, add="+")
+
+    def _on_root_configure(self, ev):
+        if ev.widget is not self.root:
+            return
+        size = (ev.width, ev.height)
+        if size == getattr(self, "_root_size", None):
+            return
+        self._root_size = size
+        job = getattr(self, "_repaint_job", None)
+        if job:
+            self.root.after_cancel(job)
+        self._repaint_job = self.root.after(250, self._repaint)
+
+    def _repaint(self):
+        """Después de maximizar o cambiar de tamaño: vuelve a pintar las columnas."""
+        self._repaint_job = None
+        for s in Scrollable.all:
+            try:
+                if s.winfo_ismapped():
+                    s.refresh()
+            except tk.TclError:
+                pass
 
     def show(self, sid):
         self.screen = sid
@@ -385,6 +422,10 @@ class App:
         if sid == "exp":
             self.exp_done.pack_forget()
         self.render()
+        self.root.after(80, self._repaint)
+        for sc in getattr(self, "stages", []):          # la vista previa de esta pantalla, a su tamaño
+            if sc.winfo_ismapped() or sc.master is self.views.get(sid):
+                self._fit_soon(sc)
 
     # ---------------------------------------------------------------- 1 · editar
     def _build_edit(self):
@@ -552,7 +593,30 @@ class App:
         cv = tk.Canvas(mid, width=V.W, height=V.H, highlightthickness=0, bd=0, cursor="hand2", bg="#0d0e11")
         cv.pack(pady=8)
         sc.top, sc.pcv, sc.pv = top, cv, V.Preview(cv)
+        sc.cv.bind("<Configure>", lambda e, s=sc: self._fit_soon(s), add="+")
+        self.__dict__.setdefault("stages", []).append(sc)
         return sc
+
+    def _fit_soon(self, sc):
+        job = getattr(sc, "_fit_job", None)
+        if job:
+            self.root.after_cancel(job)
+        sc._fit_job = self.root.after(120, lambda: self._fit_stage(sc))
+
+    def _fit_stage(self, sc):
+        """La vista previa crece o se achica con la ventana (sin pasar de 2× ni bajar de 0,6×)."""
+        sc._fit_job = None
+        try:
+            aw = sc.cv.winfo_width() - 16
+            ah = sc.cv.winfo_height() - sc.pcv.winfo_y() - 16
+        except tk.TclError:
+            return
+        if aw < 100 or ah < 100:
+            return
+        if sc.pv.set_scale(min(aw / V.W, ah / V.H)):
+            w, h = sc.pv.size
+            sc.pcv.configure(width=w, height=h)
+            self.render()
 
     # ---------------------------------------------------------------- fondo de la ventana (degradado)
     def _build_grad(self, box):
@@ -1084,8 +1148,14 @@ class App:
         return {}
 
     def render(self):
-        if not hasattr(self, "rows"):
+        """Pide volver a dibujar. Varios cambios seguidos (una barra que se arrastra, por ejemplo) se
+        juntan en un solo dibujo cuando la ventana queda libre: así no quedan zonas a medio pintar."""
+        if not hasattr(self, "rows") or getattr(self, "_render_job", None):
             return
+        self._render_job = self.root.after_idle(self._render_now)
+
+    def _render_now(self):
+        self._render_job = None
         self._quiet = True
         try:
             self._render()
@@ -1155,27 +1225,43 @@ class App:
             else:
                 r["extra"].grid_remove()
 
+    def _check_rows(self, box, rows):
+        """Filas «Aa · nombre · valor» reutilizando las que ya existen (no se destruyen en cada dibujo).
+        rows = [(nombre, valor, (fondo, texto) o None, estado)]."""
+        pool = box.__dict__.setdefault("_pool", [])
+        while len(pool) < len(rows):
+            fr = tk.Frame(box, bg=C["panel"])
+            demo = tk.Label(fr, text="Aa", font=fnt(-2, True), padx=4)
+            demo.pack(side="left")
+            name = self.lbl(fr, "", -2)
+            name.pack(side="left", padx=6)
+            val = tk.Label(fr, font=fnt(-2, mono=True), padx=5)
+            val.pack(side="right")
+            pool.append((fr, demo, name, val))
+        for i, (fr, demo, name, val) in enumerate(pool):
+            if i >= len(rows):
+                if fr.winfo_ismapped() or fr.winfo_manager():
+                    fr.pack_forget()
+                continue
+            n, rv, colors, st = rows[i]
+            if colors:
+                demo.configure(text="Aa", bg=colors[0], fg=colors[1])
+            else:
+                demo.configure(text="  ", bg=C["panel"], fg=C["panel"])
+            name.configure(text=n)
+            fgc, bgc = {"ok": (C["ok_text"], C["ok_bg"]), "warn": (C["warn_text"], C["warn_bg"]),
+                        "bad": (C["bad_text"], C["bad_bg"])}[st]
+            val.configure(text=f"{rv:.1f}:1" if colors else f"{int(rv)} %", bg=bgc, fg=fgc)
+            if not fr.winfo_manager():
+                fr.pack(fill="x", pady=1)
+
     def _paint_legibility(self):
-        for w in self.leg_rows.winfo_children():
-            w.destroy()
         e = self.eff()
         rows = self.legibility_rows()
         bad = sum(1 for r in rows if r[3] == "bad")
         warn = sum(1 for r in rows if r[3] == "warn")
         pairs = {p[0]: (e[p[2]], e[p[1]]) for p in L.PAIRS}
-        for name, rv, demo, st in rows:
-            fr = tk.Frame(self.leg_rows, bg=C["panel"])
-            fr.pack(fill="x", pady=1)
-            demo = pairs.get(name) or demo
-            if demo:
-                tk.Label(fr, text="Aa", bg=demo[0], fg=demo[1], font=fnt(-2, True), padx=4).pack(side="left")
-                val = f"{rv:.1f}:1"
-            else:
-                val = f"{int(rv)} %"
-            self.lbl(fr, name, -2).pack(side="left", padx=6)
-            fgc, bgc = {"ok": (C["ok_text"], C["ok_bg"]), "warn": (C["warn_text"], C["warn_bg"]),
-                        "bad": (C["bad_text"], C["bad_bg"])}[st]
-            tk.Label(fr, text=val, bg=bgc, fg=fgc, font=fnt(-2, mono=True), padx=5).pack(side="right")
+        self._check_rows(self.leg_rows, [(n, rv, pairs.get(n) or demo, st) for n, rv, demo, st in rows])
         if bad:
             self.leg_sum.configure(text=f"{bad} combinación{'es' if bad > 1 else ''} ilegible{'s' if bad > 1 else ''}. "
                                         "No se puede exportar hasta corregirla.", fg=C["bad_text"])
@@ -1247,6 +1333,14 @@ class App:
            "footband": (47, 47, 61, 5), "foot": (48, 48, 30, 3)}
 
     def _paint_slots(self):
+        sig = (self.template, self.slot_sel,
+               tuple(sorted((k, hashlib.md5(v["src"]).digest(), self.is_animated(k)) for k, v in self.images.items())))
+        if sig != getattr(self, "_slots_sig", None):
+            self._slots_sig = sig
+            self._paint_slot_lists()
+        self._paint_slot_settings()
+
+    def _paint_slot_lists(self):
         for w in self.tpl_box.winfo_children():
             w.destroy()
         tpls = list(L.TEMPLATES) + [("custom", "Personalizada", None)]
@@ -1310,6 +1404,8 @@ class App:
                 ws.append(b)
                 for wdg in ws:
                     wdg.bind("<Button-1>", lambda e, sl=slot: self.pick_slot(sl))
+
+    def _paint_slot_settings(self):
         # degradado (fila «Toda la ventana»)
         self.grad_mini.delete("all")
         g = self.gradient()
@@ -1494,18 +1590,10 @@ class App:
             if r["realce"].get() != s["realce"]:
                 r["realce"].set(s["realce"])
         self.focus_btn.configure(text=f"Destacar «{L.SECTIONS[self.sec_sel][0]}»")
-        for w in self.sec_checks.winfo_children():
-            w.destroy()
         rows = L.section_rows(self.colors, self.alpha, self.sections, self.gradient(), self.images)
-        low = 0
-        for k, name, r, pe, te, st, changed, img in rows:
-            fr = tk.Frame(self.sec_checks, bg=C["panel"])
-            fr.pack(fill="x", pady=1)
-            tk.Label(fr, text="Aa", bg=pe, fg=te, font=fnt(-2, True), padx=4).pack(side="left")
-            self.lbl(fr, name + (" (con imagen)" if img else ""), -2).pack(side="left", padx=6)
-            fg, bgc = (C["ok_text"], C["ok_bg"]) if st == "ok" else (C["warn_text"], C["warn_bg"])
-            tk.Label(fr, text=f"{r:.1f}:1", bg=bgc, fg=fg, font=fnt(-2, mono=True), padx=5).pack(side="right")
-            low += st != "ok"
+        self._check_rows(self.sec_checks, [(name + (" (con imagen)" if img else ""), r, (pe, te), st)
+                                           for k, name, r, pe, te, st, changed, img in rows])
+        low = sum(1 for row in rows if row[5] != "ok")
         if low:
             self.sec_sum.configure(text=f"{low} {'secciones' if low > 1 else 'sección'} atenuada{'s' if low > 1 else ''}. Se "
                                         "puede exportar; es normal si las atenuaste a propósito para resaltar otra.",

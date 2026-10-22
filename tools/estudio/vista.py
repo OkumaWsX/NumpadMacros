@@ -203,7 +203,7 @@ def _alpha_mul(im, a):
 _WALL = None
 
 
-def wallpaper():
+def wallpaper(size=None):
     """Fondo de escritorio de ejemplo (cielo, sol y cerros) para ver la opacidad de la ventana."""
     global _WALL
     if _WALL is None:
@@ -219,8 +219,13 @@ def wallpaper():
         d.ellipse([W * .18 - 46, H * .3 - 46, W * .18 + 46, H * .3 + 46], fill="#f4c56a")
         d.polygon([(0, H * .62), (W * .2, H * .5), (W * .45, H * .6), (W * .7, H * .48), (W, H * .58), (W, H), (0, H)],
                   fill="#2f5a49")
-        _WALL = im
-    return _WALL
+        _WALL = {(W, H): im}
+    size = size or (W, H)
+    if size not in _WALL:
+        if len(_WALL) > 4:
+            _WALL = {(W, H): _WALL[(W, H)]}
+        _WALL[size] = _WALL[(W, H)].resize(size, Image.BILINEAR)
+    return _WALL[size]
 
 
 class Preview:
@@ -238,6 +243,19 @@ class Preview:
         self._job = None
         self._t = 0
         self._layers = None
+        self.k = 1.0                       # escala de la vista previa (se ajusta al tamaño de la ventana)
+
+    def set_scale(self, k):
+        """Cambia el tamaño de la vista previa. Devuelve True si cambió (hay que volver a dibujar)."""
+        k = round(max(.6, min(2.0, k)), 2)
+        if abs(k - self.k) < .01:
+            return False
+        self.k = k
+        return True
+
+    @property
+    def size(self):
+        return round(W * self.k), round(H * self.k)
 
     # ------------------------------------------------------------ armado
     def draw(self, e: dict, slot_frames=None, gradient=None, sections=None, opacity=100, wall=False,
@@ -281,7 +299,8 @@ class Preview:
         for slot in npt.IMAGE_SLOTS:
             if slot not in zones():                # p. ej. «fondo» (toda la ventana): se dibuja aparte
                 continue
-            fr = slot_frames(slot, zone_size(slot))
+            zw, zh = zone_size(slot)
+            fr = slot_frames(slot, (max(1, round(zw * self.k)), max(1, round(zh * self.k))))
             if fr:
                 (behind if slot in npt.SLOTS_BEHIND else free)[slot] = fr
 
@@ -313,8 +332,11 @@ class Preview:
         elif mode == "sec":
             top = self._section_marks(sel)
 
-        self._layers = (base.down(), mid.down(), top.down() if top else None, behind, free,
-                        opacity / 100, wall)
+        size = (round(WW * self.k), round(WH * self.k))
+
+        def down(p):
+            return p.down() if abs(self.k - 1) < .01 else p.im.resize(size, Image.LANCZOS)
+        self._layers = (down(base), down(mid), down(top) if top else None, behind, free, opacity / 100, wall)
         self._anim = any(len(f) > 1 for f in list(behind.values()) + list(free.values())) and not paused
         if self._job:
             self.cv.after_cancel(self._job)
@@ -340,18 +362,19 @@ class Preview:
 
     def compose(self, t=0):
         base, mid, top, behind, free, op, wall = self._layers
+        k = self.k
         win = base.copy()
         for slot, fr in behind.items():
             x1, y1, _x2, _y2 = ZONES[slot]
-            win.alpha_composite(self._frame(fr, t), (x1, y1))
+            win.alpha_composite(self._frame(fr, t), (round(x1 * k), round(y1 * k)))
         win.alpha_composite(mid)
         for slot, fr in free.items():
             x1, y1, _x2, _y2 = ZONES[slot]
-            win.alpha_composite(self._frame(fr, t), (x1, y1))
+            win.alpha_composite(self._frame(fr, t), (round(x1 * k), round(y1 * k)))
         if top is not None:
             win.alpha_composite(top)
-        out = wallpaper().copy() if wall else Image.new("RGBA", (W, H), (13, 14, 17, 255))
-        out.alpha_composite(_alpha_mul(win, op), (OX, OY))
+        out = wallpaper(self.size).copy() if wall else Image.new("RGBA", self.size, (13, 14, 17, 255))
+        out.alpha_composite(_alpha_mul(win, op), (round(OX * k), round(OY * k)))
         return out
 
     def _show(self):
@@ -688,7 +711,8 @@ class Preview:
 
     # ------------------------------------------------------------ toque
     def tag_at(self, x, y, prefix):
-        """Etiqueta (sin el prefijo) de la zona más arriba bajo el mouse."""
+        """Etiqueta (sin el prefijo) de la zona más arriba bajo el mouse (x, y en píxeles del lienzo)."""
+        x, y = x / self.k, y / self.k
         for x1, y1, x2, y2, tag in reversed(self.hits):
             if tag.startswith(prefix) and x1 <= x < x2 and y1 <= y < y2:
                 return tag[len(prefix):]

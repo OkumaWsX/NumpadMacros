@@ -3,6 +3,10 @@
 Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
+### Corregido
+- **Estudio de Temas 1.1.2**:
+  - La **vista previa se ajusta al tamaño de la ventana**: en pantalla completa crece (hasta el doble, nítida) y en pantallas chicas se achica, sin dejar espacio vacío. Las zonas se siguen tocando igual.
+  - **Zonas a medio dibujar** (artefactos) al aplicar cambios o al maximizar, en escritorios Linux: los cambios seguidos se juntan en un solo dibujo, las listas de legibilidad, secciones, plantillas y espacios ya no se rehacen enteras en cada cambio, y las columnas se vuelven a pintar después de cambiar de tamaño o de pantalla.
 
 ## [3.4.4] - 2026-10-22
 ### Corregido
