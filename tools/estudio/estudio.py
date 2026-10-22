@@ -78,7 +78,7 @@ try:
 except Exception:          # sin la librería se elige la imagen con un botón
     TkinterDnD = None
 
-VERSION = "1.1.2"
+VERSION = "1.0.0"
 APP = "Estudio de Temas"
 if _IMPORT_ERROR:
     _fatal(_IMPORT_ERROR)
