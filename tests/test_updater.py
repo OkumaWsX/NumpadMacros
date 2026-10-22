@@ -34,7 +34,8 @@ class UpdaterTest(unittest.TestCase):
     def test_pick_latest_and_beta(self):
         data = [dict(self._release(), tag_name="v3.4.0"),
                 dict(self._release(), tag_name="v3.5.0", prerelease=True),
-                dict(self._release(), tag_name="v9.9.9", draft=True)]
+                dict(self._release(), tag_name="v9.9.9", draft=True),
+                dict(self._release(), tag_name="estudio-v99.0.0")]     # otro programa: se ignora
         with mock.patch("json.load", return_value=data), mock.patch.object(updater, "_open"):
             self.assertEqual(updater.fetch_latest(False).version, "3.4.0")
             self.assertEqual(updater.fetch_latest(True).version, "3.5.0")

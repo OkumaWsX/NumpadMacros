@@ -4,8 +4,8 @@
 # (o arrastrando la versión al programa Publicador, que hace lo mismo).
 #
 # 1. preparar:  calcula el número, revisa que el CHANGELOG tenga novedades.
-# 2. compilar:  pruebas + Windows (instalador y portátil), Linux, macOS, el APK de Android
-#               y el Estudio de Temas (los 3 sistemas).
+# 2. compilar:  pruebas + Windows (instalador y portátil), Linux, macOS y el APK de Android.
+#               (El Estudio de Temas se publica aparte, con «Publicar Estudio de Temas».)
 # 3. publicar:  solo si todo lo anterior salió bien: guarda el número nuevo,
 #               crea la etiqueta vX.Y.Z, la Release con los archivos y sus
 #               huellas SHA256 (las usa la app para actualizarse) y avisa en Discord.
@@ -89,14 +89,9 @@ jobs:
     uses: ./.github/workflows/android.yml
     secrets: inherit
 
-  estudio:
-    name: Estudio de Temas
-    needs: preparar
-    uses: ./.github/workflows/estudio.yml
-
   publicar:
     name: Publicar
-    needs: [preparar, compilar, android, estudio]
+    needs: [preparar, compilar, android]
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.preparar.outputs.version }}
@@ -112,11 +107,6 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           pattern: NumpadMacros-*
-          path: out
-          merge-multiple: true
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: EstudioTemas-*
           path: out
           merge-multiple: true
 

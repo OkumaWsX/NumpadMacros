@@ -1,0 +1,145 @@
+# Publica una versión nueva del Estudio de Temas (programa aparte de Numpad Macros, con su
+# propio número de versión).
+#
+# Cómo usarlo: pestaña Actions → «Publicar Estudio de Temas» → «Run workflow».
+#
+# 1. preparar:  toma el número de tools/estudio/estudio.py (VERSION) y las novedades de
+#               tools/estudio/CHANGELOG.md («Sin publicar» o la sección de esa versión).
+# 2. compilar:  pruebas + Windows (instalador y portátil), Linux y macOS.
+# 3. publicar:  solo si todo salió bien: crea la etiqueta estudio-vX.Y.Z y la Release
+#               «Estudio de Temas X.Y.Z» con sus huellas SHA256. No se marca como «la última»
+#               del repositorio: esa siempre es la de Numpad Macros (y su actualizador la ignora).
+name: Publicar Estudio de Temas
+
+on:
+  workflow_dispatch:
+    inputs:
+      beta:
+        description: "Versión de prueba (beta)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publicar-estudio
+  cancel-in-progress: false
+
+jobs:
+  preparar:
+    name: Preparar
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.prep.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Número y novedades
+        id: prep
+        shell: python
+        run: |
+          import datetime, os, re, subprocess, sys
+          src = open("tools/estudio/estudio.py", encoding="utf-8").read()
+          ver = re.search(r'^VERSION = "([^"]+)"', src, re.M).group(1)
+          if subprocess.run(["git", "rev-parse", "-q", "--verify", f"refs/tags/estudio-v{ver}"]).returncode == 0:
+              print(f"::error::Ya existe estudio-v{ver}. Sube VERSION en tools/estudio/estudio.py.")
+              sys.exit(1)
+          log = open("tools/estudio/CHANGELOG.md", encoding="utf-8").read()
+          parts = re.split(r"^## ", log, flags=re.M)
+          def body(title_re):
+              for p in parts[1:]:
+                  head, _, rest = p.partition("\n")
+                  if re.match(title_re, head):
+                      return rest.strip()
+              return ""
+          notes = body(r"\[Sin publicar\]") or body(re.escape(f"[{ver}]"))
+          if not notes:
+              print("::error::tools/estudio/CHANGELOG.md no tiene novedades para esta versión.")
+              sys.exit(1)
+          today = datetime.date.today().isoformat()
+          if body(r"\[Sin publicar\]"):
+              # «Sin publicar» pasa a ser la versión (y se deja un «Sin publicar» vacío arriba)
+              log = log.replace("## [Sin publicar]\n", f"## [Sin publicar]\n\n## [{ver}] - {today}\n", 1)
+          log = re.sub(rf"^## \[{re.escape(ver)}\] - pendiente$", f"## [{ver}] - {today}", log, flags=re.M)
+          open("tools/estudio/CHANGELOG.md", "w", encoding="utf-8").write(log)
+          open("notas.md", "w", encoding="utf-8").write(
+              notes + "\n\n---\nPrograma aparte de Numpad Macros para crear temas `.npt`. "
+              "[Historial completo](https://github.com/" + os.environ["GITHUB_REPOSITORY"]
+              + "/blob/main/tools/estudio/CHANGELOG.md)\n")
+          readme = open("README.md", encoding="utf-8").read()
+          readme = re.sub(r"releases/download/estudio-v[0-9.]+/", f"releases/download/estudio-v{ver}/", readme)
+          open("README.md", "w", encoding="utf-8").write(readme)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"version={ver}\n")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: estudio-preparado
+          path: |
+            tools/estudio/CHANGELOG.md
+            README.md
+            notas.md
+          if-no-files-found: error
+
+  compilar:
+    name: Compilar
+    needs: preparar
+    uses: ./.github/workflows/estudio.yml
+
+  publicar:
+    name: Publicar
+    needs: [preparar, compilar]
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.preparar.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          name: estudio-preparado
+          path: prep
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: EstudioTemas-*
+          path: out
+          merge-multiple: true
+
+      - name: Huellas de seguridad (SHA256SUMS.txt)
+        run: |
+          cd out
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Guardar las novedades y crear la etiqueta
+        run: |
+          cp prep/tools/estudio/CHANGELOG.md tools/estudio/CHANGELOG.md
+          cp prep/README.md README.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tools/estudio/CHANGELOG.md README.md
+          git commit -m "Estudio de Temas $VERSION" || echo "Sin cambios que guardar"
+          ok=""
+          for i in 1 2 3; do
+            if git pull --rebase origin main && git push origin HEAD:main; then ok=1; break; fi
+            sleep 5
+          done
+          if [ -z "$ok" ]; then echo "::error::No pude guardar las novedades en main."; exit 1; fi
+          git tag -a "estudio-v$VERSION" -m "Estudio de Temas $VERSION"
+          git push origin "estudio-v$VERSION"
+
+      - name: Crear la Release
+        run: |
+          flags="--latest=false"
+          if [ "${{ inputs.beta }}" = "true" ]; then flags="$flags --prerelease"; fi
+          gh release create "estudio-v$VERSION" out/* \
+            --title "Estudio de Temas $VERSION" \
+            --notes-file prep/notas.md $flags
+
+      - name: Resumen
+        run: |
+          echo "## ✓ Estudio de Temas $VERSION publicado" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://github.com/${{ github.repository }}/releases/tag/estudio-v$VERSION" >> "$GITHUB_STEP_SUMMARY"

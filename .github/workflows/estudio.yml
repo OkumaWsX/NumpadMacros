@@ -1,6 +1,6 @@
 # Compila el Estudio de Temas (programa aparte) para Windows (instalador y portátil),
 # Linux y macOS. Corre cuando cambia su código o el formato .npt, a mano desde Actions,
-# y lo llama «Publicar versión» para incluirlo en cada Release.
+# y lo llama «Publicar Estudio de Temas» para su propia Release (aparte de Numpad Macros).
 name: Compilar Estudio de Temas
 
 on:

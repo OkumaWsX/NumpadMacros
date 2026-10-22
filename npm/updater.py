@@ -116,7 +116,7 @@ def fetch_latest(beta: bool = False) -> Release | None:
         if item.get("draft") or (item.get("prerelease") and not beta):
             continue
         rel = Release(item)
-        if not rel.version:
+        if not rel.version or not re.match(r"^[vV]?\d", rel.tag):   # p. ej. «estudio-v1.0.0»: otro programa
             continue
         if best is None or newer(rel.version, best.version):
             best = rel

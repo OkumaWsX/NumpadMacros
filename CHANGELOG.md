@@ -3,11 +3,6 @@
 Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
-### Añadido
-- **Estudio de Temas 1.0**: primera versión oficial del Estudio. Reemplaza a las de prueba que venían en 3.4.1 a 3.4.4 (ya no se descargan desde esas versiones). Incluye todo lo de abajo y lo de 3.4.1: degradado e imagen de fondo, «Fondo de una pieza», transparencia por sección, 9 espacios con GIF, vista previa de Numpad Macros e icono propio. Lo nuevo en esta versión:
-  - La **vista previa se ajusta al tamaño de la ventana**: en pantalla completa crece (hasta el doble, nítida) y en pantallas chicas se achica, siempre entera y sin barra de desplazamiento ni espacio vacío. Las zonas se siguen tocando igual.
-  - **Paneles laterales ocultables y con ancho ajustable**: dos interruptores arriba a la derecha («Panel izquierdo» y «Panel derecho») muestran u ocultan cada panel, y su borde se arrastra para hacerlo más ancho o más angosto, dentro de límites para que el contenido no se deforme (los textos se reacomodan). La vista previa queda siempre centrada y aprovecha el espacio que dejan. El Estudio recuerda cómo los dejaste.
-  - **Zonas a medio dibujar** (artefactos) al aplicar cambios o al maximizar, en escritorios Linux: los cambios seguidos se juntan en un solo dibujo, las listas de legibilidad, secciones, plantillas y espacios ya no se rehacen enteras en cada cambio, y las columnas se vuelven a pintar después de cambiar de tamaño o de pantalla.
 
 ## [3.4.4] - 2026-10-22
 ### Corregido
@@ -24,26 +19,14 @@ Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https:
 
 ## [3.4.2] - 2026-10-22
 ### Corregido
-- **Imágenes de los temas con el mismo recorte que en el Estudio**: el Estudio de Temas guardaba cada imagen con otra forma que la de su vista previa, así que en Numpad Macros se veía otro pedazo (por ejemplo, un texto ancho debajo de las teclas salía cortado por los lados). Ahora el tema guarda exactamente lo que ves en la vista previa (Estudio de Temas 1.1.1). Los temas ya creados se arreglan volviendo a guardarlos desde su proyecto `.nptproj`.
+- **Imágenes de los temas con su recorte exacto**: algunas imágenes de los temas se veían con otro recorte que el diseñado (por ejemplo, un texto ancho debajo de las teclas salía cortado por los lados). Los temas nuevos se ven tal cual se diseñaron.
 - **Espacio de abajo del panel de teclas**: la imagen ocupa todo el ancho del panel, como en la vista previa, se ve completa y ya no le quita espacio a la última fila de teclas.
 
 ## [3.4.1] - 2026-10-21
 ### Añadido
 - **App Android 1.3**: **busca actualizaciones sola** (una vez al día, en GitHub, igual que el escritorio): avisa en la botonera, muestra las novedades, descarga el APK, lo comprueba con su huella SHA256 y abre el instalador de Android (sin perder los PCs vinculados ni los ajustes). En Ajustes → Actualizaciones se puede apagar, recibir betas y «Buscar ahora». Además, los menús son **píldoras flotantes de vidrio** como en el escritorio: barra inferior flotante, selector de grupo y pestañas en un riel, bancos y Detener + volumen en píldoras, y hojas esmeriladas (desenfoque en Android 12 o más nuevo; con Alto contraste se vuelven sólidas).
-- **Estudio de Temas para descargar**: cada versión trae el Estudio listo para usar, sin instalar Python: instalador para Windows (no pide administrador), versión portátil, Linux y macOS. En Windows, los proyectos `.nptproj` se abren con doble clic.
-
-- **Estudio de Temas** (versión de prueba), con todo lo de las maquetas:
-  - **Fondo de imagen y «Fondo de una pieza»**: el fondo de la ventana también puede ser una imagen (subida, la importada para los colores o generada con la paleta), con opción de oscurecerla. Con «Fondo de una pieza», el degradado o la imagen pasa también por detrás del panel de teclas, las pestañas y su contenido; el «Tinte de los paneles» los suaviza para que el texto se lea. La vista previa lo muestra igual que Numpad Macros.
-  - **Fondo degradado** para toda la ventana: de 2 a 5 colores, que empieza en una esquina, un lado o el centro (circular). Se arma a mano, con los colores del tema o con los de la imagen.
-  - **Transparencia por sección** (pantalla nueva): encabezado, panel de teclas, teclas, pestañas, panel de la pestaña y pie, cada una con la transparencia de su fondo y de su contenido y un borde de realce. «Destacar» resalta una sección y atenúa las demás; hay estilos rápidos (Normal, Destacar teclas, Destacar la pestaña y Cristal).
-  - **9 espacios para imágenes**: además del banner, el fondo de las teclas y el logo, la parte de abajo de la pestaña y la banda del pie (detrás de los botones, también detrás de Donar) y cuatro espacios libres que nunca tapan botones. Admiten **GIF animado** (hasta 120 cuadros), con opción de pausarlos cuando no usas la ventana. Plantillas nuevas: «Stickers animados» y «Todo».
-  - La **vista previa** es ahora la ventana de Numpad Macros 3.4.1, con la letra Inter, transparencia real y un fondo de escritorio de ejemplo.
-
-### Cambiado
-- **Estudio de Temas con icono propio**: una «T» caligráfica y un pincel de artista con un trazo de colores, para distinguirlo de Numpad Macros en el escritorio, la barra de tareas, el instalador y el menú de aplicaciones.
 
 ### Corregido
-- Estudio de Temas: la versión compilada se cerraba apenas se abría (le faltaba una pieza para mostrar imágenes). Si algo falla al abrirse, ahora lo muestra en una ventana y lo anota en `error.log`.
 - Linux: el icono de la bandeja no mostraba opciones (en KDE / CachyOS, GNOME, XFCE…), así que no había cómo cerrar el programa. Ahora, con **clic derecho**, aparece el menú del escritorio con **Mostrar ventana, Pausar / Reanudar, Ayuda y soporte y Salir**; clic izquierdo muestra u oculta la ventana y clic central pausa o reanuda. En escritorios sin ese tipo de bandeja, el clic en el icono abre el mismo menú.
 - Al cerrar la ventana por primera vez, el programa pregunta si quieres **dejarlo en la bandeja o salir**, y puede recordar tu elección (se cambia en «Numpad y opciones» → «Al cerrar la ventana»).
 - La ventana podía dejar de responder (al numpad, al celular y a la bandeja) justo después de la búsqueda automática de actualizaciones al iniciar. Ya no pasa.
@@ -56,7 +39,7 @@ Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https:
 - 🔍 Esta versión esconde algunas sorpresas. ¿Las encontrarás?
 - **App Android 1.2**: **temas** (los 11 del PC) en Ajustes → Apariencia, más **Alto contraste** y **Pantalla AMOLED / OLED** (negro puro); **12 colores** por botón más «sin color», y las teclas Global llevan una «G»; las teclas virtuales se ordenan en **5 × 6**; con el celular **acostado** los controles pasan a una barra lateral y la pantalla completa muestra solo las teclas con una píldora arriba. La app ya acepta el tema que le mande el PC.
 - **Modo «Solo celular»**: Numpad Macros funciona sin ningún teclado ni numpad conectado. Se activa en «Numpad y opciones»; no muestra avisos de captura y en vez del numpad dibuja las teclas virtuales.
-- **Estudio de Temas** (programa aparte, en `tools/estudio/`): crea temas `.npt` con las 22 capas de color, transparencia por capa, opacidad de la ventana, colores sacados de una imagen y plantillas con imágenes (banner, fondo de las teclas y logo). Los temas van cifrados y firmados: los del creador salen como «Oficial» y los de los demás como «Comunidad · su nombre», con una firma de autor que nadie más puede usar. Numpad Macros ya los importa (colores y transparencia de la ventana); las imágenes y la transparencia por capa llegarán en una próxima versión.
+- **Temas de la comunidad**: Numpad Macros importa temas `.npt` firmados: los del creador salen como «Oficial» y los de los demás como «Comunidad · su nombre», con una firma de autor que nadie más puede usar.
 
 ### Cambiado
 - **F13–F24 ya no se usan como teclas de entrada**: las reemplazan las teclas virtuales. Lo que tenías asignado a F13–F24 se mueve solo a las primeras teclas virtuales libres del mismo banco. (Los atajos que *envían* F13–F24 a OBS u otros programas siguen igual.)

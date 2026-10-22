@@ -4,7 +4,8 @@ Programa aparte para crear temas `.npt` (NumPad Theme) para Numpad Macros, en Wi
 
 ## Descargar
 
-Viene en cada [Release](https://github.com/OkumaWsX/NumpadMacros/releases/latest) de Numpad Macros:
+Tiene sus propias [Releases](https://github.com/OkumaWsX/NumpadMacros/releases?q=Estudio+de+Temas&expanded=true)
+(«Estudio de Temas X.Y.Z», aparte de las de Numpad Macros) y su propio [historial de cambios](CHANGELOG.md):
 
 - **Windows**: `EstudioTemas-Windows-Setup.exe` (instalador, no pide administrador) o
   `EstudioTemas-Windows-portable.zip`.
