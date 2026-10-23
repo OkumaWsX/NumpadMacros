@@ -148,10 +148,10 @@ class Scrollable(tk.Frame):
             self._base_w = e.width
         if e.width != getattr(self, "_last_w", None):
             self._last_w = e.width
-            job = getattr(self, "_wrap_job", None)
-            if job:
-                self.after_cancel(job)
-            self._wrap_job = self.after(60, self._rewrap)
+            # como mucho cada 50 ms (y siempre con el último ancho): al arrastrar el borde los textos
+            # acompañan al panel sin trabar cada cuadro; si se esperara a soltar, al final saltarían
+            if not getattr(self, "_wrap_job", None):
+                self._wrap_job = self.after(50, self._rewrap)
 
     def _rewrap(self):
         """El panel es «responsivo»: los textos largos se reacomodan al nuevo ancho (sin deformarse)."""
@@ -243,6 +243,84 @@ class Switch(tk.Frame):
         x = 25 if on else 9
         cv.create_oval(x - 6, 3, x + 6, 15, fill=C["on_acc"] if on else C["muted"], outline="")
         self.lbl.configure(fg=C["text"] if on else C["muted"])
+
+
+class Slider(tk.Canvas):
+    """Control deslizable dibujado a mano, igual a como se veía con tk.Scale (barra oscura y un botón
+    naranja). tk.Scale usa el naranja como fondo de toda su ventana: al redimensionar, si el sistema la
+    limpia se veía el control entero naranja. Aquí el fondo es el del panel."""
+    KNOB = 16
+    HIGH = 10
+
+    def __init__(self, parent, var, a, b, step, command):
+        super().__init__(parent, width=40, height=self.HIGH, bg=parent.cget("bg"), highlightthickness=0, bd=0,
+                         cursor="hand2", takefocus=1)
+        self.var, self.a, self.b, self.step, self.command = var, a, b, step, command
+        self._state, self._hover = "normal", False           # width=40: sin él el Canvas pide ~380 px
+        self._trace = var.trace_add("write", lambda *_: self._paint())
+        self.bind("<Configure>", lambda e: self._paint())
+        self.bind("<Button-1>", lambda e: (self.focus_set(), self._set_x(e.x)))
+        self.bind("<B1-Motion>", lambda e: self._set_x(e.x))
+        self.bind("<Enter>", lambda e: self._set_hover(True))
+        self.bind("<Leave>", lambda e: self._set_hover(False))
+        self.bind("<Left>", lambda e: self._set_value(self._value() - self.step))
+        self.bind("<Right>", lambda e: self._set_value(self._value() + self.step))
+        self.bind("<Destroy>", self._untrace)
+
+    def configure(self, cnf=None, **kw):
+        if "length" in kw:                                  # como en tk.Scale: el largo es el ancho
+            kw["width"] = kw.pop("length")
+        if "state" in kw:                                   # «disabled»: gris y sin responder
+            self._state = kw.pop("state")
+            self._paint()
+        if cnf or kw:
+            return super().configure(cnf, **kw)
+
+    config = configure
+
+    def _untrace(self, e):
+        if e.widget is self:
+            try:
+                self.var.trace_remove("write", self._trace)
+            except (tk.TclError, ValueError):
+                pass
+
+    def _value(self):
+        try:
+            return self.var.get()
+        except (tk.TclError, ValueError):
+            return self.a
+
+    def _set_hover(self, on):
+        self._hover = on
+        self._paint()
+
+    def _paint(self):
+        w = self.winfo_width()
+        if w <= 1:
+            return
+        span = (self.b - self.a) or 1
+        x = round((L.clamp(self._value(), self.a, self.b) - self.a) / span * (w - self.KNOB))
+        on = self._state != "disabled"
+        self.delete("all")
+        self.create_rectangle(0, 0, w, self.HIGH, fill=C["panel2"], width=0)
+        knob = (("#ffb855" if self._hover else C["acc"]) if on else C["line"])
+        self.create_rectangle(x, 0, x + self.KNOB, self.HIGH, fill=knob, width=0)
+
+    def _set_x(self, x):
+        w = self.winfo_width()
+        frac = L.clamp((x - self.KNOB / 2) / max(1, w - self.KNOB), 0, 1)
+        self._set_value(self.a + frac * (self.b - self.a))
+
+    def _set_value(self, v):
+        if self._state == "disabled":
+            return
+        v = L.clamp(self.a + round((v - self.a) / self.step) * self.step, self.a, self.b)
+        if isinstance(self.step, int) and isinstance(self.a, int):
+            v = int(v)
+        if v != self._value():
+            self.var.set(v)
+            self.command()
 
 
 # límites de ancho de los paneles laterales (así el contenido no se deforma)
@@ -407,9 +485,7 @@ class App:
                         highlightbackground=C["line"], highlightcolor=C["acc"], font=fnt())
 
     def scale(self, parent, var, a, b, step, cmd):
-        return tk.Scale(parent, variable=var, from_=a, to=b, resolution=step, orient="horizontal", showvalue=False,
-                        command=lambda _v: cmd(), bg=C["acc"], troughcolor=C["panel2"], activebackground="#ffb855",
-                        highlightthickness=0, bd=0, sliderrelief="flat", sliderlength=16, width=10)
+        return Slider(parent, var, a, b, step, cmd)
 
     def _blank(self, w, h):
         if not hasattr(self, "_blanks"):
@@ -757,30 +833,43 @@ class App:
             self._apply_panel(side)
 
     def _apply_panel(self, side):
+        """Muestra u oculta el panel de ese lado en las tres pantallas, con su ancho."""
         st = self.panel_state[side]
+        shown = False
         for panel, grip in self.panel_sides[side]:
             if st["visible"]:
                 panel.cv.configure(width=st["ancho"])
                 if not panel.winfo_manager():
                     panel.grid()
                     grip.grid()
-            else:
+                    shown = True
+            elif panel.winfo_manager():
                 panel.grid_remove()
                 grip.grid_remove()
-            # obliga a Tk a repartir otra vez el espacio (a veces no lo hace solo al ocultar)
-            f = panel.master
-            for c in (0, 1, 3, 4):
-                f.columnconfigure(c, weight=0, minsize=0)
-            f.columnconfigure(2, weight=1, minsize=360)
-            if f.winfo_manager() == "grid":      # volver a ubicar la pantalla hace que Tk la reacomode
+                shown = True
+        if not shown:
+            return
+        # Al ocultar, Tk a veces no reparte otra vez el espacio: volver a ubicar la pantalla visible la
+        # reacomoda (las otras se reacomodan solas al mostrarlas).
+        f = getattr(self, "views", {}).get(self.screen)
+        try:
+            if f is not None and f.winfo_manager() == "grid":
                 f.grid_remove()
                 f.grid()
+        except tk.TclError:                      # la ventana se está rearmando
+            pass
+
+    def _resize_panel(self, side):
+        """Arrastrando el borde: solo cambia el ancho (sin esconder nada, para que se mueva suave)."""
+        w = self.panel_state[side]["ancho"]
+        for panel, _grip in self.panel_sides[side]:
+            panel.cv.configure(width=w)
 
     def toggle_panel(self, side, visible):
         self.panel_state[side]["visible"] = bool(visible)
         self._apply_panel(side)
         self._save_panels()
-        self.root.after(80, self._repaint)
+        self.root.after(80, self._repaint_window)
 
     def _drag_start(self, side, e):
         self._drag_from = (e.x_root, self.panel_state[side]["ancho"])
@@ -792,7 +881,12 @@ class App:
         w = L.clamp(w0 + (dx if side == "izq" else -dx), lo, hi)
         if w != self.panel_state[side]["ancho"]:
             self.panel_state[side]["ancho"] = w
-            self._apply_panel(side)
+            if not getattr(self, "_drag_job", None):       # un solo ajuste por cuadro, aunque el mouse mande más
+                self._drag_job = self.root.after_idle(lambda: self._drag_apply(side))
+
+    def _drag_apply(self, side):
+        self._drag_job = None
+        self._resize_panel(side)
 
     def _save_panels(self):
         self.settings["paneles"] = {k: dict(v) for k, v in self.panel_state.items()}

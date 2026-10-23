@@ -111,6 +111,13 @@ lea este documento.
 - **Tk no reacomoda** una pantalla después de `grid_remove()` de un panel: hay que volver a ubicarla
   (`f.grid_remove(); f.grid()`), ver `_apply_panel`.
 - Un `tk.Canvas` sin `width` pide ~380 px y ensancha toda la columna.
+- Arrastrar el borde de un panel solo cambia el ancho (`_resize_panel`, un ajuste por cuadro). Esconder
+  y volver a ubicar la pantalla (`f.grid_remove(); f.grid()`) es solo para ocultar o mostrar un panel
+  (`_apply_panel`); hacerlo en cada movimiento dejaba la pantalla en blanco.
+- Los deslizables son `Slider` (un Canvas), no `tk.Scale`: este pinta toda su ventana con el color
+  del fondo (naranja), y al redimensionar se veía el control entero naranja. `Slider` acepta
+  `configure(state=..., length=...)` como `tk.Scale`, pero solo llama al comando cuando lo mueve la
+  persona.
 - Pillow: dibujar con `ImageDraw.Draw(im, "RGBA")` sobre una capa RGBA **reemplaza** el alfa (no
   mezcla): las capas semitransparentes se dibujan aparte y se combinan con `alpha_composite`.
 - Los controles `tk.Scale` llaman a su comando también cuando el programa cambia el valor: los
