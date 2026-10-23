@@ -9,11 +9,19 @@
 # 3. publicar:  solo si todo salió bien: crea la etiqueta estudio-vX.Y.Z y la Release
 #               «Estudio de Temas X.Y.Z» con sus huellas SHA256. No se marca como «la última»
 #               del repositorio: esa siempre es la de Numpad Macros (y su actualizador la ignora).
+#
+# «Privado (borrador)», marcado por defecto: la Release queda como borrador, que solo ve el dueño
+# del repositorio (para descargar y probar). No crea la etiqueta ni toca el historial. Cada vez que
+# se corre, reemplaza el borrador anterior. Para publicarla de verdad, córrelo sin marcarlo.
 name: Publicar Estudio de Temas
 
 on:
   workflow_dispatch:
     inputs:
+      privado:
+        description: "Privado (borrador): solo tú lo ves, para probar antes de publicar"
+        type: boolean
+        default: true
       beta:
         description: "Versión de prueba (beta)"
         type: boolean
@@ -114,7 +122,16 @@ jobs:
           sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
+      - name: Borrador anterior (si hay)
+        run: |
+          # un borrador de esta versión se reemplaza (al probar de nuevo o al publicar de verdad)
+          if [ "$(gh release view "estudio-v$VERSION" --json isDraft --jq .isDraft 2>/dev/null)" = "true" ]; then
+            gh release delete "estudio-v$VERSION" --yes
+            echo "Borrador anterior eliminado."
+          fi
+
       - name: Guardar las novedades y crear la etiqueta
+        if: ${{ !inputs.privado }}
         run: |
           cp prep/tools/estudio/CHANGELOG.md tools/estudio/CHANGELOG.md
           cp prep/README.md README.md
@@ -131,15 +148,26 @@ jobs:
           git tag -a "estudio-v$VERSION" -m "Estudio de Temas $VERSION"
           git push origin "estudio-v$VERSION"
 
-      - name: Crear la Release
+      - name: Crear la Release (borrador privado)
+        if: ${{ inputs.privado }}
+        run: |
+          flags="--draft --latest=false --target $GITHUB_SHA"
+          if [ "${{ inputs.beta }}" = "true" ]; then flags="$flags --prerelease"; fi
+          gh release create "estudio-v$VERSION" out/* \
+            --title "Estudio de Temas $VERSION (borrador)" \
+            --notes-file prep/notas.md $flags
+          url=$(gh release view "estudio-v$VERSION" --json url --jq .url)
+          echo "## Borrador privado del Estudio de Temas $VERSION" >> "$GITHUB_STEP_SUMMARY"
+          echo "Solo tú lo ves. Descarga los archivos para probar: $url" >> "$GITHUB_STEP_SUMMARY"
+          echo "Cuando estés conforme, vuelve a correr este workflow sin marcar «Privado»." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Crear la Release (pública)
+        if: ${{ !inputs.privado }}
         run: |
           flags="--latest=false"
           if [ "${{ inputs.beta }}" = "true" ]; then flags="$flags --prerelease"; fi
           gh release create "estudio-v$VERSION" out/* \
             --title "Estudio de Temas $VERSION" \
             --notes-file prep/notas.md $flags
-
-      - name: Resumen
-        run: |
           echo "## ✓ Estudio de Temas $VERSION publicado" >> "$GITHUB_STEP_SUMMARY"
           echo "https://github.com/${{ github.repository }}/releases/tag/estudio-v$VERSION" >> "$GITHUB_STEP_SUMMARY"
