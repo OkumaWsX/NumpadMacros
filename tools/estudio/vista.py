@@ -266,6 +266,7 @@ class Preview:
         self._t = 0
         self._layers = None
         self.k = 1.0                       # escala de la vista previa (se ajusta al tamaño de la ventana)
+        self.quiet = False                 # True: se dibuja (en una pestaña tapada) pero sin animar los GIF
 
     def set_scale(self, k):
         """Cambia el tamaño de la vista previa. Devuelve True si cambió (hay que volver a dibujar)."""
@@ -450,7 +451,7 @@ class Preview:
             self._job = None
         self._t = 0
         self._put(self._shown)
-        if self._anim:
+        if self._anim and not self.quiet:
             self._job = self.cv.after(60, self._tick)
 
     def _hit(self, x1, y1, x2, y2, tag):

@@ -67,7 +67,7 @@ try:
     import logica as L  # noqa: E402
     import claves as K  # noqa: E402
     import vista as V  # noqa: E402
-    from congelar import Congelar  # noqa: E402
+    from respaldo import guardar_contenido  # noqa: E402
     from logica import npt  # noqa: E402
     from PIL import Image, ImageTk  # noqa: E402
 except Exception:
@@ -572,6 +572,10 @@ class App:
         self.body.columnconfigure(0, weight=1)
         self.views = {"edit": self._build_edit(), "sec": self._build_sec(), "img": self._build_img(),
                       "exp": self._build_exp(), "key": self._build_key()}
+        for v in self.views.values():            # todas una encima de otra (ver _show_now)
+            v.place(x=0, y=0, relwidth=1, relheight=1)
+        guardar_contenido(self.views.values())
+        self.body.bind("<Configure>", lambda e: self._sync_hidden_soon(), add="+")
         self.status = tk.Label(r, text="Listo.", bg=C["bg"], fg=C["muted"], font=fnt(-1), anchor="w")
         self.status.grid(row=3, column=0, sticky="ew", padx=16, pady=(6, 10))
         self._show_now(self.screen)
@@ -599,8 +603,7 @@ class App:
         self._repaint_job = None
         if getattr(self, "_big_jump", False):
             self._big_jump = False
-            # el repintado completo deja la ventana en blanco un instante: por debajo de la foto no se ve
-            Congelar(self.root).hacer(self._repaint_window, listo=self._drawn)
+            self._repaint_window()
 
     def _repaint_window(self):
         """Tapa la ventana entera un instante y la destapa: así el sistema obliga a repintar todo lo que
@@ -615,26 +618,37 @@ class App:
             pass
 
     def show(self, sid):
-        """Cambia de pantalla «de una vez» (en Linux, sin que se vea la pantalla nueva llenándose)."""
-        Congelar(self.root).hacer(lambda: self._show_now(sid), listo=self._drawn)
+        self._show_now(sid)
 
-    def _drawn(self) -> bool:
-        """True si no queda nada por dibujar: ni ajustes de tamaño ni la vista previa (que va en otro hilo)."""
-        if getattr(self, "_render_job", None):
-            return False
-        if any(getattr(s, "_wrap_job", None) for s in Scrollable.all):     # textos por reacomodar
-            return False
-        for sc in getattr(self, "stages", []):
-            if getattr(sc, "_fit_job", None) or getattr(sc, "_sharp_job", None):
-                return False
-            if getattr(sc.pv, "_busy", False) or getattr(sc.pv, "_pending", None) is not None:
-                return False
-        return True
+    def _sync_hidden_soon(self):
+        job = getattr(self, "_sync_job", None)
+        if job:
+            self.root.after_cancel(job)
+        self._sync_job = self.root.after(300, self._sync_hidden)
+
+    def _sync_hidden(self):
+        """Lleva las pantallas tapadas al tamaño actual, de a una (se dibujan por debajo, sin verse)."""
+        self._sync_job = None
+        cur = self.views[self.screen]
+        w, h = cur.winfo_width(), cur.winfo_height()
+        for v in self.views.values():
+            if v is not cur and (v.winfo_width(), v.winfo_height()) != (w, h):
+                v.place_configure(width=w, height=h)
+                self._sync_job = self.root.after(120, self._sync_hidden)
+                return
 
     def _show_now(self, sid):
+        """Las pantallas están todas puestas una encima de otra y se trae al frente la elegida. En Linux el
+        servidor X guarda cada una ya dibujada (respaldo.py): aparece de una vez, sin repintarse."""
         self.screen = sid
-        for k, v in self.views.items():
-            v.grid_remove() if k != sid else v.grid(row=0, column=0, sticky="nsew")
+        v = self.views[sid]
+        # la visible sigue al tamaño de la ventana; las tapadas quedan con tamaño fijo y se ponen al día
+        # después de soltar (_sync_hidden): si no, al cambiar el tamaño Tk acomodaría las cinco
+        for k, w in self.views.items():
+            if w is not v and str(w.place_info().get("relwidth", "0")) not in ("0", "0.0", ""):
+                w.place_configure(relwidth=0, relheight=0, width=w.winfo_width(), height=w.winfo_height())
+        v.place_configure(relwidth=1, relheight=1, width=0, height=0)
+        v.tkraise()
         for k, b in self.nav.items():
             b.configure(style="NavOn.TButton" if k == sid else "Nav.TButton")
         if sid == "exp":
@@ -874,15 +888,16 @@ class App:
                 shown = True
         if not shown:
             return
-        # Al ocultar, Tk a veces no reparte otra vez el espacio: volver a ubicar la pantalla visible la
-        # reacomoda (las otras se reacomodan solas al mostrarlas).
-        f = getattr(self, "views", {}).get(self.screen)
-        try:
-            if f is not None and f.winfo_manager() == "grid":
-                f.grid_remove()
-                f.grid()
-        except tk.TclError:                      # la ventana se está rearmando
-            pass
+        # Al ocultar, Tk a veces no reparte otra vez el espacio (sigue reservando la columna del panel).
+        # Apagar y prender la propagación de la grilla la obliga a recalcular, sin esconder la pantalla
+        # (esconderla borraba lo que el servidor X tenía guardado y se veía repintándose).
+        for f in getattr(self, "views", {}).values():
+            try:
+                f.grid_propagate(False)
+                f.update_idletasks()
+                f.grid_propagate(True)
+            except tk.TclError:                  # la ventana se está rearmando
+                pass
 
     def _resize_panel(self, side, everywhere=False):
         """Arrastrando el borde: solo cambia el ancho (sin esconder nada, para que se mueva suave). Mientras
@@ -890,23 +905,15 @@ class App:
         reacomoda en cada paso, aunque no se vean)."""
         w = self.panel_state[side]["ancho"]
         for panel, _grip in self.panel_sides[side]:
-            if (everywhere or panel.winfo_ismapped()) and int(panel.cv.cget("width")) != w:
+            if (everywhere or self._current(panel)) and int(panel.cv.cget("width")) != w:
                 panel.cv.configure(width=w)
 
     def toggle_panel(self, side, visible):
         self.panel_state[side]["visible"] = bool(visible)
         self._save_panels()
-
-        def change():
-            self._apply_panel(side)
-            self.root.update_idletasks()
-            self._repaint_window()                # por debajo de la foto: no se ve
-            for sc in self.stages:                # la vista previa, nítida ya (sin pasar por la estirada)
-                job = getattr(sc, "_sharp_job", None)
-                if job:
-                    self.root.after_cancel(job)
-                    self._sharpen(sc)
-        Congelar(self.root).hacer(change, listo=self._drawn)
+        for sc in self.stages:          # aquí no hay un movimiento que acompañar: la nítida, sin esperar
+            sc._instant = True
+        self._apply_panel(side)
 
     def _drag_start(self, side, e):
         self._drag_from = (e.x_root, self.panel_state[side]["ancho"])
@@ -941,12 +948,26 @@ class App:
     def _fit_stage(self, sc):
         """Al mostrar una pantalla: la vista previa a la medida de su columna, con calidad completa."""
         sc._fit_job = None
-        if self._fit_scale(sc) and not (sc.winfo_ismapped() and sc.pv.rescale_async()):
+        if self._fit_scale(sc) and not (self._current(sc) and sc.pv.rescale_async()):
             self.render()
+
+    def _current(self, w) -> bool:
+        """True si w está en la pantalla que se ve (todas están mapeadas, una encima de otra)."""
+        return w.master is getattr(self, "views", {}).get(self.screen)
 
     def _fit_live(self, sc):
         """La columna cambió de tamaño (ventana o paneles): la vista previa acompaña al instante, estirada
-        al vuelo, y se vuelve a dibujar con calidad cuando el tamaño se queda quieto 150 ms."""
+        al vuelo, y se vuelve a dibujar con calidad cuando el tamaño se queda quieto 150 ms. Las de las
+        pantallas tapadas se ajustan al mostrarlas (_show_now)."""
+        if not self._current(sc):
+            return
+        if getattr(sc, "_instant", False):
+            sc._instant = False
+            if self._fit_scale(sc):
+                sc.pv.live()                     # ya del tamaño nuevo (sin bordes vacíos)…
+                sc._blurry = True
+                self._sharpen(sc)                # …y la nítida enseguida, sin esperar
+            return
         if self._fit_scale(sc):
             sc.pv.live()
             sc._blurry = True
@@ -961,7 +982,7 @@ class App:
             sc._blurry = False
             # solo cambió el tamaño: se reduce otra vez el último dibujo (si hay cambios pendientes, el
             # dibujo completo llega igual con render())
-            if not (sc.winfo_ismapped() and sc.pv.rescale_async()):
+            if not (self._current(sc) and sc.pv.rescale_async()):
                 self.render()
 
     def _fit_scale(self, sc) -> bool:
@@ -1533,29 +1554,73 @@ class App:
         cfg(self.idle_out, text=f"{self.window['sin_usar']} %")
         cfg(self.kind_lbl, text="Oscuro" if L.is_dark(self.colors) else "Claro")
         self._paint_grad()
-        common = dict(gradient=self.gradient() or None, sections=self.sections, wall=self.wall_var.get(),
-                      bg_image=self.bg_image(), one_piece=self.one_piece(), tint=self.grad["tinte"])
-        if self.screen == "edit":
-            self.pv_edit.draw_async(e, self.slot_frames, opacity=self.window["opacidad"], hover=self.hover_var.get(),
-                              **common)
-        elif self.screen == "sec":
-            self.pv_sec.draw_async(e, self.slot_frames, opacity=self.window["opacidad"], mode="sec", sel=self.sec_sel,
-                             **common)
+        self._draw_preview(self.screen, e)
+        if self.screen == "sec":
             self._paint_secs()
         elif self.screen == "img":
-            idle = self.idle_view.get()
-            paused = idle and self.gif_pause
-            self.pv_img.draw_async(e, (lambda s, z: self.slot_frames(s, z, still=True)) if paused else self.slot_frames,
-                             opacity=self.window["sin_usar"] if idle else self.window["opacidad"], mode="img",
-                             sel=self.slot_sel, **common)
             self._paint_slots()
-        for k, pv in (("edit", self.pv_edit), ("sec", self.pv_sec), ("img", self.pv_img)):
+        for k, pv in self._previews().items():
             if k != self.screen:
                 pv.stop()
+        # las vistas previas de las otras pestañas se ponen al día después, de a una: así al cambiar de
+        # pestaña ya están dibujadas (y el servidor X las guarda, ver respaldo.py)
+        self._version = getattr(self, "_version", 0) + 1
+        job = getattr(self, "_others_job", None)
+        if job:
+            self.root.after_cancel(job)
+        self._others_job = self.root.after(400, self._draw_others)
         self._paint_legibility()
         self._paint_author()
         if self.screen == "exp":
             self._paint_export()
+
+    def _previews(self) -> dict:
+        return {"edit": self.pv_edit, "sec": self.pv_sec, "img": self.pv_img}
+
+    def _draw_preview(self, sid, e):
+        """Pide el dibujo de la vista previa de la pestaña sid (en otro hilo)."""
+        pv = self._previews().get(sid)
+        if pv is None:
+            return
+        pv.quiet = sid != self.screen              # en una pestaña tapada, sin animar
+        pv.version = getattr(self, "_version", 0)
+        common = dict(gradient=self.gradient() or None, sections=self.sections, wall=self.wall_var.get(),
+                      bg_image=self.bg_image(), one_piece=self.one_piece(), tint=self.grad["tinte"])
+        if sid == "edit":
+            pv.draw_async(e, self.slot_frames, opacity=self.window["opacidad"], hover=self.hover_var.get(), **common)
+        elif sid == "sec":
+            pv.draw_async(e, self.slot_frames, opacity=self.window["opacidad"], mode="sec", sel=self.sec_sel,
+                          **common)
+        else:
+            idle = self.idle_view.get()
+            paused = idle and self.gif_pause
+            pv.draw_async(e, (lambda s, z: self.slot_frames(s, z, still=True)) if paused else self.slot_frames,
+                          opacity=self.window["sin_usar"] if idle else self.window["opacidad"], mode="img",
+                          sel=self.slot_sel, **common)
+
+    def _draw_others(self):
+        """Pone al día una vista previa de otra pestaña; si quedan más, sigue después. Espera si la que se
+        ve está ocupada (lo que se está mirando va primero)."""
+        self._others_job = None
+        pvs = self._previews()
+        if getattr(pvs.get(self.screen), "_busy", False):
+            self._others_job = self.root.after(120, self._draw_others)
+            return
+        for sid, pv in pvs.items():
+            if sid == self.screen or getattr(pv, "version", None) == self._version or getattr(pv, "_busy", False):
+                continue
+            stage = [sc for sc in self.stages if sc.master is self.views[sid]]
+            if stage:
+                self._fit_scale(stage[0])
+            self._draw_preview(sid, self.eff())
+            self._others_job = self.root.after(120, self._draw_others)
+            return
+        # los paneles que solo se arman al mostrar su pestaña (listas de espacios, exportar)
+        if getattr(self, "_panels_version", None) != self._version:
+            self._panels_version = self._version
+            for sid, paint in (("sec", self._paint_secs), ("img", self._paint_slots), ("exp", self._paint_export)):
+                if sid != self.screen:
+                    paint()
 
     def _paint_tokens(self):
         for tok, r in self.rows.items():
@@ -1730,7 +1795,7 @@ class App:
             lab = tk.Label(fr, text=name, bg=fr["bg"], fg=C["text"], font=fnt(-2, True), anchor="w")
             lab.pack(fill="x", pady=(4, 0))
             for w in (fr, sk, lab):
-                w.bind("<Button-1>", lambda e, tt=tid: self._atomic(lambda: self.apply_template(tt)))
+                w.bind("<Button-1>", lambda e, tt=tid: self.apply_template(tt))
         self.tpl_box.columnconfigure(0, weight=1, uniform="t")
         self.tpl_box.columnconfigure(1, weight=1, uniform="t")
         for w in self.slot_box.winfo_children():
@@ -1773,7 +1838,7 @@ class App:
                 b.pack(anchor="w")
                 ws.append(b)
                 for wdg in ws:
-                    wdg.bind("<Button-1>", lambda e, sl=slot: self._atomic(lambda: self.pick_slot(sl)))
+                    wdg.bind("<Button-1>", lambda e, sl=slot: self.pick_slot(sl))
 
     def _paint_slot_settings(self):
         # degradado (fila «Toda la ventana»)
@@ -1982,16 +2047,24 @@ class App:
         cv.create_rectangle(w * .4 + 8, 8, w - 8, 102, fill=e["panel"], outline=e["line"])
         cv.create_rectangle(w * .4 + 8, 80, w - 8, 102, fill=e["acc"], width=0)
 
+    def _paint_checks(self, checks):
+        for kind, txt in checks:
+            r = tk.Frame(self.exp_checks, bg=C["panel"])
+            r.pack(fill="x", pady=2)
+            fg, bg = {"ok": (C["ok_text"], C["ok_bg"]), "warn": (C["warn_text"], C["warn_bg"]),
+                      "bad": (C["bad_text"], C["bad_bg"]), "sig": (C["sig_text"], C["sig_bg"])}[kind]
+            tk.Label(r, text={"ok": "✓", "warn": "!", "bad": "✕", "sig": "✔"}[kind], bg=bg, fg=fg,
+                     font=fnt(-1, True), width=2).pack(side="left", anchor="n")
+            self.lbl(r, txt, -1, wrap=480).pack(side="left", padx=8, fill="x")
+
     def _paint_export(self):
         name = self.meta["nombre"] or "Sin nombre"
-        self.exp_name.configure(text=name)
+        cfg(self.exp_name, text=name)
         who = self.author or "Anónimo"
-        self.exp_sub.configure(text=f"por {who} · versión {self.meta['version']} · tema "
+        cfg(self.exp_sub, text=f"por {who} · versión {self.meta['version']} · tema "
                                     f"{'oscuro' if L.is_dark(self.colors) else 'claro'}")
         e = self.eff()
         self._paint_mini()
-        for c in self.exp_checks.winfo_children():
-            c.destroy()
         rows = self.legibility_rows()
         bad = sum(1 for r in rows if r[3] == "bad")
         warn = sum(1 for r in rows if r[3] == "warn")
@@ -2037,25 +2110,22 @@ class App:
             checks.append(("bad", "Ese nombre de autor está reservado para el creador oficial"))
         else:
             checks.append(("ok", f"Se firmará con tu firma de autor como {who} (tema de la comunidad)"))
-        for kind, txt in checks:
-            r = tk.Frame(self.exp_checks, bg=C["panel"])
-            r.pack(fill="x", pady=2)
-            fg, bg = {"ok": (C["ok_text"], C["ok_bg"]), "warn": (C["warn_text"], C["warn_bg"]),
-                      "bad": (C["bad_text"], C["bad_bg"]), "sig": (C["sig_text"], C["sig_bg"])}[kind]
-            tk.Label(r, text={"ok": "✓", "warn": "!", "bad": "✕", "sig": "✔"}[kind], bg=bg, fg=fg,
-                     font=fnt(-1, True), width=2).pack(side="left", anchor="n")
-            self.lbl(r, txt, -1, wrap=480).pack(side="left", padx=8, fill="x")
+        if checks != getattr(self, "_exp_checks_sig", None):   # solo si cambió: rearmarla se ve a medias
+            self._exp_checks_sig = checks
+            for c in self.exp_checks.winfo_children():
+                c.destroy()
+            self._paint_checks(checks)
         blocked = bool(bad) or reserved or kb > npt.MAX_FILE
-        self.exp_btn.configure(state="disabled" if blocked else "normal")
+        cfg(self.exp_btn, state="disabled" if blocked else "normal")
         if not self.file_var.get() or self.file_var.get() == getattr(self, "_auto_file", ""):
             self._auto_file = L.slug(name) + npt.EXTENSION
             self.file_var.set(self._auto_file)
-        self.imp_name.configure(text=name)
+        cfg(self.imp_name, text=name)
         self.imp_sw.delete("all")
         self.imp_sw.create_rectangle(0, 0, 36, 40, fill=e["bg"], width=0)
         self.imp_sw.create_rectangle(36, 0, 64, 40, fill=e["acc"], width=0)
         official = self.mode == "creador" and K.official_known(self.official)
-        self.imp_badge.configure(text="✔ Oficial · OkumaWsX" if official else f"Comunidad · {who}",
+        cfg(self.imp_badge, text="✔ Oficial · OkumaWsX" if official else f"Comunidad · {who}",
                                  bg=C["sig_bg"] if official else C["panel"],
                                  fg=C["sig_text"] if official else C["text"])
 
@@ -2132,7 +2202,7 @@ class App:
     def on_zone_click(self, ev):
         z = self.pv_img.tag_at(ev.x, ev.y, "z:")
         if z:
-            self._atomic(lambda: self.pick_slot(z))
+            self.pick_slot(z)
 
     def on_slot_setting(self):
         s = self.images.get(self.slot_sel)
@@ -2351,29 +2421,9 @@ class App:
         self.toast(f"Estilo «{L.PRESETS[pid][0]}» aplicado a las secciones.", "ok")
 
     # ================================================================ colores
-    def select(self, tok, freeze=True):
-        """Elige una capa. Se abre su fila (color y transparencia) y las de abajo bajan: con la foto de
-        Congelar encima, ese reacomodo no se ve a medias."""
-        if tok == self.sel:
-            self.render()
-            return
-        if freeze:
-            self._atomic(lambda: setattr(self, "sel", tok))
-        else:
-            self.sel = tok
-            self.render()
-
-    def _atomic(self, fn):
-        """Hace fn() (algo que reacomoda los paneles) con la foto de Congelar encima y dibuja enseguida: el
-        cambio se ve de una sola vez, no a medio reacomodar."""
-        def change():
-            fn()
-            job = getattr(self, "_render_job", None)
-            if job:                              # se dibuja ya, no cuando la ventana quede libre
-                self.root.after_cancel(job)
-                self._render_job = None
-            self._render_now()
-        Congelar(self.root).hacer(change, listo=self._drawn)
+    def select(self, tok):
+        self.sel = tok
+        self.render()
 
     def on_preview_click(self, ev):
         t = self.pv_edit.tag_at(ev.x, ev.y, "t:")
@@ -2381,7 +2431,7 @@ class App:
             self.select(t)
 
     def pick_color(self, tok):
-        self.select(tok, freeze=False)           # sin foto: el selector de color se abre enseguida
+        self.select(tok)
         res = colorchooser.askcolor(color=self.colors[tok], parent=self.root, title=LABELS[tok])
         if res and res[1]:
             self.set_color(tok, res[1].lower())
@@ -3020,10 +3070,8 @@ def main():
                 app.show(steps[0])
                 root.after(400, lambda: run(steps[1:]))
             else:
-                # los cambios de pantalla de arriba pasaron por Congelar (con foto encima en Linux)
-                overlays = [w for w in root.winfo_children() if isinstance(w, tk.Toplevel)]
-                if app.screen != "edit" or Congelar._activo is not None or overlays:
-                    errors.append("un cambio de pantalla quedó a medias (foto encima o pantalla equivocada)")
+                if app.screen != "edit":
+                    errors.append("el cambio de pantalla no quedó en la pantalla elegida")
                 app.apply_palette()
                 app.apply_template("todo")          # 8 espacios, con GIF animados
                 app.bg_generate()                   # fondo de imagen de una pieza

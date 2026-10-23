@@ -54,7 +54,7 @@ lea este documento.
 | `tools/estudio/estudio.py` | La ventana (Tkinter): 5 pantallas, paneles laterales, exportar, claves. `VERSION` está arriba. |
 | `tools/estudio/vista.py` | Vista previa de la ventana de Numpad Macros, dibujada con Pillow (al doble y reducida), con transparencia real, degradado, imagen de fondo, «fondo de una pieza», secciones, 9 zonas y GIF. Escala 0,4×–2×. `export_size()` decide con qué forma se guarda cada imagen. |
 | `tools/estudio/logica.py` | Lógica sin ventana: colores, legibilidad, paleta desde imagen, imágenes y GIF (APNG), degradado, fondo de imagen, secciones, proyecto `.nptproj`. |
-| `tools/estudio/congelar.py` | Cambios «de una vez» en Linux: foto de la ventana encima mientras se rearma por debajo (ver §8). |
+| `tools/estudio/respaldo.py` | Linux: pide al servidor X que guarde cada pestaña ya dibujada («backing store»), ver §8. |
 | `tools/estudio/claves.py` | Firma de autor / clave oficial, modo creador o comunidad, ajustes (`ajustes.json`). |
 | `tools/estudio/Estudio.spec` | PyInstaller (incluye la letra Inter, el icono y `PIL._tkinter_finder`; excluye numpy). |
 | `tools/estudio/CHANGELOG.md` | Historial propio del Estudio. Las novedades nuevas van en «Sin publicar». |
@@ -143,16 +143,23 @@ lea este documento.
 - `_render` repasa todas las filas de los paneles en cada cambio: usa `cfg(w, ...)`, que solo configura
   lo que cambió (Tk repinta un widget aunque se lo configure con el mismo valor; eso trababa la ventana
   70–150 ms al mover un deslizable).
-- En Linux, Tk dibuja widget por widget y sin búfer para toda la ventana: al cambiar de pantalla, elegir
-  una capa o un espacio, aplicar una plantilla o mostrar/ocultar un panel, KWin mostraba la pantalla
-  nueva llenándose (100–200 ms; en monitores de alta frecuencia, parpadeo). `Congelar` (congelar.py)
-  saca una foto de la ventana (XGetImage por ctypes, ~15 ms), la pone encima como ventana aparte
-  (override-redirect), hace el cambio por debajo y la quita cuando `App._drawn()` dice que no queda nada
-  por dibujar (máx. 300 ms). Para lo que reacomoda paneles se usa `App._atomic(fn)`. Antes de quitar la
-  foto hace `update()` (no solo `update_idletasks()`): así llegan los avisos de exposición de X y Tk pinta
-  lo recién mostrado. Mientras usa su conexión X propia pone un manejador de errores y después devuelve
-  el de Tk: el de Xlib por defecto cierra el programa. `--probar` cambia de pantalla con la foto y revisa
-  que no quede ninguna encima. En Windows/macOS no hace nada (el cambio es directo).
+- Pestañas: las cinco están siempre mapeadas, una encima de otra (`place`), y se trae al frente la
+  elegida (`tkraise`, en `_show_now`). En Linux `respaldo.py` pide «backing store» para cada una: el
+  servidor X la guarda ya dibujada aunque esté tapada, y al traerla aparece en un cuadro. Esconder y
+  mostrar (grid_remove/grid) obligaba a pintar cientos de widgets y se veía la pestaña llenándose
+  (100–300 ms; en monitores de alta frecuencia, como parpadeo).
+  - Como todas están mapeadas, `winfo_ismapped()` ya no sirve para saber cuál se ve: usar
+    `App._current(w)` (o `self.screen`).
+  - Solo la visible sigue al tamaño de la ventana; las tapadas tienen tamaño fijo y se ponen al día de
+    a una 300 ms después de soltar (`_sync_hidden`). Si no, redimensionar costaba 2,5 veces más.
+  - Las vistas previas y los paneles de las pestañas tapadas se ponen al día por detrás, de a una,
+    400 ms después del último cambio (`_draw_others`, sin animar: `Preview.quiet`). Así la primera
+    visita a una pestaña también aparece ya dibujada.
+  - Para que el espacio de un panel oculto se reparta, `_apply_panel` apaga y prende
+    `grid_propagate`; antes volvía a ubicar la pantalla (grid_remove/grid), lo que borraba lo guardado.
+- Se probó tapar la ventana con una foto (ventana aparte) mientras se rearmaba: no sirve en KDE, porque
+  KWin anima la aparición y desaparición de ventanas (fundido) y se veía la pestaña anterior volver.
+  No usar ventanas extra para estos trucos.
 - Para medir artefactos con capturas no uses `import` de ImageMagick: bloquea el servidor X y cambia
   justo lo que se mide. Sirve `XGetImage` sobre la ventana (ctypes), que no lo bloquea.
 - Compilado: sin `PIL._tkinter_finder` el programa se cierra al abrir. numpy está excluido.
