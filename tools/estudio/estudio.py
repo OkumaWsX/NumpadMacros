@@ -113,6 +113,23 @@ def fnt(size=0, bold=False, mono=False):
     return (fam, BASE + size, "bold") if bold else (fam, BASE + size)
 
 
+def cfg(w, **kw):
+    """configure() solo con lo que de verdad cambió. Tk repinta un widget cada vez que se lo configura,
+    aunque sea con el mismo valor; en cada dibujo se repasan todas las filas de los paneles, y repintarlas
+    todas trababa la ventana (al mover un deslizable, por ejemplo). Compara con el valor actual (cget no
+    repinta), así nunca queda desfasado si otra parte del programa cambió el widget."""
+    new = {}
+    for k, v in kw.items():
+        try:
+            if str(w.cget(k)) == str(v):
+                continue
+        except tk.TclError:
+            pass
+        new[k] = v
+    if new:
+        w.configure(**new)
+
+
 class Scrollable(tk.Frame):
     """Columna con barra de desplazamiento (rueda del mouse en los 3 sistemas)."""
 
@@ -169,27 +186,6 @@ class Scrollable(tk.Frame):
                         w._wrap0 = 0
                 if w._wrap0 > 0:
                     w.configure(wraplength=max(120, w._wrap0 + extra))
-
-    def moved(self) -> bool:
-        """True si la columna cambió de lugar o de tamaño desde la última vez que se repintó."""
-        top = self.winfo_toplevel()                  # posición dentro de la ventana (no en la pantalla)
-        place = (self.winfo_rootx() - top.winfo_rootx(), self.winfo_rooty() - top.winfo_rooty(),
-                 self.winfo_width(), self.winfo_height())
-        if place == getattr(self, "_place", None):
-            return False
-        self._place = place
-        return True
-
-    def refresh(self):
-        """Vuelve a pintar todo lo de adentro. En KDE (Wayland, XWayland) al mover una columna quedan
-        partes sin dibujar que no se arreglan solas, y lo único que sirve es esconderla y mostrarla."""
-        try:
-            self.cv.itemconfigure(self._win, state="hidden")
-            self.cv.update_idletasks()
-            self.cv.itemconfigure(self._win, state="normal")
-            self._region()
-        except tk.TclError:
-            pass
 
     def _wheel_on(self, _e):
         self.cv.bind_all("<MouseWheel>", self._wheel)
@@ -278,6 +274,11 @@ class Slider(tk.Canvas):
 
     config = configure
 
+    def cget(self, key):
+        if key == "state":
+            return self._state
+        return super().cget("width" if key == "length" else key)
+
     def _untrace(self, e):
         if e.widget is self:
             try:
@@ -344,6 +345,7 @@ class App:
         self.project_path = None
         self.dirty = False
         self._cache: dict = {}
+        self._frames: dict = {}            # cuadros de las imágenes para la vista previa
         self._toast_job = None
         self._quiet = False           # True mientras se rellenan los controles (no es un cambio del usuario)
         self._style()
@@ -610,15 +612,6 @@ class App:
         except tk.TclError:
             pass
 
-    def _repaint(self):
-        """Después de maximizar o de un salto de tamaño: vuelve a pintar las columnas que se movieron."""
-        for s in Scrollable.all:
-            try:
-                if s.winfo_ismapped() and s.moved():
-                    s.refresh()
-            except tk.TclError:
-                pass
-
     def show(self, sid):
         self.screen = sid
         for k, v in self.views.items():
@@ -633,7 +626,6 @@ class App:
         else:
             self.switch_box.pack_forget()
         self.render()
-        self.root.after(80, self._repaint)
         for sc in getattr(self, "stages", []):          # la vista previa de esta pantalla, a su tamaño
             if sc.winfo_ismapped() or sc.master is self.views.get(sid):
                 self._fit_soon(sc)
@@ -807,7 +799,7 @@ class App:
         cv = tk.Canvas(mid, width=V.W, height=V.H, highlightthickness=0, bd=0, cursor="hand2", bg="#0d0e11")
         cv.pack(expand=True)                # centrada en el espacio que queda
         sc.top, sc.pcv, sc.pv = top, cv, V.Preview(cv)
-        sc.bind("<Configure>", lambda e, s=sc: self._fit_soon(s), add="+")
+        sc.bind("<Configure>", lambda e, s=sc: self._fit_live(s), add="+")
         self.__dict__.setdefault("stages", []).append(sc)
         return sc
 
@@ -828,7 +820,8 @@ class App:
             grip.bind("<Leave>", lambda e, g=grip: g.configure(bg=C["line"]))
             grip.bind("<ButtonPress-1>", lambda e, sd=side: self._drag_start(sd, e))
             grip.bind("<B1-Motion>", lambda e, sd=side: self._drag(sd, e))
-            grip.bind("<ButtonRelease-1>", lambda e: self._save_panels())
+            grip.bind("<ButtonRelease-1>", lambda e, sd=side: (self._resize_panel(sd, everywhere=True),
+                                                               self._save_panels()))
             self.panel_sides[side].append((panel, grip))
             self._apply_panel(side)
 
@@ -859,11 +852,14 @@ class App:
         except tk.TclError:                      # la ventana se está rearmando
             pass
 
-    def _resize_panel(self, side):
-        """Arrastrando el borde: solo cambia el ancho (sin esconder nada, para que se mueva suave)."""
+    def _resize_panel(self, side, everywhere=False):
+        """Arrastrando el borde: solo cambia el ancho (sin esconder nada, para que se mueva suave). Mientras
+        se arrastra, solo en la pantalla visible; las otras se ajustan al soltar (si no, Tk también las
+        reacomoda en cada paso, aunque no se vean)."""
         w = self.panel_state[side]["ancho"]
         for panel, _grip in self.panel_sides[side]:
-            panel.cv.configure(width=w)
+            if (everywhere or panel.winfo_ismapped()) and int(panel.cv.cget("width")) != w:
+                panel.cv.configure(width=w)
 
     def toggle_panel(self, side, visible):
         self.panel_state[side]["visible"] = bool(visible)
@@ -899,27 +895,49 @@ class App:
         job = getattr(sc, "_fit_job", None)
         if job:
             self.root.after_cancel(job)
-        # después del repintado de las columnas (100 ms), para que dibujar la vista previa no lo retrase
-        sc._fit_job = self.root.after(160, lambda: self._fit_stage(sc))
+        sc._fit_job = self.root.after(30, lambda: self._fit_stage(sc))
 
     def _fit_stage(self, sc):
-        """La vista previa crece o se achica para caber entera en su columna (hasta 2×)."""
+        """Al mostrar una pantalla: la vista previa a la medida de su columna, con calidad completa."""
         sc._fit_job = None
+        if self._fit_scale(sc) and not (sc.winfo_ismapped() and sc.pv.rescale_async()):
+            self.render()
+
+    def _fit_live(self, sc):
+        """La columna cambió de tamaño (ventana o paneles): la vista previa acompaña al instante, estirada
+        al vuelo, y se vuelve a dibujar con calidad cuando el tamaño se queda quieto 150 ms."""
+        if self._fit_scale(sc):
+            sc.pv.live()
+            sc._blurry = True
+        job = getattr(sc, "_sharp_job", None)
+        if job:
+            self.root.after_cancel(job)
+        sc._sharp_job = self.root.after(150, lambda: self._sharpen(sc))
+
+    def _sharpen(self, sc):
+        sc._sharp_job = None
+        if getattr(sc, "_blurry", False):
+            sc._blurry = False
+            # solo cambió el tamaño: se reduce otra vez el último dibujo (si hay cambios pendientes, el
+            # dibujo completo llega igual con render())
+            if not (sc.winfo_ismapped() and sc.pv.rescale_async()):
+                self.render()
+
+    def _fit_scale(self, sc) -> bool:
+        """La vista previa crece o se achica para caber entera en su columna (hasta 2×). True si cambió."""
         try:
             aw = sc.winfo_width() - 8
             ah = sc.winfo_height() - (sc.hint.winfo_y() + sc.hint.winfo_height()) - 16
-            sc.hint.configure(wraplength=max(200, aw))
+            wrap = max(200, aw)
+            if int(str(sc.hint.cget("wraplength")) or 0) != wrap:
+                sc.hint.configure(wraplength=wrap)
         except tk.TclError:
-            return
-        if aw < 100 or ah < 100:
-            return
-        if sc.pv.set_scale(min(aw / V.W, ah / V.H)):
-            w, h = sc.pv.size
-            sc.pcv.configure(width=w, height=h)
-            # solo cambió el tamaño: se reduce otra vez el último dibujo (si hay cambios pendientes, el
-            # dibujo completo llega igual con render())
-            if not (sc.winfo_ismapped() and sc.pv.rescale()):
-                self.render()
+            return False
+        if aw < 100 or ah < 100 or not sc.pv.set_scale(min(aw / V.W, ah / V.H)):
+            return False
+        w, h = sc.pv.size
+        sc.pcv.configure(width=w, height=h)
+        return True
 
     # ---------------------------------------------------------------- fondo de la ventana (degradado)
     def _build_grad(self, box):
@@ -1470,23 +1488,23 @@ class App:
     def _render(self):
         e = self.eff()
         self._paint_tokens()
-        self.win_out.configure(text=f"{self.window['opacidad']} %")
-        self.idle_out.configure(text=f"{self.window['sin_usar']} %")
-        self.kind_lbl.configure(text="Oscuro" if L.is_dark(self.colors) else "Claro")
+        cfg(self.win_out, text=f"{self.window['opacidad']} %")
+        cfg(self.idle_out, text=f"{self.window['sin_usar']} %")
+        cfg(self.kind_lbl, text="Oscuro" if L.is_dark(self.colors) else "Claro")
         self._paint_grad()
         common = dict(gradient=self.gradient() or None, sections=self.sections, wall=self.wall_var.get(),
                       bg_image=self.bg_image(), one_piece=self.one_piece(), tint=self.grad["tinte"])
         if self.screen == "edit":
-            self.pv_edit.draw(e, self.slot_frames, opacity=self.window["opacidad"], hover=self.hover_var.get(),
+            self.pv_edit.draw_async(e, self.slot_frames, opacity=self.window["opacidad"], hover=self.hover_var.get(),
                               **common)
         elif self.screen == "sec":
-            self.pv_sec.draw(e, self.slot_frames, opacity=self.window["opacidad"], mode="sec", sel=self.sec_sel,
+            self.pv_sec.draw_async(e, self.slot_frames, opacity=self.window["opacidad"], mode="sec", sel=self.sec_sel,
                              **common)
             self._paint_secs()
         elif self.screen == "img":
             idle = self.idle_view.get()
             paused = idle and self.gif_pause
-            self.pv_img.draw(e, (lambda s, z: self.slot_frames(s, z, still=True)) if paused else self.slot_frames,
+            self.pv_img.draw_async(e, (lambda s, z: self.slot_frames(s, z, still=True)) if paused else self.slot_frames,
                              opacity=self.window["sin_usar"] if idle else self.window["opacidad"], mode="img",
                              sel=self.slot_sel, **common)
             self._paint_slots()
@@ -1502,8 +1520,11 @@ class App:
         for tok, r in self.rows.items():
             col, a = self.colors[tok], self.alpha.get(tok, 100)
             sw = r["sw"]
-            sw.delete("all")
-            if a < 100:
+            if getattr(sw, "_sig", None) == (col, a):     # sin cambios: no se vuelve a dibujar
+                pass
+            elif a < 100:
+                sw.delete("all")
+                sw._sig = (col, a)
                 for y in range(0, 18, 6):
                     for x in range(0, 26, 6):
                         sw.create_rectangle(x, y, x + 6, y + 6, width=0,
@@ -1512,22 +1533,25 @@ class App:
                 sw.create_rectangle(0, 0, 13, 18, fill=under, width=0)
                 sw.create_rectangle(13, 0, 26, 18, fill=col, width=0)
             else:
+                sw.delete("all")
+                sw._sig = (col, a)
                 sw.create_rectangle(0, 0, 27, 19, fill=col, width=0)
             auto = " A" if self.auto and tok in AUTO else ""
             alpha_txt = "" if tok == "bg" else f"\n{a} %"
-            r["val"].configure(text=f"{col}{auto}{alpha_txt}", fg=C["acc"] if a < 100 or auto else C["muted"])
+            cfg(r["val"], text=f"{col}{auto}{alpha_txt}", fg=C["acc"] if a < 100 or auto else C["muted"])
             sel = tok == self.sel
             bg = C["acc_bg"] if sel else C["panel"]
             for w in (r["frame"], r["name"], r["val"]):
-                w.configure(bg=bg)
-            r["frame"].configure(highlightbackground=C["acc_dim"] if sel else C["panel"])
+                cfg(w, bg=bg)
+            cfg(r["frame"], highlightbackground=C["acc_dim"] if sel else C["panel"])
             if sel:
-                r["extra"].grid(row=1, column=0, columnspan=3, sticky="ew")
+                if not r["extra"].winfo_manager():
+                    r["extra"].grid(row=1, column=0, columnspan=3, sticky="ew")
                 if r["hex"].get().lower() != col:
                     r["hex"].set(col)
                 if r["alpha"].get() != a:
                     r["alpha"].set(a)
-            else:
+            elif r["extra"].winfo_manager():
                 r["extra"].grid_remove()
 
     def _check_rows(self, box, rows):
@@ -1550,13 +1574,13 @@ class App:
                 continue
             n, rv, colors, st = rows[i]
             if colors:
-                demo.configure(text="Aa", bg=colors[0], fg=colors[1])
+                cfg(demo, text="Aa", bg=colors[0], fg=colors[1])
             else:
-                demo.configure(text="  ", bg=C["panel"], fg=C["panel"])
-            name.configure(text=n)
+                cfg(demo, text="  ", bg=C["panel"], fg=C["panel"])
+            cfg(name, text=n)
             fgc, bgc = {"ok": (C["ok_text"], C["ok_bg"]), "warn": (C["warn_text"], C["warn_bg"]),
                         "bad": (C["bad_text"], C["bad_bg"])}[st]
-            val.configure(text=f"{rv:.1f}:1" if colors else f"{int(rv)} %", bg=bgc, fg=fgc)
+            cfg(val, text=f"{rv:.1f}:1" if colors else f"{int(rv)} %", bg=bgc, fg=fgc)
             if not fr.winfo_manager():
                 fr.pack(fill="x", pady=1)
 
@@ -1568,14 +1592,14 @@ class App:
         pairs = {p[0]: (e[p[2]], e[p[1]]) for p in L.PAIRS}
         self._check_rows(self.leg_rows, [(n, rv, pairs.get(n) or demo, st) for n, rv, demo, st in rows])
         if bad:
-            self.leg_sum.configure(text=f"{bad} combinación{'es' if bad > 1 else ''} ilegible{'s' if bad > 1 else ''}. "
+            cfg(self.leg_sum, text=f"{bad} combinación{'es' if bad > 1 else ''} ilegible{'s' if bad > 1 else ''}. "
                                         "No se puede exportar hasta corregirla.", fg=C["bad_text"])
         elif warn:
-            self.leg_sum.configure(text=f"Se puede exportar, pero {warn} combinación{'es' if warn > 1 else ''} "
+            cfg(self.leg_sum, text=f"Se puede exportar, pero {warn} combinación{'es' if warn > 1 else ''} "
                                         f"queda{'n' if warn > 1 else ''} justa{'s' if warn > 1 else ''}.",
                                    fg=C["warn_text"])
         else:
-            self.leg_sum.configure(text="Todo legible. Mínimo 4.5:1 para texto y 3:1 para texto secundario, ya con la "
+            cfg(self.leg_sum, text="Todo legible. Mínimo 4.5:1 para texto y 3:1 para texto secundario, ya con la "
                                         "transparencia aplicada.", fg=C["ok_text"])
         self.leg_bad = bad
 
@@ -1603,16 +1627,16 @@ class App:
         if self.mode == "creador":
             return
         name = self.author or "Anónimo"
-        self.author_chip.configure(text=f"● Firmando como {name} · comunidad")
+        cfg(self.author_chip, text=f"● Firmando como {name} · comunidad")
         if hasattr(self, "author_note"):
             if npt.is_reserved_name(self.author):
-                self.author_note.configure(text="Ese nombre está reservado para el creador oficial. Elige otro para "
+                cfg(self.author_note, text="Ese nombre está reservado para el creador oficial. Elige otro para "
                                                 "poder exportar.", fg=C["bad_text"])
             else:
-                self.author_note.configure(text=f"Así aparecerás en Numpad Macros: «Comunidad · {name}». "
+                cfg(self.author_note, text=f"Así aparecerás en Numpad Macros: «Comunidad · {name}». "
                                                 "Vacío = Anónimo.", fg=C["muted"])
         if hasattr(self, "key_name_lbl"):
-            self.key_name_lbl.configure(text=name)
+            cfg(self.key_name_lbl, text=name)
 
     def _paint_palette(self):
         thumb = Image.open(io.BytesIO(self.pal_img)).convert("RGB")
@@ -1720,19 +1744,19 @@ class App:
             gi = L.gradient_image(g, (40, 26))
             self._grad_mini_photo = ImageTk.PhotoImage(gi)
             self.grad_mini.create_image(0, 0, anchor="nw", image=self._grad_mini_photo)
-            self.grad_mini_t.configure(text=f"Degradado de {len(g['colores'])} colores · desde "
+            cfg(self.grad_mini_t, text=f"Degradado de {len(g['colores'])} colores · desde "
                                             f"{L.GRADIENT_DIRS[g['desde']][1]}{onep}")
         elif img is not None:
             self._grad_mini_photo = ImageTk.PhotoImage(L.cover(img, 40, 26))
             self.grad_mini.create_image(0, 0, anchor="nw", image=self._grad_mini_photo)
-            self.grad_mini_t.configure(text=f"Imagen{onep}")
+            cfg(self.grad_mini_t, text=f"Imagen{onep}")
         else:
             self.grad_mini.create_rectangle(0, 0, 42, 28, fill=self.colors["bg"], width=0)
-            self.grad_mini_t.configure(text="Color sólido · tócalo para usar un degradado")
+            cfg(self.grad_mini_t, text="Color sólido · tócalo para usar un degradado")
         # ajustes del espacio elegido
         s = self.images.get(self.slot_sel)
         d = s or L.SLOT_DEFAULTS[self.slot_sel]
-        self.slot_title.configure(text=L.SLOT_NAMES[self.slot_sel].upper())
+        cfg(self.slot_title, text=L.SLOT_NAMES[self.slot_sel].upper())
         w, h = V.export_size(self.slot_sel)
         txt = ""
         if s and self.is_animated(self.slot_sel):
@@ -1749,29 +1773,29 @@ class App:
             txt += " Se adapta al espacio libre y nunca tapa botones."
         if not s:
             txt += " Importa una imagen o un GIF, o usa la imagen de los colores."
-        self.slot_size.configure(text=txt)
+        cfg(self.slot_size, text=txt)
         if s:
             im = L.from_bytes(s["src"]).convert("RGB")
             im.thumbnail((96, 60))
             self._slot_thumb = ImageTk.PhotoImage(im)
-            self.slot_thumb.configure(image=self._slot_thumb, width=96, height=60)
+            cfg(self.slot_thumb, image=self._slot_thumb, width=96, height=60)
         else:
-            self.slot_thumb.configure(image=self._blank(96, 60), width=96, height=60)
+            cfg(self.slot_thumb, image=self._blank(96, 60), width=96, height=60)
         self.fit_var.set(L.FITS[d["fit"]])
         state = "normal" if s else "disabled"
-        self.fit_cb.configure(state="readonly" if s else "disabled")
+        cfg(self.fit_cb, state="readonly" if s else "disabled")
         for key, (var, out, unit, sc) in self.slot_vars.items():
             if var.get() != d[key]:
                 var.set(d[key])
-            out.configure(text=f"{d[key]}{unit}")
-            sc.configure(state=state)
-        self.slot_del.configure(state=state)
+            cfg(out, text=f"{d[key]}{unit}")
+            cfg(sc, state=state)
+        cfg(self.slot_del, state=state)
         if self.gif_pause_var.get() != self.gif_pause:
             self.gif_pause_var.set(self.gif_pause)
         kb = self.theme_weight() // 1024
         n = len(self.images)
         ng = sum(1 for k in self.images if self.is_animated(k))
-        self.weight_lbl.configure(text=f"{max(kb, 3)} KB aprox. · colores 3 KB + {n} imagen{'' if n == 1 else 'es'}"
+        cfg(self.weight_lbl, text=f"{max(kb, 3)} KB aprox. · colores 3 KB + {n} imagen{'' if n == 1 else 'es'}"
                                        f"{f' ({ng} GIF)' if ng else ''}. Límite por tema: "
                                        f"{npt.MAX_FILE // 1024 // 1024} MB.",
                                   fg=C["bad_text"] if kb * 1024 > npt.MAX_FILE else C["text"])
@@ -1780,7 +1804,7 @@ class App:
         modo = self.grad["modo"]
         for key, b in self.grad_seg.items():
             sel = key == modo
-            b.configure(bg=C["panel2"] if sel else C["bg"], fg=C["text"] if sel else C["muted"],
+            cfg(b, bg=C["panel2"] if sel else C["bg"], fg=C["text"] if sel else C["muted"],
                         font=fnt(-1, sel))
         if modo == "solido":
             self.onep_box.grid_remove()
@@ -1791,9 +1815,9 @@ class App:
             if self.tint_var.get() != self.grad["tinte"]:
                 self.tint_var.set(self.grad["tinte"])
             on = self.grad["una_pieza"]
-            self.tint_out.configure(text=f"{self.grad['tinte']} %")
-            self.tint_scale.configure(state="normal" if on else "disabled")
-            self.tint_lbl.configure(fg=C["text"] if on else C["muted"])
+            cfg(self.tint_out, text=f"{self.grad['tinte']} %")
+            cfg(self.tint_scale, state="normal" if on else "disabled")
+            cfg(self.tint_lbl, fg=C["text"] if on else C["muted"])
         if modo == "imagen":
             self.bgimg_ed.grid(row=3, column=0, sticky="ew")
             s = self.images.get("fondo")
@@ -1802,21 +1826,21 @@ class App:
                 th = img.copy()
                 th.thumbnail((96, 60))
                 self._bgimg_photo = ImageTk.PhotoImage(th)
-                self.bgimg_thumb.configure(image=self._bgimg_photo, width=96, height=60)
+                cfg(self.bgimg_thumb, image=self._bgimg_photo, width=96, height=60)
                 data = self._cache[("bgimg", hashlib.md5(s["src"]).digest(), s.get("dark", 0),
                                     self.colors["bg"])][0]
-                self.bgimg_note.configure(text=f"Se guarda a {img.width} × {img.height} px · "
+                cfg(self.bgimg_note, text=f"Se guarda a {img.width} × {img.height} px · "
                                                f"{max(1, len(data) // 1024)} KB. Cubre toda la ventana, recortada al "
                                                "centro.")
             else:
-                self.bgimg_thumb.configure(image=self._blank(96, 60), width=96, height=60)
-                self.bgimg_note.configure(text="Sube una imagen (hasta 1920 × 1200 se guarda tal cual) o genera "
+                cfg(self.bgimg_thumb, image=self._blank(96, 60), width=96, height=60)
+                cfg(self.bgimg_note, text="Sube una imagen (hasta 1920 × 1200 se guarda tal cual) o genera "
                                                "una con los colores de la paleta.")
             d = s.get("dark", 0) if s else 0
             if self.bgdark_var.get() != d:
                 self.bgdark_var.set(d)
-            self.bgdark_out.configure(text=f"{d} %")
-            self.bgdark_scale.configure(state="normal" if s else "disabled")
+            cfg(self.bgdark_out, text=f"{d} %")
+            cfg(self.bgdark_scale, state="normal" if s else "disabled")
         else:
             self.bgimg_ed.grid_remove()
         if modo != "degradado":
@@ -1848,23 +1872,23 @@ class App:
                 self.grad_widgets.append((sw, var, out, x))
         for i, (sw, var, out, x) in enumerate(self.grad_widgets):
             c, pos = stops[i]
-            sw.configure(bg=c)
+            cfg(sw, bg=c)
             if var.get() != pos:
                 var.set(pos)
-            out.configure(text=f"{pos} %")
-            x.configure(state="normal" if len(stops) > npt.GRADIENT_STOPS[0] else "disabled")
-        self.grad_add.configure(state="normal" if len(stops) < npt.GRADIENT_STOPS[1] else "disabled")
+            cfg(out, text=f"{pos} %")
+            cfg(x, state="normal" if len(stops) > npt.GRADIENT_STOPS[0] else "disabled")
+        cfg(self.grad_add, state="normal" if len(stops) < npt.GRADIENT_STOPS[1] else "disabled")
         for d, b in self.grad_dirs.items():
             sel = d == self.grad["desde"]
-            b.configure(bg=C["acc"] if sel else C["panel2"], fg=C["on_acc"] if sel else C["muted"])
+            cfg(b, bg=C["acc"] if sel else C["panel2"], fg=C["on_acc"] if sel else C["muted"])
         _arrow, start, end = L.GRADIENT_DIRS[self.grad["desde"]]
 
         def prep(x):
             return "a " if x in ("la izquierda", "la derecha") else ("en " if x.startswith("el ") else "")
         if self.grad["desde"] == "c":
-            self.grad_note.configure(text="Empieza en el centro y se abre en círculo hacia los bordes.")
+            cfg(self.grad_note, text="Empieza en el centro y se abre en círculo hacia los bordes.")
         else:
-            self.grad_note.configure(text=f"Empieza {prep(start)}{start} y termina {prep(end)}{end}.")
+            cfg(self.grad_note, text=f"Empieza {prep(start)}{start} y termina {prep(end)}{end}.")
 
     def _paint_grad_bar(self):
         if self.grad["modo"] != "degradado" or len(self.grad["colores"]) < 2:
@@ -1882,29 +1906,29 @@ class App:
             sel = k == self.sec_sel
             bg = C["acc_bg"] if sel else C["panel"]
             for w in (r["frame"], r["head"], r["name"], r["code"], r["note"]):
-                w.configure(bg=bg)
-            r["frame"].configure(highlightbackground=C["acc_dim"] if sel else C["panel"])
-            r["code"].configure(text=f"{s['fondo']} % · {s['contenido']} %{' · realce' if s['realce'] else ''}")
+                cfg(w, bg=bg)
+            cfg(r["frame"], highlightbackground=C["acc_dim"] if sel else C["panel"])
+            cfg(r["code"], text=f"{s['fondo']} % · {s['contenido']} %{' · realce' if s['realce'] else ''}")
             for key, (var, out, line) in r["vars"].items():
                 if var.get() != s[key]:
                     var.set(s[key])
-                out.configure(text=f"{s[key]} %", bg=bg)
-                line.configure(bg=bg)
+                cfg(out, text=f"{s[key]} %", bg=bg)
+                cfg(line, bg=bg)
                 for c in line.winfo_children():
-                    c.configure(bg=bg)
+                    cfg(c, bg=bg)
             if r["realce"].get() != s["realce"]:
                 r["realce"].set(s["realce"])
-        self.focus_btn.configure(text=f"Destacar «{L.SECTIONS[self.sec_sel][0]}»")
+        cfg(self.focus_btn, text=f"Destacar «{L.SECTIONS[self.sec_sel][0]}»")
         rows = L.section_rows(self.colors, self.alpha, self.sections, self.gradient(), self.images)
         self._check_rows(self.sec_checks, [(name + (" (con imagen)" if img else ""), r, (pe, te), st)
                                            for k, name, r, pe, te, st, changed, img in rows])
         low = sum(1 for row in rows if row[5] != "ok")
         if low:
-            self.sec_sum.configure(text=f"{low} {'secciones' if low > 1 else 'sección'} atenuada{'s' if low > 1 else ''}. Se "
+            cfg(self.sec_sum, text=f"{low} {'secciones' if low > 1 else 'sección'} atenuada{'s' if low > 1 else ''}. Se "
                                         "puede exportar; es normal si las atenuaste a propósito para resaltar otra.",
                                    fg=C["warn_text"])
         else:
-            self.sec_sum.configure(text="Todas las secciones se leen bien.", fg=C["ok_text"])
+            cfg(self.sec_sum, text="Todas las secciones se leen bien.", fg=C["ok_text"])
 
     def _paint_mini(self):
         cv = self.exp_mini
@@ -2011,13 +2035,15 @@ class App:
         if not s:
             return None
         key = (slot, size, self.colors["bg"], s["fit"], s["op"], s["dark"], s["blur"], hashlib.md5(s["src"]).digest())
-        if key not in self._cache:
-            if len(self._cache) > 60:
-                self._cache.clear()
+        # también se llama desde el hilo que arma la vista previa: usa su propio caché, así vaciarlo no
+        # le quita nada a lo demás (exportar, fondo de imagen…)
+        fr = self._frames.get(key)
+        if fr is None:
+            if len(self._frames) > 60:
+                self._frames = {}
             sw, _sh = npt.IMAGE_SLOTS[slot]
-            self._cache[key] = L.render_slot_frames(s["src"], slot, s, self.colors["bg"], size=size,
-                                                    blur_scale=size[0] / sw)
-        fr = self._cache[key]
+            fr = L.render_slot_frames(s["src"], slot, s, self.colors["bg"], size=size, blur_scale=size[0] / sw)
+            self._frames[key] = fr
         return fr[:1] if still else fr
 
     def final_images(self) -> dict:

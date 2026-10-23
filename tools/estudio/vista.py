@@ -12,6 +12,7 @@ Cada parte deja una zona «tocable»: «t:<capa>» (el color que la pinta), «z:
 """
 from __future__ import annotations
 
+import copy
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -202,6 +203,15 @@ def _alpha_mul(im, a):
 
 
 _POOL = None
+_WORKER = None
+
+
+def _worker():
+    """Un hilo aparte para armar la vista previa (aparte de _pool, que usa ese mismo armado)."""
+    global _WORKER
+    if _WORKER is None:
+        _WORKER = ThreadPoolExecutor(1, thread_name_prefix="vista-armado")
+    return _WORKER
 
 
 def _pool():
@@ -259,8 +269,8 @@ class Preview:
 
     def set_scale(self, k):
         """Cambia el tamaño de la vista previa. Devuelve True si cambió (hay que volver a dibujar)."""
-        k = round(max(.4, min(2.0, k)), 2)
-        if abs(k - self.k) < .01:
+        k = round(max(.4, min(2.0, k)), 3)     # pasos de ~1 px: al estirar en vivo el movimiento es continuo
+        if abs(k - self.k) < .001:
             return False
         self.k = k
         return True
@@ -276,6 +286,60 @@ class Preview:
         """``gradient`` o ``bg_image`` (PIL): fondo de toda la ventana. ``one_piece``: «fondo de una pieza»,
         el fondo pasa también por detrás del panel de teclas y de las pestañas, suavizado y teñido con
         ``tint`` (0–90), como lo dibuja Numpad Macros (npm/theme_art.py)."""
+        self._build(e, slot_frames, gradient, sections, opacity, wall, hover, mode, sel, paused, bg_image,
+                    one_piece, tint)
+        self._present()
+
+    def draw_async(self, *a, **kw):
+        """Como draw(), pero la imagen se arma en otro hilo y se muestra cuando está lista: la ventana no se
+        traba mientras tanto. Si llegan más pedidos durante un dibujo, después se hace solo el último."""
+        self._async(lambda sh: sh._build(*a, **kw))
+
+    def rescale_async(self):
+        """Como rescale(), en otro hilo. False si todavía no hay nada dibujado."""
+        if getattr(self, "_full", None) is None:
+            return False
+        self._async(lambda sh: sh._prepare())
+        return True
+
+    def _async(self, job):
+        self._pending = job
+        if not getattr(self, "_busy", False):
+            self._start()
+
+    def _start(self):
+        job, self._pending = self._pending, None
+        self._busy = True
+        sh = copy.copy(self)                       # el hilo trabaja sobre una copia: lo visible no cambia
+        sh.hits = list(self.hits)
+        fut = _worker().submit(lambda: (job(sh), sh)[1])
+        self.cv.after(8, lambda: self._collect(fut))
+
+    def _collect(self, fut):
+        if not fut.done():
+            self.cv.after(8, lambda: self._collect(fut))
+            return
+        self._busy = False
+        try:
+            sh = fut.result()
+        except Exception:
+            self._pending = None
+            raise
+        for name in ("hits", "e", "_full", "_layers", "_anim", "_shown", "_cover_key", "_cover_img"):
+            if hasattr(sh, name):
+                setattr(self, name, getattr(sh, name))
+        if abs(sh.k - self.k) > 1e-9 and self._pending is None:
+            self._pending = lambda s: s._prepare()     # cambió el tamaño mientras se dibujaba
+        if self._pending is not None:
+            self.live() if abs(sh.k - self.k) > 1e-9 else self._present()
+            self._start()
+        else:
+            self._present()
+
+    def _build(self, e, slot_frames=None, gradient=None, sections=None, opacity=100, wall=False,
+               hover=False, mode="edit", sel=None, paused=False, bg_image=None, one_piece=False,
+               tint=L.TINT_DEFAULT):
+        """Arma las capas y la imagen (solo Pillow, sin Tk: puede correr en otro hilo)."""
         zones()
         slot_frames = slot_frames or (lambda *a: None)
         sections = sections or {}
@@ -339,7 +403,7 @@ class Preview:
 
         # las capas grandes se guardan: si después solo cambia el tamaño, basta con volver a reducirlas
         self._full = (base, mid, top, slot_frames, opacity, wall, paused)
-        self._fit_layers(images)
+        self._prepare(images)
 
     def rescale(self):
         """Vuelve a mostrar el último dibujo al tamaño actual sin rehacerlo entero (al cambiar el tamaño
@@ -362,6 +426,11 @@ class Preview:
         return behind, free
 
     def _fit_layers(self, images=None):
+        self._prepare(images)
+        self._present()
+
+    def _prepare(self, images=None):
+        """Reduce las capas grandes al tamaño actual y arma la imagen (sin Tk)."""
         base, mid, top, slot_frames, opacity, wall, paused = self._full
         behind, free = images or self._slot_images(slot_frames)
         size = (round(WW * self.k), round(WH * self.k))
@@ -372,11 +441,15 @@ class Preview:
         small = list(_pool().map(down, [p for p in (base, mid, top) if p]))
         self._layers = (small[0], small[1], small[2] if top else None, behind, free, opacity / 100, wall)
         self._anim = any(len(f) > 1 for f in list(behind.values()) + list(free.values())) and not paused
+        self._shown = self.compose(0)
+
+    def _present(self):
+        """Muestra en el lienzo la imagen ya armada y vuelve a empezar los GIF (solo en el hilo de Tk)."""
         if self._job:
             self.cv.after_cancel(self._job)
             self._job = None
         self._t = 0
-        self._show()
+        self._put(self._shown)
         if self._anim:
             self._job = self.cv.after(60, self._tick)
 
@@ -412,8 +485,27 @@ class Preview:
         return out
 
     def _show(self):
+        self._shown = self.compose(self._t)
+        self._put(self._shown)
+
+    def live(self):
+        """Mientras se cambia el tamaño: estira al vuelo la última imagen bien dibujada (unos 5 ms), para
+        que la vista previa acompañe el movimiento. Después hay que llamar a rescale() para la calidad
+        completa. Devuelve False si todavía no hay nada dibujado."""
+        shown = getattr(self, "_shown", None)
+        if shown is None:
+            return False
+        self.stop()                         # los GIF siguen después, con rescale()
+        if shown.size != self.size:
+            if getattr(self, "_shown_rgb", (None,))[0] is not shown:     # la conversión, una sola vez
+                self._shown_rgb = (shown, shown.convert("RGB"))
+            shown = self._shown_rgb[1].resize(self.size, Image.BILINEAR)
+        self._put(shown)
+        return True
+
+    def _put(self, im):
         from PIL import ImageTk
-        self._photo = ImageTk.PhotoImage(self.compose(self._t))
+        self._photo = ImageTk.PhotoImage(im)
         if self._item is None or not self.cv.find_withtag(self._item):
             self.cv.delete("all")
             self._item = self.cv.create_image(0, 0, anchor="nw", image=self._photo)

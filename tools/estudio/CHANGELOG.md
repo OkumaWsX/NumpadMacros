@@ -9,7 +9,9 @@ temas `.npt` que Numpad Macros importa. Formato: [Keep a Changelog](https://keep
 - Al maximizar o cambiar mucho el tamaño de la ventana (sobre todo en Linux con KDE), ya no desaparecen botones, interruptores ni partes de los paneles: se vuelve a pintar toda la ventana, y sin parpadeos al arrastrar el borde de a poco.
 - Arrastrar el borde de un panel lateral ya no hace parpadear ni deja en blanco la pantalla: el panel cambia de ancho de forma continua y sus textos lo acompañan.
 - Los controles deslizables ya no se ven enteros de color naranja al redimensionar un panel o la ventana: ahora se dibujan con el fondo del panel (se ven igual que antes).
-- La vista previa se reajusta más rápido al cambiar el tamaño de la ventana: reutiliza el último dibujo en vez de rehacerlo entero, y la ventana se queda menos tiempo trabada.
+- La vista previa acompaña en tiempo real al cambiar el tamaño de la ventana o de los paneles, y se vuelve nítida apenas se suelta.
+- Mover un deslizable o cambiar colores ya no traba la ventana: la vista previa se dibuja aparte, sin detener el resto, y los paneles solo repintan lo que cambió.
+- Cambiar de pantalla ya no hace parpadear los paneles laterales.
 
 ## [1.0.0] - pendiente
 ### Añadido

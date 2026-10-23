@@ -141,7 +141,7 @@ class LogicTest(unittest.TestCase):
             def after_cancel(self, *a):
                 pass
         pv = V.Preview(FakeCanvas())
-        pv._show = lambda: None
+        pv._put = lambda im: None
         e = L.effective(self.base, {})
         gif = L.sample_anim("estrellas")
         frames = lambda slot, size: (L.render_slot_frames(gif, slot, L.SLOT_DEFAULTS[slot], "#000000", size=size)  # noqa
@@ -174,7 +174,7 @@ class LogicTest(unittest.TestCase):
         frames = lambda slot, size: (L.render_slot_frames(gif, slot, L.SLOT_DEFAULTS[slot], "#000000", size=size)  # noqa
                                      if slot in ("tabsend", "keys") else None)
         quick, full = V.Preview(FakeCanvas()), V.Preview(FakeCanvas())
-        quick._show = full._show = lambda: None
+        quick._put = full._put = lambda im: None
         self.assertFalse(quick.rescale())                      # nada dibujado todavía
         quick.draw(e, frames, mode="img", sel="keys", opacity=80)
         self.assertTrue(quick.set_scale(1.3) and quick.rescale())
@@ -204,7 +204,7 @@ class LogicTest(unittest.TestCase):
             def after_cancel(self, *a):
                 pass
         pv = V.Preview(FakeCanvas())
-        pv._show = lambda: None
+        pv._put = lambda im: None
         bright = L.from_bytes(L.background_from_palette([("#ff0000", 1.0), ("#00ff00", .5)], False))
         pv.draw(e, bg_image=bright, one_piece=True, tint=0)
         inside = pv.compose().getpixel((V.OX + 150, V.OY + 470))      # panel de teclas, sin tinte

@@ -126,13 +126,22 @@ lea este documento.
 - KDE (Wayland, XWayland): si la ventana cambia de golpe (maximizar, o un salto de más de 40 px),
   lo que se corrió (columnas, botones, los interruptores de arriba) queda sin pintar hasta pasarle el
   mouse. Pedir `Expose` no sirve; `_repaint_window` tapa la ventana entera con un marco un instante y
-  lo quita, y el sistema repinta todo. Solo tras saltos: arrastrando de a poco no hace falta y causa
-  parpadeos. (`Scrollable.refresh`, esconder y mostrar una columna, queda para cambiar de pantalla y
-  mostrar u ocultar paneles.)
+  lo quita, y el sistema repinta todo. Solo tras saltos y al mostrar u ocultar un panel: arrastrando de
+  a poco no hace falta. Al cambiar de pantalla tampoco (Tk la dibuja entera); esconder y mostrar las
+  columnas ahí solo causaba parpadeos, y se quitó.
 - La zona desplazable de una columna nunca es más baja que la columna (`Scrollable._region`): si no,
   Tk deja «subir» el contenido aunque ya esté arriba del todo.
-- Al cambiar solo el tamaño, la vista previa no se redibuja: `Preview.rescale()` vuelve a reducir las
-  capas guardadas (al doble), en paralelo en 3 hilos. Da la misma imagen que `draw()` (hay prueba).
+- La vista previa se arma en otro hilo (`Preview.draw_async` / `rescale_async`): solo Pillow ahí, Tk
+  siempre en el hilo principal (`_present`, `_put`). Un dibujo a la vez; si llegan pedidos mientras
+  tanto, después se hace solo el último. `slot_frames` usa su propio caché (`_frames`) porque lo llama
+  ese hilo: vaciarlo no debe quitarle nada a exportar.
+- Al cambiar de tamaño (ventana o paneles) la vista previa acompaña en vivo: `Preview.live()` estira la
+  última imagen (~5 ms) y 150 ms después de quedar quieto `rescale_async()` la deja nítida (reduce las
+  capas guardadas al doble, en 3 hilos; da la misma imagen que `draw()`, hay prueba). La escala va en
+  pasos de 0,001 (~1 px) para que el movimiento sea continuo.
+- `_render` repasa todas las filas de los paneles en cada cambio: usa `cfg(w, ...)`, que solo configura
+  lo que cambió (Tk repinta un widget aunque se lo configure con el mismo valor; eso trababa la ventana
+  70–150 ms al mover un deslizable).
 - Para medir artefactos con capturas no uses `import` de ImageMagick: bloquea el servidor X y cambia
   justo lo que se mide. Sirve `XGetImage` sobre la ventana (ctypes), que no lo bloquea.
 - Compilado: sin `PIL._tkinter_finder` el programa se cierra al abrir. numpy está excluido.
