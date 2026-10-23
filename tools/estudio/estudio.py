@@ -606,19 +606,62 @@ class App:
             self._repaint_window()
 
     def _repaint_window(self):
-        """Tapa la ventana entera un instante y la destapa: así el sistema obliga a repintar todo lo que
-        quedó debajo. Hace falta en KDE (XWayland) tras maximizar: no solo las columnas, también botones
-        e interruptores que se corrieron quedaban sin dibujar hasta pasarles el mouse encima."""
+        """Tras maximizar o un salto grande de tamaño: vuelve a dibujar toda la ventana. En KDE (XWayland)
+        lo que se corrió (el panel derecho, los botones e interruptores de arriba) quedaba sin dibujar."""
         try:
-            cover = tk.Frame(self.root, bg=C["bg"])
-            cover.place(x=0, y=0, relwidth=1, relheight=1)
-            cover.update_idletasks()
-            cover.destroy()
+            self.root.update_idletasks()
+            hidden = [v for k, v in self.views.items() if k != self.screen]
+            self._redraw(self.root, skip=hidden)  # las tapadas, al ponerse al día (_sync_hidden)
         except tk.TclError:
             pass
 
+    def _redraw(self, top, skip=()):
+        """Pide a Tk que vuelva a dibujar top y todo lo de adentro (con un aviso de exposición a cada
+        widget). Hace falta porque el servidor X guarda las pestañas ya dibujadas (respaldo.py): lo que
+        cambia de lugar o de tamaño mientras está tapado (o al maximizar) nunca recibe ese aviso por sí
+        solo y quedaba vacío. Tapar y destapar la ventana ya no sirve: el servidor repone lo guardado."""
+        stack = [top]
+        while stack:
+            w = stack.pop()
+            if w in skip or (isinstance(w, tk.Toplevel) and w is not top):
+                continue
+            stack.extend(w.winfo_children())
+            try:
+                w.event_generate("<Expose>", x=0, y=0, width=max(1, w.winfo_width()),
+                                 height=max(1, w.winfo_height()))
+            except tk.TclError:
+                pass
+
+    def _redraw_hidden(self):
+        """Las pestañas tapadas cambiaron (ancho de un panel, mostrar u ocultar uno): se redibujan por
+        debajo, de a una y después de lo visible, para que al traerlas aparezcan completas. Si se elige
+        una antes de que le toque, se redibuja al mostrarla (_show_now)."""
+        self._dirty = {k for k in self.views if k != self.screen}
+        job = getattr(self, "_dirty_job", None)
+        if job:
+            self.root.after_cancel(job)
+        self._dirty_job = self.root.after(150, self._redraw_next)
+
+    def _redraw_next(self):
+        self._dirty_job = None
+        if not self._dirty:
+            return
+        k = self._dirty.pop()
+        if k != self.screen:
+            self.root.update_idletasks()
+            self._redraw(self.views[k])
+        self._dirty_job = self.root.after(40, self._redraw_next)
+
     def show(self, sid):
         self._show_now(sid)
+
+    def _mapped_once(self, v, size) -> bool:
+        """True si la pestaña ya tenía tamaño y ahora cambió (hay que redibujarla, ver _redraw)."""
+        try:
+            self.root.update_idletasks()
+            return size[0] > 1 and (v.winfo_width(), v.winfo_height()) != size
+        except tk.TclError:
+            return False
 
     def _sync_hidden_soon(self):
         job = getattr(self, "_sync_job", None)
@@ -634,6 +677,8 @@ class App:
         for v in self.views.values():
             if v is not cur and (v.winfo_width(), v.winfo_height()) != (w, h):
                 v.place_configure(width=w, height=h)
+                self.root.update_idletasks()
+                self._redraw(v)                  # cambió de tamaño estando tapada (ver _redraw)
                 self._sync_job = self.root.after(120, self._sync_hidden)
                 return
 
@@ -642,12 +687,19 @@ class App:
         servidor X guarda cada una ya dibujada (respaldo.py): aparece de una vez, sin repintarse."""
         self.screen = sid
         v = self.views[sid]
+        size = (v.winfo_width(), v.winfo_height())
         # la visible sigue al tamaño de la ventana; las tapadas quedan con tamaño fijo y se ponen al día
         # después de soltar (_sync_hidden): si no, al cambiar el tamaño Tk acomodaría las cinco
         for k, w in self.views.items():
             if w is not v and str(w.place_info().get("relwidth", "0")) not in ("0", "0.0", ""):
                 w.place_configure(relwidth=0, relheight=0, width=w.winfo_width(), height=w.winfo_height())
         v.place_configure(relwidth=1, relheight=1, width=0, height=0)
+        # si cambió estando tapada (o cambia ahora de tamaño) y aún no se redibujó, se redibuja todavía
+        # tapada: así al traerla al frente ya está completa
+        if sid in getattr(self, "_dirty", ()) or self._mapped_once(v, size):
+            getattr(self, "_dirty", set()).discard(sid)
+            self.root.update_idletasks()
+            self._redraw(v)
         v.tkraise()
         for k, b in self.nav.items():
             b.configure(style="NavOn.TButton" if k == sid else "Nav.TButton")
@@ -867,7 +919,7 @@ class App:
             grip.bind("<ButtonPress-1>", lambda e, sd=side: self._drag_start(sd, e))
             grip.bind("<B1-Motion>", lambda e, sd=side: self._drag(sd, e))
             grip.bind("<ButtonRelease-1>", lambda e, sd=side: (self._resize_panel(sd, everywhere=True),
-                                                               self._save_panels()))
+                                                               self._redraw_hidden(), self._save_panels()))
             self.panel_sides[side].append((panel, grip))
             self._apply_panel(side)
 
@@ -914,6 +966,7 @@ class App:
         for sc in self.stages:          # aquí no hay un movimiento que acompañar: la nítida, sin esperar
             sc._instant = True
         self._apply_panel(side)
+        self._redraw_hidden()
 
     def _drag_start(self, side, e):
         self._drag_from = (e.x_root, self.panel_state[side]["ancho"])

@@ -12,6 +12,7 @@ temas `.npt` que Numpad Macros importa. Formato: [Keep a Changelog](https://keep
 - La vista previa acompaña en tiempo real al cambiar el tamaño de la ventana o de los paneles, y se vuelve nítida apenas se suelta.
 - Mover un deslizable o cambiar colores ya no traba la ventana: la vista previa se dibuja aparte, sin detener el resto, y los paneles solo repintan lo que cambió.
 - Cambiar de pantalla ya no hace parpadear los paneles laterales.
+- El panel derecho de las pestañas ya no queda vacío después de maximizar la ventana o de mostrar u ocultar un panel.
 - Cambiar de pestaña es instantáneo y sin parpadeo: cada pestaña queda dibujada (en Linux la guarda el sistema) y se trae al frente ya lista, también la primera vez. Antes se veía la pestaña llenándose, sobre todo en monitores de alta frecuencia.
 
 ## [1.0.0] - pendiente

@@ -155,6 +155,13 @@ lea este documento.
   - Las vistas previas y los paneles de las pestañas tapadas se ponen al día por detrás, de a una,
     400 ms después del último cambio (`_draw_others`, sin animar: `Preview.quiet`). Así la primera
     visita a una pestaña también aparece ya dibujada.
+  - Con el «backing store», lo que cambia de lugar o tamaño mientras está tapado (o al maximizar) no
+    recibe aviso de exposición y queda vacío: pasaba con el panel derecho tras maximizar. `_redraw(w)`
+    manda un `<Expose>` sintético a cada widget y Tk lo vuelve a dibujar (tapar y destapar la ventana
+    ya no sirve: el servidor repone lo guardado). Se usa tras maximizar (`_repaint_window`, solo lo
+    visible), al poner al día las tapadas (`_sync_hidden`), al soltar el borde de un panel y al
+    mostrar u ocultar uno (`_redraw_hidden`, de a una y después). `_show_now` redibuja la pestaña
+    todavía tapada si cambió y no se alcanzó a redibujar.
   - Para que el espacio de un panel oculto se reparta, `_apply_panel` apaga y prende
     `grid_propagate`; antes volvía a ubicar la pantalla (grid_remove/grid), lo que borraba lo guardado.
 - Se probó tapar la ventana con una foto (ventana aparte) mientras se rearmaba: no sirve en KDE, porque
