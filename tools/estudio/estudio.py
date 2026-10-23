@@ -67,6 +67,7 @@ try:
     import logica as L  # noqa: E402
     import claves as K  # noqa: E402
     import vista as V  # noqa: E402
+    from congelar import Congelar  # noqa: E402
     from logica import npt  # noqa: E402
     from PIL import Image, ImageTk  # noqa: E402
 except Exception:
@@ -573,7 +574,7 @@ class App:
                       "exp": self._build_exp(), "key": self._build_key()}
         self.status = tk.Label(r, text="Listo.", bg=C["bg"], fg=C["muted"], font=fnt(-1), anchor="w")
         self.status.grid(row=3, column=0, sticky="ew", padx=16, pady=(6, 10))
-        self.show(self.screen)
+        self._show_now(self.screen)
         self._title()
         r.bind("<Configure>", self._on_root_configure, add="+")
 
@@ -598,7 +599,8 @@ class App:
         self._repaint_job = None
         if getattr(self, "_big_jump", False):
             self._big_jump = False
-            self._repaint_window()
+            # el repintado completo deja la ventana en blanco un instante: por debajo de la foto no se ve
+            Congelar(self.root).hacer(self._repaint_window, listo=self._drawn)
 
     def _repaint_window(self):
         """Tapa la ventana entera un instante y la destapa: así el sistema obliga a repintar todo lo que
@@ -613,6 +615,23 @@ class App:
             pass
 
     def show(self, sid):
+        """Cambia de pantalla «de una vez» (en Linux, sin que se vea la pantalla nueva llenándose)."""
+        Congelar(self.root).hacer(lambda: self._show_now(sid), listo=self._drawn)
+
+    def _drawn(self) -> bool:
+        """True si no queda nada por dibujar: ni ajustes de tamaño ni la vista previa (que va en otro hilo)."""
+        if getattr(self, "_render_job", None):
+            return False
+        if any(getattr(s, "_wrap_job", None) for s in Scrollable.all):     # textos por reacomodar
+            return False
+        for sc in getattr(self, "stages", []):
+            if getattr(sc, "_fit_job", None) or getattr(sc, "_sharp_job", None):
+                return False
+            if getattr(sc.pv, "_busy", False) or getattr(sc.pv, "_pending", None) is not None:
+                return False
+        return True
+
+    def _show_now(self, sid):
         self.screen = sid
         for k, v in self.views.items():
             v.grid_remove() if k != sid else v.grid(row=0, column=0, sticky="nsew")
@@ -625,10 +644,23 @@ class App:
                 self.switch_box.pack(side="right")
         else:
             self.switch_box.pack_forget()
+        # la vista previa de esta pantalla toma su tamaño antes de dibujarse: así se dibuja una sola vez
+        # (si no, primero con la escala anterior y después otra vez ajustada)
+        stage = [sc for sc in getattr(self, "stages", []) if sc.master is self.views.get(sid)]
+        if stage:
+            try:
+                self.root.update_idletasks()
+                self._fit_scale(stage[0])
+            except tk.TclError:
+                pass
+            sc = stage[0]                        # render() ya dibuja a esta escala: no hace falta reajustar
+            if getattr(sc, "_sharp_job", None):
+                self.root.after_cancel(sc._sharp_job)
+                sc._sharp_job = None
+            sc._blurry = False
         self.render()
-        for sc in getattr(self, "stages", []):          # la vista previa de esta pantalla, a su tamaño
-            if sc.winfo_ismapped() or sc.master is self.views.get(sid):
-                self._fit_soon(sc)
+        for sc in stage:
+            self._fit_soon(sc)
 
     # ---------------------------------------------------------------- 1 · editar
     def _build_edit(self):
@@ -863,9 +895,18 @@ class App:
 
     def toggle_panel(self, side, visible):
         self.panel_state[side]["visible"] = bool(visible)
-        self._apply_panel(side)
         self._save_panels()
-        self.root.after(80, self._repaint_window)
+
+        def change():
+            self._apply_panel(side)
+            self.root.update_idletasks()
+            self._repaint_window()                # por debajo de la foto: no se ve
+            for sc in self.stages:                # la vista previa, nítida ya (sin pasar por la estirada)
+                job = getattr(sc, "_sharp_job", None)
+                if job:
+                    self.root.after_cancel(job)
+                    self._sharpen(sc)
+        Congelar(self.root).hacer(change, listo=self._drawn)
 
     def _drag_start(self, side, e):
         self._drag_from = (e.x_root, self.panel_state[side]["ancho"])
@@ -1689,7 +1730,7 @@ class App:
             lab = tk.Label(fr, text=name, bg=fr["bg"], fg=C["text"], font=fnt(-2, True), anchor="w")
             lab.pack(fill="x", pady=(4, 0))
             for w in (fr, sk, lab):
-                w.bind("<Button-1>", lambda e, tt=tid: self.apply_template(tt))
+                w.bind("<Button-1>", lambda e, tt=tid: self._atomic(lambda: self.apply_template(tt)))
         self.tpl_box.columnconfigure(0, weight=1, uniform="t")
         self.tpl_box.columnconfigure(1, weight=1, uniform="t")
         for w in self.slot_box.winfo_children():
@@ -1732,7 +1773,7 @@ class App:
                 b.pack(anchor="w")
                 ws.append(b)
                 for wdg in ws:
-                    wdg.bind("<Button-1>", lambda e, sl=slot: self.pick_slot(sl))
+                    wdg.bind("<Button-1>", lambda e, sl=slot: self._atomic(lambda: self.pick_slot(sl)))
 
     def _paint_slot_settings(self):
         # degradado (fila «Toda la ventana»)
@@ -2091,7 +2132,7 @@ class App:
     def on_zone_click(self, ev):
         z = self.pv_img.tag_at(ev.x, ev.y, "z:")
         if z:
-            self.pick_slot(z)
+            self._atomic(lambda: self.pick_slot(z))
 
     def on_slot_setting(self):
         s = self.images.get(self.slot_sel)
@@ -2310,9 +2351,29 @@ class App:
         self.toast(f"Estilo «{L.PRESETS[pid][0]}» aplicado a las secciones.", "ok")
 
     # ================================================================ colores
-    def select(self, tok):
-        self.sel = tok
-        self.render()
+    def select(self, tok, freeze=True):
+        """Elige una capa. Se abre su fila (color y transparencia) y las de abajo bajan: con la foto de
+        Congelar encima, ese reacomodo no se ve a medias."""
+        if tok == self.sel:
+            self.render()
+            return
+        if freeze:
+            self._atomic(lambda: setattr(self, "sel", tok))
+        else:
+            self.sel = tok
+            self.render()
+
+    def _atomic(self, fn):
+        """Hace fn() (algo que reacomoda los paneles) con la foto de Congelar encima y dibuja enseguida: el
+        cambio se ve de una sola vez, no a medio reacomodar."""
+        def change():
+            fn()
+            job = getattr(self, "_render_job", None)
+            if job:                              # se dibuja ya, no cuando la ventana quede libre
+                self.root.after_cancel(job)
+                self._render_job = None
+            self._render_now()
+        Congelar(self.root).hacer(change, listo=self._drawn)
 
     def on_preview_click(self, ev):
         t = self.pv_edit.tag_at(ev.x, ev.y, "t:")
@@ -2320,7 +2381,7 @@ class App:
             self.select(t)
 
     def pick_color(self, tok):
-        self.select(tok)
+        self.select(tok, freeze=False)           # sin foto: el selector de color se abre enseguida
         res = colorchooser.askcolor(color=self.colors[tok], parent=self.root, title=LABELS[tok])
         if res and res[1]:
             self.set_color(tok, res[1].lower())
@@ -2959,12 +3020,16 @@ def main():
                 app.show(steps[0])
                 root.after(400, lambda: run(steps[1:]))
             else:
+                # los cambios de pantalla de arriba pasaron por Congelar (con foto encima en Linux)
+                overlays = [w for w in root.winfo_children() if isinstance(w, tk.Toplevel)]
+                if app.screen != "edit" or Congelar._activo is not None or overlays:
+                    errors.append("un cambio de pantalla quedó a medias (foto encima o pantalla equivocada)")
                 app.apply_palette()
                 app.apply_template("todo")          # 8 espacios, con GIF animados
                 app.bg_generate()                   # fondo de imagen de una pieza
                 app.onep_var.set(True)
                 app.on_one_piece()
-                app.show("img")
+                app._show_now("img")
                 root.update()
                 theme = app.build_theme_meta()
                 theme.images = app.final_images()
@@ -2980,9 +3045,9 @@ def main():
                 app.grad_mode(True)
                 app.grad_add_stop()
                 app.grad_from("c")
-                app.show("sec")
+                app._show_now("sec")
                 app.focus_section()
-                app.show("img")
+                app._show_now("img")
                 root.update()
                 theme = app.build_theme_meta()     # se exporta y se vuelve a leer, como Numpad Macros
                 theme.images = app.final_images()

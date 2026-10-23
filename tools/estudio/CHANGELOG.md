@@ -12,6 +12,7 @@ temas `.npt` que Numpad Macros importa. Formato: [Keep a Changelog](https://keep
 - La vista previa acompaña en tiempo real al cambiar el tamaño de la ventana o de los paneles, y se vuelve nítida apenas se suelta.
 - Mover un deslizable o cambiar colores ya no traba la ventana: la vista previa se dibuja aparte, sin detener el resto, y los paneles solo repintan lo que cambió.
 - Cambiar de pantalla ya no hace parpadear los paneles laterales.
+- En Linux, cambiar de pantalla, elegir una capa o un espacio de imagen, aplicar una plantilla, mostrar u ocultar un panel o maximizar se ve de una sola vez, sin la pantalla a medio dibujar (se notaba sobre todo en monitores de alta frecuencia).
 
 ## [1.0.0] - pendiente
 ### Añadido
