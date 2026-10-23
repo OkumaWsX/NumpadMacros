@@ -50,6 +50,7 @@ Queda en el menú Inicio, con acceso directo en el escritorio, y se desinstala d
    ./instalar_linux.sh
    ```
    Así queda en el menú de aplicaciones como **Numpad Macros**. También puedes abrir el archivo `NumpadMacros` directamente.
+   Si compilaste tú la app con `./compilar.sh`, ejecuta `./instalar_linux.sh` en la carpeta del código: encuentra solo el programa en `dist/` y el icono en `assets/`. También puedes indicar el programa: `./instalar_linux.sh /ruta/a/NumpadMacros`.
 2. La primera vez, en **Numpad y opciones**, pulsa **«Dar permisos…»** y escribe tu contraseña. Funciona al instante, sin cerrar sesión.
 3. El micrófono virtual **«NumpadMacros-Mic»** se crea solo (con PipeWire o PulseAudio). Elígelo como micrófono en Discord, OBS o el juego.
 

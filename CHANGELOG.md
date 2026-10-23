@@ -3,6 +3,8 @@
 Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
+### Corregido
+- **Instalar en Linux sin mover archivos**: `instalar_linux.sh` ya no exige que el programa y `icon.png` estén en su misma carpeta. Los encuentra solo en el `.tar.gz` descargado o en la carpeta del código después de compilar (`dist/` y `assets/`), funciona aunque lo ejecutes desde otra carpeta y acepta la ruta del programa (`./instalar_linux.sh /ruta/a/NumpadMacros`). Si no está compilado, ofrece compilarlo; si falta el icono, instala igual y lo avisa.
 
 ## [3.4.4] - 2026-10-22
 ### Corregido

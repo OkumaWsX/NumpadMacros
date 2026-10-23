@@ -10,5 +10,5 @@ echo
 if [ "$(uname)" = "Darwin" ]; then
   echo "Listo: dist/Numpad Macros.app"
 else
-  echo "Listo: dist/NumpadMacros  (luego ./instalar_linux.sh desde una carpeta con el binario e icon.png)"
+  echo "Listo: dist/NumpadMacros  (para agregarlo al menú: ./instalar_linux.sh)"
 fi
