@@ -115,8 +115,17 @@ lea este documento.
   mezcla): las capas semitransparentes se dibujan aparte y se combinan con `alpha_composite`.
 - Los controles `tk.Scale` llaman a su comando también cuando el programa cambia el valor: los
   manejadores comparan con el valor actual antes de marcar cambios.
-- `render()` se junta con `after_idle` (un solo dibujo por tanda de cambios). En KDE quedaban zonas
-  a medio pintar: las columnas se repintan tras cambiar de tamaño (`Scrollable.refresh`).
+- `render()` se junta con `after_idle` (un solo dibujo por tanda de cambios).
+- KDE (Wayland, XWayland): si una columna se mueve de golpe (maximizar, o un salto grande de tamaño),
+  partes de ella quedan sin pintar para siempre; pedir `Expose` no sirve, solo esconderla y mostrarla
+  (`Scrollable.refresh`). Se hace 100 ms después y **solo tras un salto de más de 40 px** y en las
+  columnas que se movieron: arrastrando de a poco no hace falta y repintar ahí causa parpadeos.
+- La zona desplazable de una columna nunca es más baja que la columna (`Scrollable._region`): si no,
+  Tk deja «subir» el contenido aunque ya esté arriba del todo.
+- Al cambiar solo el tamaño, la vista previa no se redibuja: `Preview.rescale()` vuelve a reducir las
+  capas guardadas (al doble), en paralelo en 3 hilos. Da la misma imagen que `draw()` (hay prueba).
+- Para medir artefactos con capturas no uses `import` de ImageMagick: bloquea el servidor X y cambia
+  justo lo que se mide. Sirve `XGetImage` sobre la ventana (ctypes), que no lo bloquea.
 - Compilado: sin `PIL._tkinter_finder` el programa se cierra al abrir. numpy está excluido.
 - En macOS el workflow usa `perl -e 'alarm 90; exec @ARGV'` porque no existe `timeout`.
 

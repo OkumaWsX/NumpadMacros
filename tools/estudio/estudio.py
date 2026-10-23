@@ -125,7 +125,7 @@ class Scrollable(tk.Frame):
         self.cv.configure(yscrollcommand=self.sb.set)
         self.cv.pack(side="left", fill="both", expand=True)
         self.sb.pack(side="right", fill="y")
-        self.inner.bind("<Configure>", lambda e: self.cv.configure(scrollregion=self.cv.bbox("all")))
+        self.inner.bind("<Configure>", lambda e: self._region())
         self.cv.bind("<Configure>", self._on_width)
         self.bind("<Enter>", self._wheel_on)
         self.bind("<Leave>", self._wheel_off)
@@ -133,8 +133,17 @@ class Scrollable(tk.Frame):
 
     all: list = []
 
+    def _region(self):
+        """Zona que se puede desplazar: nunca más baja que la columna. Si todo cabe, la rueda no mueve
+        nada (si no, Tk deja «subir» el contenido aunque ya esté arriba del todo y queda un hueco)."""
+        h = max(self.inner.winfo_reqheight(), self.cv.winfo_height())
+        self.cv.configure(scrollregion=(0, 0, self.cv.winfo_width(), h))
+        if self.inner.winfo_reqheight() <= self.cv.winfo_height():
+            self.cv.yview_moveto(0)
+
     def _on_width(self, e):
         self.cv.itemconfigure(self._win, width=e.width)
+        self._region()
         if not hasattr(self, "_base_w"):
             self._base_w = e.width
         if e.width != getattr(self, "_last_w", None):
@@ -161,14 +170,24 @@ class Scrollable(tk.Frame):
                 if w._wrap0 > 0:
                     w.configure(wraplength=max(120, w._wrap0 + extra))
 
+    def moved(self) -> bool:
+        """True si la columna cambió de lugar o de tamaño desde la última vez que se repintó."""
+        top = self.winfo_toplevel()                  # posición dentro de la ventana (no en la pantalla)
+        place = (self.winfo_rootx() - top.winfo_rootx(), self.winfo_rooty() - top.winfo_rooty(),
+                 self.winfo_width(), self.winfo_height())
+        if place == getattr(self, "_place", None):
+            return False
+        self._place = place
+        return True
+
     def refresh(self):
-        """Vuelve a pintar todo lo de adentro (algunos escritorios Linux dejan partes sin dibujar al
-        maximizar o al cambiar mucho de tamaño)."""
+        """Vuelve a pintar todo lo de adentro. En KDE (Wayland, XWayland) al mover una columna quedan
+        partes sin dibujar que no se arreglan solas, y lo único que sirve es esconderla y mostrarla."""
         try:
             self.cv.itemconfigure(self._win, state="hidden")
             self.cv.update_idletasks()
             self.cv.itemconfigure(self._win, state="normal")
-            self.cv.configure(scrollregion=self.cv.bbox("all"))
+            self._region()
         except tk.TclError:
             pass
 
@@ -486,18 +505,28 @@ class App:
         size = (ev.width, ev.height)
         if size == getattr(self, "_root_size", None):
             return
+        old = getattr(self, "_root_size", None)
         self._root_size = size
+        # Arrastrando el borde de a poco las columnas quedan bien; solo un salto grande (maximizar, ajustar
+        # a media pantalla, o un arrastre mientras la ventana estaba ocupada) deja partes sin pintar.
+        if old and max(abs(size[0] - old[0]), abs(size[1] - old[1])) > 40:
+            self._big_jump = True
         job = getattr(self, "_repaint_job", None)
         if job:
             self.root.after_cancel(job)
-        self._repaint_job = self.root.after(250, self._repaint)
+        self._repaint_job = self.root.after(100, self._repaint_if_jumped)
+
+    def _repaint_if_jumped(self):
+        self._repaint_job = None
+        if getattr(self, "_big_jump", False):
+            self._big_jump = False
+            self._repaint()
 
     def _repaint(self):
-        """Después de maximizar o cambiar de tamaño: vuelve a pintar las columnas."""
-        self._repaint_job = None
+        """Después de maximizar o de un salto de tamaño: vuelve a pintar las columnas que se movieron."""
         for s in Scrollable.all:
             try:
-                if s.winfo_ismapped():
+                if s.winfo_ismapped() and s.moved():
                     s.refresh()
             except tk.TclError:
                 pass
@@ -764,7 +793,8 @@ class App:
         job = getattr(sc, "_fit_job", None)
         if job:
             self.root.after_cancel(job)
-        sc._fit_job = self.root.after(120, lambda: self._fit_stage(sc))
+        # después del repintado de las columnas (100 ms), para que dibujar la vista previa no lo retrase
+        sc._fit_job = self.root.after(160, lambda: self._fit_stage(sc))
 
     def _fit_stage(self, sc):
         """La vista previa crece o se achica para caber entera en su columna (hasta 2×)."""
@@ -780,7 +810,10 @@ class App:
         if sc.pv.set_scale(min(aw / V.W, ah / V.H)):
             w, h = sc.pv.size
             sc.pcv.configure(width=w, height=h)
-            self.render()
+            # solo cambió el tamaño: se reduce otra vez el último dibujo (si hay cambios pendientes, el
+            # dibujo completo llega igual con render())
+            if not (sc.winfo_ismapped() and sc.pv.rescale()):
+                self.render()
 
     # ---------------------------------------------------------------- fondo de la ventana (degradado)
     def _build_grad(self, box):
@@ -2807,6 +2840,11 @@ def main():
                 if res.theme.background.get("tipo") != "imagen" or "fondo" not in res.theme.images \
                         or not res.theme.background.get("una_pieza"):
                     errors.append("el fondo de imagen de una pieza no se exportó")
+                for s in Scrollable.all:            # columnas que caben enteras: la rueda no las mueve
+                    if s.winfo_ismapped() and s.inner.winfo_reqheight() <= s.cv.winfo_height():
+                        s.cv.yview_scroll(-5, "units")
+                        if s.cv.canvasy(0) != 0:
+                            errors.append("una columna corta se desplaza hacia arriba")
                 app.grad_mode(True)
                 app.grad_add_stop()
                 app.grad_from("c")

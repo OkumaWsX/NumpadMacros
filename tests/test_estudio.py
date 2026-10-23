@@ -159,6 +159,30 @@ class LogicTest(unittest.TestCase):
         self.assertEqual(pv.tag_at(V.OX + 100, V.OY + 300, "s:"), "keys")
         self.assertEqual(pv.tag_at(V.OX + 500, V.OY + 300, "s:"), "body")
 
+    def test_preview_rescale(self):
+        """Al cambiar solo el tamaño se reducen otra vez las capas: igual que dibujar todo de nuevo."""
+        import vista as V
+
+        class FakeCanvas:
+            def after(self, *a):
+                return 1
+
+            def after_cancel(self, *a):
+                pass
+        e = L.effective(self.base, {})
+        gif = L.sample_anim("estrellas")
+        frames = lambda slot, size: (L.render_slot_frames(gif, slot, L.SLOT_DEFAULTS[slot], "#000000", size=size)  # noqa
+                                     if slot in ("tabsend", "keys") else None)
+        quick, full = V.Preview(FakeCanvas()), V.Preview(FakeCanvas())
+        quick._show = full._show = lambda: None
+        self.assertFalse(quick.rescale())                      # nada dibujado todavía
+        quick.draw(e, frames, mode="img", sel="keys", opacity=80)
+        self.assertTrue(quick.set_scale(1.3) and quick.rescale())
+        full.set_scale(1.3)
+        full.draw(e, frames, mode="img", sel="keys", opacity=80)
+        self.assertEqual(quick.compose(160).tobytes(), full.compose(160).tobytes())
+        self.assertEqual(quick.compose().size, full.size)
+
     def test_background_image_and_one_piece(self):
         import vista as V
         pal = L.extract_palette(L.sample_image())
