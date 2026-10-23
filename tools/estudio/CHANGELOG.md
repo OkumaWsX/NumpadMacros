@@ -6,7 +6,7 @@ temas `.npt` que Numpad Macros importa. Formato: [Keep a Changelog](https://keep
 ## [Sin publicar]
 ### Corregido
 - Los paneles laterales ya no se pueden «subir» más allá del principio cuando todo su contenido cabe (pasaba en «Transparencia por sección» e «Imágenes y plantillas»: quedaba un hueco arriba).
-- Al maximizar o cambiar mucho el tamaño de la ventana (sobre todo en Linux con KDE), el panel derecho se vuelve a pintar entero antes y ya no parpadea al arrastrar el borde de a poco.
+- Al maximizar o cambiar mucho el tamaño de la ventana (sobre todo en Linux con KDE), ya no desaparecen botones, interruptores ni partes de los paneles: se vuelve a pintar toda la ventana, y sin parpadeos al arrastrar el borde de a poco.
 - La vista previa se reajusta más rápido al cambiar el tamaño de la ventana: reutiliza el último dibujo en vez de rehacerlo entero, y la ventana se queda menos tiempo trabada.
 
 ## [1.0.0] - pendiente

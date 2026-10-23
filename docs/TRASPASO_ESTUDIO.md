@@ -116,10 +116,12 @@ lea este documento.
 - Los controles `tk.Scale` llaman a su comando también cuando el programa cambia el valor: los
   manejadores comparan con el valor actual antes de marcar cambios.
 - `render()` se junta con `after_idle` (un solo dibujo por tanda de cambios).
-- KDE (Wayland, XWayland): si una columna se mueve de golpe (maximizar, o un salto grande de tamaño),
-  partes de ella quedan sin pintar para siempre; pedir `Expose` no sirve, solo esconderla y mostrarla
-  (`Scrollable.refresh`). Se hace 100 ms después y **solo tras un salto de más de 40 px** y en las
-  columnas que se movieron: arrastrando de a poco no hace falta y repintar ahí causa parpadeos.
+- KDE (Wayland, XWayland): si la ventana cambia de golpe (maximizar, o un salto de más de 40 px),
+  lo que se corrió (columnas, botones, los interruptores de arriba) queda sin pintar hasta pasarle el
+  mouse. Pedir `Expose` no sirve; `_repaint_window` tapa la ventana entera con un marco un instante y
+  lo quita, y el sistema repinta todo. Solo tras saltos: arrastrando de a poco no hace falta y causa
+  parpadeos. (`Scrollable.refresh`, esconder y mostrar una columna, queda para cambiar de pantalla y
+  mostrar u ocultar paneles.)
 - La zona desplazable de una columna nunca es más baja que la columna (`Scrollable._region`): si no,
   Tk deja «subir» el contenido aunque ya esté arriba del todo.
 - Al cambiar solo el tamaño, la vista previa no se redibuja: `Preview.rescale()` vuelve a reducir las

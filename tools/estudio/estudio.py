@@ -520,7 +520,19 @@ class App:
         self._repaint_job = None
         if getattr(self, "_big_jump", False):
             self._big_jump = False
-            self._repaint()
+            self._repaint_window()
+
+    def _repaint_window(self):
+        """Tapa la ventana entera un instante y la destapa: así el sistema obliga a repintar todo lo que
+        quedó debajo. Hace falta en KDE (XWayland) tras maximizar: no solo las columnas, también botones
+        e interruptores que se corrieron quedaban sin dibujar hasta pasarles el mouse encima."""
+        try:
+            cover = tk.Frame(self.root, bg=C["bg"])
+            cover.place(x=0, y=0, relwidth=1, relheight=1)
+            cover.update_idletasks()
+            cover.destroy()
+        except tk.TclError:
+            pass
 
     def _repaint(self):
         """Después de maximizar o de un salto de tamaño: vuelve a pintar las columnas que se movieron."""
