@@ -8,6 +8,8 @@ HERE = os.path.abspath(SPECPATH)
 ROOT = os.path.dirname(os.path.dirname(HERE))
 datas = [(os.path.join(ROOT, "assets", "icon-estudio.png"), "."),
          (os.path.join(ROOT, "docs", "temas", "temas.json"), "."),
+         # «Novedades de esta versión» (pestaña Acerca de)
+         (os.path.join(HERE, "CHANGELOG.md"), "."),
          # letra Inter: la vista previa se dibuja igual que Numpad Macros 3.4.1
          (os.path.join(ROOT, "assets", "fonts", "Inter-Regular.ttf"), "fonts"),
          (os.path.join(ROOT, "assets", "fonts", "Inter-Bold.ttf"), "fonts"),
@@ -18,7 +20,7 @@ except Exception:
     pass
 
 a = Analysis([os.path.join(HERE, "estudio.py")], pathex=[HERE, ROOT], datas=datas,
-             hiddenimports=["tkinterdnd2", "logica", "claves", "vista", "npm.npt", "npm.config",
+             hiddenimports=["tkinterdnd2", "logica", "claves", "vista", "actualizar", "npm.npt", "npm.config",
                             "npm.desktop_linux", "PIL.ImageTk", "PIL._tkinter_finder"],
              excludes=["numpy", "unittest", "pydoc"])
 pyz = PYZ(a.pure)

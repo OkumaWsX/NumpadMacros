@@ -51,10 +51,11 @@ lea este documento.
 ## 4. Dónde está cada cosa
 | Archivo | Qué hace |
 |---|---|
-| `tools/estudio/estudio.py` | La ventana (Tkinter): 5 pantallas, paneles laterales, exportar, claves. `VERSION` está arriba. |
+| `tools/estudio/estudio.py` | La ventana (Tkinter): 6 pantallas, paneles laterales, exportar, claves. `VERSION` está arriba. |
 | `tools/estudio/vista.py` | Vista previa de la ventana de Numpad Macros, dibujada con Pillow (al doble y reducida), con transparencia real, degradado, imagen de fondo, «fondo de una pieza», secciones, 9 zonas y GIF. Escala 0,4×–2×. `export_size()` decide con qué forma se guarda cada imagen. |
 | `tools/estudio/logica.py` | Lógica sin ventana: colores, legibilidad, paleta desde imagen, imágenes y GIF (APNG), degradado, fondo de imagen, secciones, proyecto `.nptproj`. |
 | `tools/estudio/respaldo.py` | Linux: pide al servidor X que guarde cada pestaña ya dibujada («backing store»), ver §8. |
+| `tools/estudio/actualizar.py` | Actualizaciones (sin Tk): busca versiones nuevas en GitHub, descarga y verifica, instala. Ver §6. |
 | `tools/estudio/claves.py` | Firma de autor / clave oficial, modo creador o comunidad, ajustes (`ajustes.json`). |
 | `tools/estudio/Estudio.spec` | PyInstaller (incluye la letra Inter, el icono y `PIL._tkinter_finder`; excluye numpy). |
 | `tools/estudio/CHANGELOG.md` | Historial propio del Estudio. Las novedades nuevas van en «Sin publicar». |
@@ -70,7 +71,7 @@ lea este documento.
 
 ## 5. Qué hace el Estudio 1.0.0
 - **Pantallas**: 1 Editar tema · 2 Transparencia por sección · 3 Imágenes y plantillas · 4 Exportar ·
-  5 Clave de firma / Mi firma de autor.
+  5 Clave de firma / Mi firma de autor · 6 Acerca de (versión y actualizaciones).
 - **Colores**: 22 capas con transparencia propia, ventana (opacidad en uso y sin usar), colores
   sacados de una imagen, panel de legibilidad (bloquea exportar si algo no se lee).
 - **Fondo de la ventana**: Sólido / Degradado (2–5 colores, 9 puntos de inicio) / Imagen (subida,
@@ -97,6 +98,21 @@ lea este documento.
     el enlace de descarga del README.
 - El actualizador de Numpad Macros solo considera etiquetas `vX.Y.Z`, así que las del Estudio no lo
   confunden.
+- **Avisos de versión nueva** (`actualizar.py` + pestaña «6 · Acerca de» en `estudio.py`): 3 s después de
+  abrir (una vez al día, `ajustes.json` → `actualizaciones`: `auto`, `beta`, `last_check`, `skip`) se
+  consulta `https://api.github.com/repos/OkumaWsX/NumpadMacros/releases?per_page=30` (cambiable con la
+  variable `ESTUDIO_API`, también `file://…`, para probar) en un hilo, y se filtran las etiquetas
+  `estudio-v` (la API «latest» no sirve: la última es siempre la de Numpad Macros). Se saltan borradores
+  y prerelease (salvo que se active «beta»). El resultado vuelve al hilo de Tk por una cola.
+  - **Hay que mantener los nombres de los archivos de la Release**: `EstudioTemas-Windows-Setup.exe`,
+    `EstudioTemas-Windows-portable.zip`, `EstudioTemas-Linux.tar.gz` (con `EstudioTemas/EstudioTemas-NumpadMacros`),
+    `EstudioTemas-macOS.zip` y `SHA256SUMS.txt`. Sin huella o con otra, no se instala y se borra lo descargado.
+  - Windows instalado (existe `unins000.exe`): lanza el instalador con `/SILENT /ACTUALIZAR=1` y el `.iss`
+    vuelve a abrir el Estudio. Linux empaquetado: reemplaza el ejecutable (deja `.anterior`) y se reabre.
+    macOS, portátil y código fuente: solo abre la página de la Release.
+  - El cuerpo de la Release se muestra hasta la línea `---` (el pie no). Las novedades de «Acerca de» salen
+    de `CHANGELOG.md`, que va dentro del paquete (`Estudio.spec`).
+  - `--probar` **no usa la red** (`PROBE`): ni búsqueda automática ni manual.
 - Numpad Macros se publica aparte con «Publicar versión» (o el programa Publicador) y ya no incluye el
   Estudio.
 
@@ -143,7 +159,7 @@ lea este documento.
 - `_render` repasa todas las filas de los paneles en cada cambio: usa `cfg(w, ...)`, que solo configura
   lo que cambió (Tk repinta un widget aunque se lo configure con el mismo valor; eso trababa la ventana
   70–150 ms al mover un deslizable).
-- Pestañas: las cinco están siempre mapeadas, una encima de otra (`place`), y se trae al frente la
+- Pestañas: las seis están siempre mapeadas, una encima de otra (`place`), y se trae al frente la
   elegida (`tkraise`, en `_show_now`). En Linux `respaldo.py` pide «backing store» para cada una: el
   servidor X la guarda ya dibujada aunque esté tapada, y al traerla aparece en un cuadro. Esconder y
   mostrar (grid_remove/grid) obligaba a pintar cientos de widgets y se veía la pestaña llenándose

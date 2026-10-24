@@ -73,6 +73,15 @@ Root: HKCU; Subkey: "Software\Classes\EstudioTemas.Proyecto\shell\open\command";
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchApp}"; Flags: nowait postinstall skipifsilent
+; Actualización automática desde el propio Estudio (/ACTUALIZAR=1): vuelve a abrirse solo al terminar
+Filename: "{app}\{#AppExe}"; Flags: nowait runasoriginaluser skipifnotsilent; Check: EsActualizacion
 
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/f /im {#AppExe}"; Flags: runhidden; RunOnceId: "CerrarEstudio"
+
+[Code]
+{ El Estudio se actualiza llamando a este instalador con /SILENT ... /ACTUALIZAR=1 }
+function EsActualizacion: Boolean;
+begin
+  Result := ExpandConstant('{param:ACTUALIZAR|0}') = '1';
+end;

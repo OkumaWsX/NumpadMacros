@@ -261,5 +261,178 @@ class KeysTest(unittest.TestCase):
             self.assertEqual(self.c.load_official_key().public_hex, off.public_hex)
 
 
+import hashlib  # noqa: E402
+import json  # noqa: E402
+import pathlib  # noqa: E402
+import time  # noqa: E402
+
+try:
+    import actualizar as U  # noqa: E402
+except ImportError:
+    U = None
+
+FALSAS = [
+    {"tag_name": "v3.4.4", "name": "Numpad Macros 3.4.4", "body": "- otro programa"},
+    {"tag_name": "estudio-v9.9.9", "name": "Estudio de Temas 9.9.9", "draft": True},
+    {"tag_name": "estudio-v2.0.0-beta.1", "name": "Estudio de Temas 2.0.0", "prerelease": True,
+     "html_url": "https://x/beta", "body": "### Añadido\n- Beta"},
+    {"tag_name": "estudio-v1.2.0", "name": "Estudio de Temas 1.2.0", "published_at": "2026-11-02T10:00:00Z",
+     "html_url": "https://x/1.2.0",
+     "body": "### Añadido\n- **Algo** nuevo\n- Otra cosa\n\n### Corregido\n- Un arreglo con `código`\n\n---\n"
+             "Pie que no se muestra\n- viñeta del pie"},
+    {"tag_name": "estudio-v1.0.0", "name": "Estudio de Temas 1.0.0"},
+]
+
+
+@unittest.skipIf(U is None, "actualizar.py no se pudo importar")
+class ActualizarTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self._old = os.environ.get("ESTUDIO_API")
+        self.addCleanup(self._restore)
+
+    def _restore(self):
+        if self._old is None:
+            os.environ.pop("ESTUDIO_API", None)
+        else:
+            os.environ["ESTUDIO_API"] = self._old
+
+    def api(self, data=None):
+        path = pathlib.Path(self.tmp) / "releases.json"
+        path.write_text(json.dumps(FALSAS if data is None else data), encoding="utf-8")
+        os.environ["ESTUDIO_API"] = path.as_uri()
+
+    def test_versiones(self):
+        self.assertEqual(U.parse_version("estudio-v1.2.3"), (1, 2, 3))
+        self.assertEqual(U.parse_version("v1.0"), (1, 0, 0))
+        self.assertEqual(U.parse_version("2.0.0-beta.1"), (2, 0, 0))
+        self.assertTrue(U.newer("1.10.0", "1.9.9"))
+        self.assertFalse(U.newer("1.0.0", "1.0.0"))
+        self.assertFalse(U.newer("0.9.9", "1.0.0"))
+
+    def test_fetch_latest_filtra(self):
+        self.api()
+        rel = U.fetch_latest(beta=False)
+        self.assertEqual((rel.tag, rel.version), ("estudio-v1.2.0", "1.2.0"))
+        self.assertEqual(rel.published, "2026-11-02")
+        rel = U.fetch_latest(beta=True)
+        self.assertEqual(rel.version, "2.0.0-beta.1")
+        self.assertTrue(rel.prerelease)
+
+    def test_fetch_latest_sin_estudio_o_con_error(self):
+        self.api([FALSAS[0], FALSAS[1]])
+        self.assertIsNone(U.fetch_latest())
+        os.environ["ESTUDIO_API"] = (pathlib.Path(self.tmp) / "no-existe.json").as_uri()
+        with self.assertRaises(U.UpdateError):
+            U.fetch_latest()
+
+    def test_check_y_skip(self):
+        self.api()
+        upd = {"auto": True, "beta": False, "last_check": 0, "skip": ""}
+        self.assertEqual(U.check(upd, "1.0.0").version, "1.2.0")
+        self.assertGreater(upd["last_check"], 0)
+        self.assertIsNone(U.check(upd, "1.2.0"))
+        upd["skip"] = "1.2.0"
+        self.assertIsNone(U.check(upd, "1.0.0"))
+        self.assertEqual(U.check(upd, "1.0.0", manual=True).version, "1.2.0")
+
+    def test_due(self):
+        self.assertTrue(U.due({"auto": True, "last_check": 0}))
+        self.assertFalse(U.due({"auto": True, "last_check": time.time()}))
+        self.assertFalse(U.due({"auto": False, "last_check": 0}))
+        self.assertTrue(U.due({"auto": True, "last_check": time.time() - 25 * 3600}))
+
+    def test_notes_lines_corta_el_pie(self):
+        rel = U.Release(FALSAS[3])
+        self.assertEqual(rel.notes_lines(), [("Añadido", "Algo nuevo"), ("Añadido", "Otra cosa"),
+                                              ("Corregido", "Un arreglo con código")])
+
+    def _release_con_archivo(self, contenido, huella):
+        nombre = U.ASSET[U.platform_key()]
+        archivo = pathlib.Path(self.tmp) / "origen" / nombre
+        archivo.parent.mkdir(exist_ok=True)
+        archivo.write_bytes(contenido)
+        assets = [{"name": nombre, "browser_download_url": archivo.as_uri(), "size": len(contenido)}]
+        if huella is not None:
+            sums = pathlib.Path(self.tmp) / "origen" / "SHA256SUMS.txt"
+            sums.write_text(f"{huella}  {nombre}\n{'0' * 64}  otro.zip\n", encoding="utf-8")
+            assets.append({"name": "SHA256SUMS.txt", "browser_download_url": sums.as_uri(), "size": 1})
+        return U.Release({"tag_name": "estudio-v1.2.0", "assets": assets})
+
+    def test_download_huella_correcta(self):
+        datos = os.urandom(200_000)
+        rel = self._release_con_archivo(datos, hashlib.sha256(datos).hexdigest())
+        avances = []
+        path = U.download(rel, lambda a, t: avances.append((a, t)))
+        self.addCleanup(lambda: os.path.exists(path) and os.remove(path))
+        self.assertEqual(open(path, "rb").read(), datos)
+        self.assertEqual(avances[-1][0], len(datos))
+
+    def test_download_huella_incorrecta_borra(self):
+        rel = self._release_con_archivo(b"hola", "f" * 64)
+        carpetas = set(os.listdir(tempfile.gettempdir()))
+        with self.assertRaises(U.UpdateError):
+            U.download(rel)
+        for nuevo in set(os.listdir(tempfile.gettempdir())) - carpetas:
+            if nuevo.startswith("estudiotemas-upd-"):
+                self.assertEqual(os.listdir(os.path.join(tempfile.gettempdir(), nuevo)), [])
+
+    def test_download_sin_huella(self):
+        rel = self._release_con_archivo(b"hola", None)
+        with self.assertRaises(U.UpdateError):
+            U.download(rel)
+
+    def test_download_cancelada(self):
+        datos = b"x" * 1000
+        rel = self._release_con_archivo(datos, hashlib.sha256(datos).hexdigest())
+        with self.assertRaises(U.UpdateError):
+            U.download(rel, cancelled=lambda: True)
+
+    def test_changelog(self):
+        txt = ("# Historial\n\n## [Sin publicar]\n### Añadido\n- No va\n\n## [1.1.0] - 2026-11-01\n### Corregido\n"
+               "- Arreglo **uno**\n\n## [1.0.0] - pendiente\n### Añadido\n- Primera\n- Segunda\n")
+        ruta = pathlib.Path(self.tmp) / "CHANGELOG.md"
+        ruta.write_text(txt, encoding="utf-8")
+        e = U.read_changelog(str(ruta))
+        self.assertEqual([x["version"] for x in e], ["1.1.0", "1.0.0"])
+        self.assertEqual(U.changelog_for(e, "1.0.0")["groups"], [("Añadido", ["Primera", "Segunda"])])
+        self.assertEqual(U.changelog_for(e, "9.9.9")["version"], "1.1.0")      # no existe: la primera
+        self.assertEqual(e[0]["groups"], [("Corregido", ["Arreglo uno"])])
+        self.assertEqual(U.read_changelog(str(ruta) + ".no"), [])
+
+    def test_changelog_real_tiene_la_version_actual(self):
+        ruta = os.path.join(HERE, "tools", "estudio", "CHANGELOG.md")
+        e = U.read_changelog(ruta)
+        self.assertTrue(e)
+        self.assertTrue(U.changelog_for(e, "1.0.0")["groups"])
+
+    def test_entorno_limpio(self):
+        os.environ["_PYI_PRUEBA"] = "1"
+        os.environ["_MEIPASS2"] = "x"
+        self.addCleanup(lambda: [os.environ.pop(k, None) for k in ("_PYI_PRUEBA", "_MEIPASS2")])
+        env = U.relaunch_env()
+        self.assertFalse([k for k in env if k.startswith(("_PYI", "_MEI"))])
+
+    def test_install_linux_reemplaza_con_copia(self):
+        import io
+        import tarfile
+        from unittest import mock
+        carpeta = pathlib.Path(self.tmp) / "app"
+        carpeta.mkdir()
+        exe = carpeta / "EstudioTemas-NumpadMacros"
+        exe.write_bytes(b"viejo")
+        tar = pathlib.Path(self.tmp) / "x.tar.gz"
+        with tarfile.open(tar, "w:gz") as tf:
+            info = tarfile.TarInfo("EstudioTemas/EstudioTemas-NumpadMacros")
+            info.size = 5
+            tf.addfile(info, io.BytesIO(b"nuevo"))
+        with mock.patch.object(U.sys, "executable", str(exe)):
+            U.install_linux(str(tar))
+        self.assertEqual(exe.read_bytes(), b"nuevo")
+        self.assertEqual((carpeta / "EstudioTemas-NumpadMacros.anterior").read_bytes(), b"viejo")
+        self.assertEqual(sorted(os.listdir(carpeta)), ["EstudioTemas-NumpadMacros",
+                                                       "EstudioTemas-NumpadMacros.anterior"])
+
+
 if __name__ == "__main__":
     unittest.main()

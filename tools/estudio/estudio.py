@@ -10,9 +10,12 @@ from __future__ import annotations
 import hashlib
 import io
 import os
+import queue
 import sys
 import threading
+import time
 import tkinter as tk
+import webbrowser
 from tkinter import colorchooser, filedialog, messagebox, ttk
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -67,6 +70,7 @@ try:
     import logica as L  # noqa: E402
     import claves as K  # noqa: E402
     import vista as V  # noqa: E402
+    import actualizar as U  # noqa: E402
     from respaldo import guardar_contenido  # noqa: E402
     from logica import npt  # noqa: E402
     from PIL import Image, ImageTk  # noqa: E402
@@ -81,6 +85,7 @@ except Exception:          # sin la librería se elige la imagen con un botón
 
 VERSION = "1.0.0"
 APP = "Estudio de Temas"
+PROBE = "--probar" in sys.argv       # prueba automática: jamás toca la red
 if _IMPORT_ERROR:
     _fatal(_IMPORT_ERROR)
 FONT = V.FONT
@@ -349,10 +354,18 @@ class App:
         self._frames: dict = {}            # cuadros de las imágenes para la vista previa
         self._toast_job = None
         self._quiet = False           # True mientras se rellenan los controles (no es un cambio del usuario)
+        self.update_rel = None             # Release nueva encontrada (o None)
+        self._upd_status = ("", "muted")
+        self._upd_busy = False
+        self._upd_dialog_open = False
+        self._upd_q: queue.Queue = queue.Queue()      # resultados de los hilos de red (se leen en el hilo de Tk)
         self._style()
         self.new_theme(initial=True)
         self._build()
         self.render()
+        self.root.after(300, self._poll_upd)
+        if not PROBE and U.due(self.upd):
+            self.root.after(3000, lambda: self._start_check(False))
         if self.mode == "comunidad":
             root.after(200, self.startup)
 
@@ -530,6 +543,12 @@ class App:
         else:
             self.author_chip = self.chip(head, "")
             self.author_chip.pack(side="left", pady=(4, 0))
+        chipbox = tk.Frame(head, bg=C["bg"])      # antes de los botones de la derecha: si no, se recorta
+        chipbox.pack(side="left")
+        self.upd_chip = tk.Label(chipbox, text="", bg=C["ok_bg"], fg=C["ok_text"], font=fnt(-1, True), padx=8, pady=2,
+                                 highlightthickness=1, highlightbackground=C["ok_text"], cursor="hand2")
+        self.upd_chip.bind("<Button-1>", lambda e: self._chip_click())
+        self._paint_upd_chip()
         self.export_label = "Firmar y exportar .npt" if self.mode == "creador" else "Exportar .npt"
         ttk.Button(head, text=self.export_label, style="Accent.TButton", command=lambda: self.show("exp")).pack(
             side="right")
@@ -542,7 +561,7 @@ class App:
         self.nav = {}
         key_title = "5 · Clave de firma" if self.mode == "creador" else "5 · Mi firma de autor"
         for sid, text in (("edit", "1 · Editar tema"), ("sec", "2 · Transparencia por sección"),
-                          ("img", "3 · Imágenes y plantillas"), ("exp", "4 · Exportar"), ("key", key_title)):
+                          ("img", "3 · Imágenes y plantillas"), ("exp", "4 · Exportar"), ("key", key_title), ("about", "6 · Acerca de")):
             b = ttk.Button(nav, text=text, style="Nav.TButton", command=lambda s=sid: self.show(s))
             b.pack(side="left", padx=(0, 6))
             self.nav[sid] = b
@@ -571,7 +590,7 @@ class App:
         self.body.rowconfigure(0, weight=1)
         self.body.columnconfigure(0, weight=1)
         self.views = {"edit": self._build_edit(), "sec": self._build_sec(), "img": self._build_img(),
-                      "exp": self._build_exp(), "key": self._build_key()}
+                      "exp": self._build_exp(), "key": self._build_key(), "about": self._build_about()}
         for v in self.views.values():            # todas una encima de otra (ver _show_now)
             v.place(x=0, y=0, relwidth=1, relheight=1)
         guardar_contenido(self.views.values())
@@ -2983,6 +3002,318 @@ class App:
         self.root.clipboard_append(text)
         self.toast("Clave pública copiada (no es secreta).", "ok")
 
+    # ---------------------------------------------------------------- 6 · acerca de
+    @property
+    def upd(self) -> dict:
+        """Ajustes de las actualizaciones (viven en self.settings, que se vuelve a leer al importar claves)."""
+        d = self.settings.get("actualizaciones")
+        if not isinstance(d, dict):
+            d = self.settings["actualizaciones"] = {}
+        for k, v in (("auto", True), ("beta", False), ("last_check", 0), ("skip", "")):
+            d.setdefault(k, v)
+        return d
+
+    def _save_upd(self):
+        try:
+            K.save_settings(self.settings)
+        except OSError:
+            pass
+
+    def _build_about(self):
+        f = tk.Frame(self.body, bg=C["panel"], padx=18, pady=16)
+        f.columnconfigure(0, weight=1)
+        f.rowconfigure(0, weight=1)
+        sc = Scrollable(f, C["panel"])
+        sc.grid(row=0, column=0, sticky="nsew")
+        box = sc.inner
+        self.lbl(box, APP, 8, True).pack(anchor="w")
+        self.lbl(box, f"Versión {VERSION} · para Numpad Macros", 0, color="muted").pack(anchor="w", pady=(2, 14))
+
+        self.caps(box, "Actualizaciones").pack(fill="x", pady=(0, 6))
+        row = tk.Frame(box, bg=C["panel"])
+        row.pack(fill="x")
+        self.upd_btn = ttk.Button(row, text="Buscar actualizaciones", style="Accent.TButton",
+                                  command=lambda: self._start_check(True))
+        self.upd_btn.pack(side="left")
+        self.upd_lbl = self.lbl(row, "", 0, wrap=420)
+        self.upd_lbl.pack(side="left", padx=12)
+        self.upd_more = ttk.Button(row, text="Ver novedades", command=self._show_update)
+        self.upd_last = self.lbl(box, "", -1, color="muted")
+        self.upd_last.pack(anchor="w", pady=(8, 8))
+        Switch(box, "Buscar actualizaciones automáticamente", self._on_upd_auto, value=bool(self.upd["auto"]),
+               bg=C["panel"]).pack(anchor="w", pady=3)
+        Switch(box, "Incluir versiones de prueba (beta)", self._on_upd_beta, value=bool(self.upd["beta"]),
+               bg=C["panel"]).pack(anchor="w", pady=3)
+        link = tk.Label(box, text="Ver todas las versiones en GitHub", bg=C["panel"], fg=C["acc"], font=fnt(-1),
+                        cursor="hand2")
+        link.pack(anchor="w", pady=(8, 0))
+        link.bind("<Button-1>", lambda e: self._open_url(U.RELEASES_URL))
+        self.lbl(box, "Solo se consulta la lista pública de versiones de GitHub; no se envía ningún dato tuyo.",
+                 -2, color="muted", wrap=460).pack(anchor="w", pady=(6, 0))
+
+        entry = U.changelog_for(U.read_changelog(self._changelog_path() or ""), VERSION)
+        self.caps(box, f"Novedades de esta versión ({entry['version']})" if entry else
+                  "Novedades de esta versión").pack(fill="x", pady=(18, 6))
+        if entry:
+            self._notes_view(box, entry["groups"])
+        else:
+            self.lbl(box, "No encontré el historial de cambios en este equipo.", -1, color="muted").pack(anchor="w")
+        self._paint_upd()
+        return f
+
+    def _changelog_path(self):
+        for base in (getattr(sys, "_MEIPASS", ""), HERE):
+            path = os.path.join(base, "CHANGELOG.md")
+            if base and os.path.isfile(path):
+                return path
+        return None
+
+    def _notes_view(self, parent, groups, wrap=440, bg="panel"):
+        """Novedades agrupadas por sección: [(sección, [líneas])]."""
+        for name, lines in groups:
+            if not lines:
+                continue
+            self.lbl(parent, name, 0, True, color="acc", bg=bg).pack(anchor="w", pady=(8, 2))
+            for t in lines:
+                self.lbl(parent, "•  " + t, -1, wrap=wrap, bg=bg).pack(anchor="w", padx=(6, 0), pady=1)
+
+    def _open_url(self, url):
+        try:
+            webbrowser.open(url)
+        except Exception:
+            self.toast("No pude abrir el navegador.", "bad")
+
+    def _alive(self, w) -> bool:
+        try:
+            return w is not None and bool(w.winfo_exists())
+        except tk.TclError:
+            return False
+
+    def _paint_upd(self):
+        """Pone al día el texto de estado, la fecha y los botones de la pestaña Acerca de."""
+        text, kind = self._upd_status
+        if self.update_rel and not self._upd_busy:
+            text, kind = f"Hay una versión nueva: {self.update_rel.version}", "ok_text"
+        if self._alive(getattr(self, "upd_lbl", None)):
+            cfg(self.upd_lbl, text=text, fg=C.get(kind, C["muted"]))
+            last = float(self.upd.get("last_check") or 0)
+            cfg(self.upd_last, text="Última búsqueda: " + (
+                time.strftime("%d/%m/%Y %H:%M", time.localtime(last)) if last else "todavía no se ha buscado"))
+            cfg(self.upd_btn, state="disabled" if self._upd_busy else "normal")
+            if self.update_rel and not self._upd_busy:
+                if not self.upd_more.winfo_manager():
+                    self.upd_more.pack(side="left")
+            elif self.upd_more.winfo_manager():
+                self.upd_more.pack_forget()
+        self._paint_upd_chip()
+
+    def _paint_upd_chip(self):
+        chip = getattr(self, "upd_chip", None)
+        if not self._alive(chip):
+            return
+        if self.update_rel:
+            cfg(chip, text=f"● Versión {self.update_rel.version}")      # corto: el encabezado va justo
+            if not chip.winfo_manager():
+                chip.pack(side="left", padx=(8, 0), pady=(4, 0))
+        elif chip.winfo_manager():
+            chip.pack_forget()
+
+    def _chip_click(self):
+        if self.update_rel:
+            self._show_update()
+
+    def _on_upd_auto(self, v):
+        self.upd["auto"] = bool(v)
+        self._save_upd()
+
+    def _on_upd_beta(self, v):
+        self.upd["beta"] = bool(v)
+        self._save_upd()
+
+    # búsqueda en otro hilo: el hilo solo habla con la red y deja el resultado en una cola; Tk se toca
+    # únicamente desde _poll_upd (hilo principal)
+    def _start_check(self, manual):
+        if self._upd_busy or PROBE:
+            return
+        self._upd_busy = True
+        self._upd_status = ("Buscando…", "muted")
+        self._paint_upd()
+        upd = dict(self.upd)
+        q = self._upd_q
+
+        def job():
+            try:
+                rel = U.check(upd, VERSION, manual=True)     # lo de «omitir» se decide en el hilo principal
+                q.put(("ok", rel, upd.get("last_check", time.time()), manual))
+            except Exception as e:
+                q.put(("error", str(e) or e.__class__.__name__, manual))
+        threading.Thread(target=job, daemon=True).start()
+
+    def _poll_upd(self):
+        try:
+            while True:
+                self._on_upd_result(self._upd_q.get_nowait())
+        except queue.Empty:
+            pass
+        except tk.TclError:
+            return
+        try:
+            self.root.after(300, self._poll_upd)
+        except tk.TclError:
+            pass
+
+    def _on_upd_result(self, msg):
+        self._upd_busy = False
+        if msg[0] == "error":
+            self._upd_status = (msg[1], "bad_text")         # en automático solo queda en la pestaña
+            self._paint_upd()
+            if msg[2]:
+                self.toast("No pude buscar actualizaciones.", "bad")
+            return
+        _k, rel, when, manual = msg
+        self.upd["last_check"] = when
+        self._save_upd()
+        self.update_rel = rel
+        self._upd_status = (("Hay una versión nueva: " + rel.version, "ok_text") if rel
+                            else ("Tienes la última versión", "ok_text"))
+        self._paint_upd()
+        if rel and (manual or self.upd.get("skip") != rel.version):
+            self._show_update()
+
+    def _show_update(self):
+        """Ventana con la versión nueva y sus novedades."""
+        rel = self.update_rel
+        if not rel or self._upd_dialog_open:
+            return
+        self._upd_dialog_open = True
+        kind = U.install_kind()
+        d = Dialog(self.root, "Nueva versión del Estudio de Temas")
+        state = {"cancel": threading.Event(), "busy": False}
+        q: queue.Queue = queue.Queue()
+        self.lbl(d.body, f"Estudio de Temas {rel.version}", 4, True).pack(anchor="w")
+        when = f" · publicada el {rel.published}" if rel.published else ""
+        self.lbl(d.body, f"Tienes la versión {VERSION}{when}", -1, color="muted").pack(anchor="w", pady=(2, 8))
+        groups: list = []
+        for name, text in rel.notes_lines():
+            if not groups or groups[-1][0] != name:
+                groups.append((name, []))
+            groups[-1][1].append(text)
+        if groups:
+            sc = Scrollable(d.body, C["panel"], width=460)
+            sc.pack(fill="x")
+            sc.cv.configure(height=min(260, 12 + 30 * len(groups) + 22 * sum(len(g[1]) for g in groups)))
+            self._notes_view(sc.inner, groups, wrap=420)
+        else:
+            self.lbl(d.body, "Mira las novedades en la página de la versión.", 0, color="muted").pack(anchor="w")
+        info = self.lbl(d.body, "", -1, wrap=460)
+        info.pack(anchor="w", pady=(10, 0))
+        bar = ttk.Progressbar(d.body, mode="determinate", maximum=100, length=460)
+
+        def finish():
+            self._upd_dialog_open = False
+            for s_ in [s_ for s_ in Scrollable.all if not self._alive(s_)]:
+                Scrollable.all.remove(s_)
+            d.top.destroy()
+
+        def close():
+            if state["busy"]:
+                state["cancel"].set()
+                return
+            finish()
+        d.close = close
+        d.top.protocol("WM_DELETE_WINDOW", close)
+
+        def skip():
+            self.upd["skip"] = rel.version
+            self._save_upd()
+            close()
+
+        def go_page():
+            self._open_url(rel.url)
+            close()
+
+        def poll():
+            try:
+                while True:
+                    m = q.get_nowait()
+                    if m[0] == "prog":
+                        bar.configure(value=100 * m[1] / m[2] if m[2] else 0)
+                        mb = 1024 * 1024
+                        cfg(info, text=f"Descargando… {m[1] / mb:.1f} de {m[2] / mb:.1f} MB" if m[2]
+                            else f"Descargando… {m[1] / mb:.1f} MB", fg=C["muted"])
+                    elif m[0] == "fail":
+                        state["busy"] = False
+                        bar.pack_forget()
+                        cfg(info, text=m[1], fg=C["bad_text"])
+                        for b in d.btns.winfo_children():
+                            b.state(["!disabled"])
+                        cancel_btn.pack_forget()
+                    elif m[0] == "ready":
+                        cfg(info, text="Instalando…", fg=C["muted"])
+                        cancel_btn.state(["disabled"])
+                        install(m[1])
+                        return
+            except queue.Empty:
+                pass
+            except tk.TclError:
+                return
+            if self._alive(d.top):
+                d.top.after(100, poll)
+
+        def install(path):
+            try:
+                if kind == "installer":
+                    U.install_windows(path)
+                else:
+                    U.relaunch(U.install_linux(path))
+            except U.UpdateError as e:
+                state["busy"] = False
+                cfg(info, text=str(e), fg=C["bad_text"])
+                for b in d.btns.winfo_children():
+                    b.state(["!disabled"])
+                return
+            self.dirty = False                 # ya se preguntó antes de descargar
+            self._upd_dialog_open = False
+            self.root.destroy()
+
+        def now():
+            if self.dirty:                     # igual que al cerrar
+                r = messagebox.askyesnocancel(APP, "¿Guardar el proyecto antes de actualizar?", parent=d.top)
+                if r is None or (r and not self.save_project()):
+                    return
+            state["busy"] = True
+            state["cancel"].clear()
+            for b in d.btns.winfo_children():
+                b.state(["disabled"])
+            cancel_btn.state(["!disabled"])
+            cancel_btn.pack(side="left")
+            bar.configure(value=0)
+            bar.pack(anchor="w", pady=(6, 0))
+            cfg(info, text="Descargando…", fg=C["muted"])
+
+            def work():
+                try:
+                    path = U.download(rel, lambda a, t: q.put(("prog", a, t)), state["cancel"].is_set)
+                    q.put(("ready", path))
+                except Exception as e:
+                    q.put(("fail", str(e) or e.__class__.__name__))
+            threading.Thread(target=work, daemon=True).start()
+
+        if kind == "manual":
+            d.button("Descargar", go_page, accent=True)
+        else:
+            d.button("Actualizar ahora", now, accent=True)
+        d.button("Más tarde", close)
+        d.button("Omitir esta versión", skip)
+        cancel_btn = ttk.Button(d.btns, text="Cancelar descarga", command=state["cancel"].set)
+        poll()
+        try:
+            d.wait()
+        except tk.TclError:                    # el Estudio se cerró para instalar
+            return
+        if self._upd_dialog_open and not self._alive(d.top):
+            self._upd_dialog_open = False
+
     def on_close(self):
         if self.dirty:
             r = messagebox.askyesnocancel(APP, "¿Guardar el proyecto antes de salir?", parent=self.root)
@@ -3118,13 +3449,15 @@ def main():
     if probe:
         errors = []
         root.report_callback_exception = lambda *e: (_callback_error(*e), errors.append(e))
-        def run(steps=("sec", "img", "exp", "key", "edit")):
+        def run(steps=("sec", "img", "exp", "key", "about", "edit")):
             if steps:
                 app.show(steps[0])
                 root.after(400, lambda: run(steps[1:]))
             else:
                 if app.screen != "edit":
                     errors.append("el cambio de pantalla no quedó en la pantalla elegida")
+                if "about" not in app.views or not app.upd_btn.winfo_exists():
+                    errors.append("falta la pestaña Acerca de")
                 app.apply_palette()
                 app.apply_template("todo")          # 8 espacios, con GIF animados
                 app.bg_generate()                   # fondo de imagen de una pieza
