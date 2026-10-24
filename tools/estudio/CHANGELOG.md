@@ -4,16 +4,6 @@ El Estudio de Temas es un programa aparte de Numpad Macros, con su propio númer
 temas `.npt` que Numpad Macros importa. Formato: [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
 ## [Sin publicar]
-### Corregido
-- Los paneles laterales ya no se pueden «subir» más allá del principio cuando todo su contenido cabe (pasaba en «Transparencia por sección» e «Imágenes y plantillas»: quedaba un hueco arriba).
-- Al maximizar o cambiar mucho el tamaño de la ventana (sobre todo en Linux con KDE), ya no desaparecen botones, interruptores ni partes de los paneles: se vuelve a pintar toda la ventana, y sin parpadeos al arrastrar el borde de a poco.
-- Arrastrar el borde de un panel lateral ya no hace parpadear ni deja en blanco la pantalla: el panel cambia de ancho de forma continua y sus textos lo acompañan.
-- Los controles deslizables ya no se ven enteros de color naranja al redimensionar un panel o la ventana: ahora se dibujan con el fondo del panel (se ven igual que antes).
-- La vista previa acompaña en tiempo real al cambiar el tamaño de la ventana o de los paneles, y se vuelve nítida apenas se suelta.
-- Mover un deslizable o cambiar colores ya no traba la ventana: la vista previa se dibuja aparte, sin detener el resto, y los paneles solo repintan lo que cambió.
-- Cambiar de pantalla ya no hace parpadear los paneles laterales.
-- El panel derecho de las pestañas ya no queda vacío después de maximizar la ventana o de mostrar u ocultar un panel.
-- Cambiar de pestaña es instantáneo y sin parpadeo: cada pestaña queda dibujada (en Linux la guarda el sistema) y se trae al frente ya lista, también la primera vez. Antes se veía la pestaña llenándose, sobre todo en monitores de alta frecuencia.
 
 ## [1.0.0] - pendiente
 ### Añadido
@@ -28,3 +18,4 @@ temas `.npt` que Numpad Macros importa. Formato: [Keep a Changelog](https://keep
 - **Firma de los temas**: los del creador salen como «Oficial · OkumaWsX» y los de los demás como «Comunidad · su nombre», con una firma de autor que se crea sola. Temas cifrados: si alguien los modifica, Numpad Macros los rechaza.
 - **Proyectos `.nptproj`** para seguir editando un tema después.
 - Icono propio: una «T» caligráfica y un pincel de artista.
+- **Fluido en cualquier pantalla**, también en Linux (KDE/Wayland) y en monitores de alta frecuencia: cambiar de pestaña es instantáneo, la vista previa acompaña en tiempo real al cambiar el tamaño de la ventana o de los paneles (y se dibuja aparte, sin trabar la ventana), y maximizar o arrastrar los bordes no hace parpadear ni deja partes sin dibujar.
