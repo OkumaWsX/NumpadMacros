@@ -9,6 +9,8 @@
 # 3. publicar:  solo si todo salió bien: crea la etiqueta estudio-vX.Y.Z y la Release
 #               «Estudio de Temas X.Y.Z» con sus huellas SHA256. No se marca como «la última»
 #               del repositorio: esa siempre es la de Numpad Macros (y su actualizador la ignora).
+#               Si «Anunciar en mi Discord» está marcado, avisa en el canal del webhook guardado en el
+#               secreto DISCORD_WEBHOOK_ESTUDIO (si falla, la versión igual queda publicada).
 #
 # «Privado (borrador)», marcado por defecto: la Release queda como borrador, que solo ve el dueño
 # del repositorio (para descargar y probar). No crea la etiqueta ni toca el historial. Cada vez que
@@ -26,6 +28,10 @@ on:
         description: "Versión de prueba (beta)"
         type: boolean
         default: false
+      discord:
+        description: "Anunciar en mi Discord (solo al publicar de verdad)"
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -171,3 +177,14 @@ jobs:
             --notes-file prep/notas.md $flags
           echo "## ✓ Estudio de Temas $VERSION publicado" >> "$GITHUB_STEP_SUMMARY"
           echo "https://github.com/${{ github.repository }}/releases/tag/estudio-v$VERSION" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Anunciar en Discord
+        if: ${{ !inputs.privado && inputs.discord }}
+        # si el anuncio falla, la versión igual queda publicada
+        continue-on-error: true
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_ESTUDIO }}
+        run: |
+          beta=""
+          [ "${{ inputs.beta }}" = "true" ] && beta="--beta"
+          python3 tools/estudio/anunciar_discord.py "$VERSION" --notas prep/notas.md $beta

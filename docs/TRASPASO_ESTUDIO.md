@@ -55,6 +55,7 @@ lea este documento.
 | `tools/estudio/vista.py` | Vista previa de la ventana de Numpad Macros, dibujada con Pillow (al doble y reducida), con transparencia real, degradado, imagen de fondo, «fondo de una pieza», secciones, 9 zonas y GIF. Escala 0,4×–2×. `export_size()` decide con qué forma se guarda cada imagen. |
 | `tools/estudio/logica.py` | Lógica sin ventana: colores, legibilidad, paleta desde imagen, imágenes y GIF (APNG), degradado, fondo de imagen, secciones, proyecto `.nptproj`. |
 | `tools/estudio/respaldo.py` | Linux: pide al servidor X que guarde cada pestaña ya dibujada («backing store»), ver §8. |
+| `tools/estudio/anunciar_discord.py` | Anuncio de una versión nueva en Discord (lo usa «Publicar Estudio de Temas»). Ver §6. |
 | `tools/estudio/actualizar.py` | Actualizaciones (sin Tk): busca versiones nuevas en GitHub, descarga y verifica, instala. Ver §6. |
 | `tools/estudio/claves.py` | Firma de autor / clave oficial, modo creador o comunidad, ajustes (`ajustes.json`). |
 | `tools/estudio/Estudio.spec` | PyInstaller (incluye la letra Inter, el icono y `PIL._tkinter_finder`; excluye numpy). |
@@ -96,6 +97,11 @@ lea este documento.
   - Sin marcar: crea la etiqueta `estudio-vX.Y.Z` y la Release «Estudio de Temas X.Y.Z» (sin marcarla
     como «la última»: esa es siempre la de Numpad Macros), pone la fecha en el historial y actualiza
     el enlace de descarga del README.
+- **Anuncio en Discord**: casilla «Anunciar en mi Discord» (marcada por defecto; solo al publicar de verdad).
+  `tools/estudio/anunciar_discord.py` manda la versión, hasta 5 novedades y el enlace al canal del webhook
+  del secreto `DISCORD_WEBHOOK_ESTUDIO` (Settings → Secrets and variables → Actions). Es aparte de
+  `tools/discord.py` y `DISCORD_WEBHOOK`, que son de Numpad Macros. Si falla, la versión igual queda publicada;
+  la URL del webhook es secreta: nunca va al repositorio ni a los registros.
 - El actualizador de Numpad Macros solo considera etiquetas `vX.Y.Z`, así que las del Estudio no lo
   confunden.
 - **Avisos de versión nueva** (`actualizar.py` + pestaña «6 · Acerca de» en `estudio.py`): 3 s después de

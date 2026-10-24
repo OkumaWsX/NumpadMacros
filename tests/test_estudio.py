@@ -434,5 +434,20 @@ class ActualizarTest(unittest.TestCase):
                                                        "EstudioTemas-NumpadMacros.anterior"])
 
 
+class DiscordAnuncioTest(unittest.TestCase):
+    def test_mensaje(self):
+        import anunciar_discord as A
+        notes = ("### Añadido\n- **Pinceles nuevos**: para el fondo.\n- Más plantillas.\n"
+                 "### Corregido\n- El degradado ya no se corta.\n\n---\n- pie que no va")
+        self.assertEqual(A.items(notes), ["Pinceles nuevos", "Más plantillas", "El degradado ya no se corta"])
+        m = A.message("1.2.3", notes, beta=True)
+        self.assertIn("**Estudio de Temas 1.2.3** (versión de prueba)", m)
+        self.assertIn("releases/tag/estudio-v1.2.3", m)
+        self.assertNotIn("pie", m)
+        many = "\n".join(f"- cosa {i}" for i in range(9))
+        self.assertIn("…y 4 más.", A.message("1.0.0", many))
+        self.assertLessEqual(len(A.message("1.0.0", "- " + "x" * 5000)), 1900)
+
+
 if __name__ == "__main__":
     unittest.main()
