@@ -5,7 +5,7 @@ temas `.npt` que Numpad Macros importa. Formato: [Keep a Changelog](https://keep
 
 ## [Sin publicar]
 
-## [1.0.0] - pendiente
+## [1.0.0] - 2026-10-24
 ### Añadido
 - **Primera versión oficial** del Estudio de Temas, para Windows (instalador y portátil), Linux y macOS, sin instalar Python. En Windows, los proyectos `.nptproj` se abren con doble clic.
 - **Editar tema**: las 22 capas de color, cada una con su propia transparencia, y la opacidad de la ventana (en uso y cuando no la usas). Toca cualquier parte de la vista previa para editar su color; el panel de legibilidad avisa si algún texto no se lee.
