@@ -30,6 +30,7 @@ DEFAULT = {
     "device": "",                    # numpad elegido
     "block_unassigned": True,        # teclas sin acción: bloquear o dejar pasar
     "bank_toast": True,              # aviso en pantalla al cambiar de banco
+    "start_paused": True,            # al abrir, empieza en pausa (el numpad funciona normal)
     "global": {"45": {"type": "bank_next"}},   # capa que aplica en todos los bancos
     "banks": [{"name": "Banco 1", "keys": {}},
               {"name": "Banco 2", "keys": {}}],
@@ -53,6 +54,8 @@ DEFAULT = {
         "last_check": 0,
         "show_news": True,           # mostrar novedades al abrir una versión nueva
         "last_seen": "",             # última versión cuyas novedades se mostraron
+        "estudio": None,             # Estudio de Temas: instalarlo y buscar también sus versiones
+                                     # (None = aún sin decidir: se activa si ya está instalado)
     },
     "last_dir": "",
     "library": [],                   # biblioteca de sonidos: [{"path", "title"}]
@@ -169,6 +172,13 @@ def save(cfg: dict, path: str | None = None) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     # Escritura atómica: nunca queda un archivo a medias
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), suffix=".tmp")
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)              # no dejar restos .tmp si falla la escritura
+        except OSError:
+            pass
+        raise

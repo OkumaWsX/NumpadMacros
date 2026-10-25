@@ -11,7 +11,7 @@ import tkinter as tk
 import tkinter.font as tkfont
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
-from . import aa, __version__, about, capture, config, library, sysutil, updater
+from . import aa, __version__, about, capture, config, library, sysutil, updater, xbg
 from . import loudness as ld
 from .capture import PLATFORM, BackendError, describe_device
 from .engine import Engine
@@ -68,6 +68,29 @@ def short_action(act, narrow=False) -> str:
         "bank_prev": "◀ Banco",
         "bank_go": f"→ Banco {act.get('bank', 1)}",
     }.get(t, "")
+
+
+
+# Medir texto le cuesta a Tk unos 4 ms en Linux (cada vez). Al cambiar el tamaño de la ventana la
+# cabecera y el pie se reacomodan en cada cuadro: se recuerda lo ya medido (la letra no cambia sin
+# volver a armar la ventana).
+_FONT_CACHE = {}
+
+
+def font_measure(w, font, text) -> int:
+    key = ("m", str(font), text)
+    v = _FONT_CACHE.get(key)
+    if v is None:
+        v = _FONT_CACHE[key] = int(w.tk.call("font", "measure", font, text))
+    return v
+
+
+def font_linespace(w, font) -> int:
+    key = ("l", str(font))
+    v = _FONT_CACHE.get(key)
+    if v is None:
+        v = _FONT_CACHE[key] = int(w.tk.call("font", "metrics", font, "-linespace"))
+    return v
 
 
 class _HeadSlot(tk.Frame):
@@ -173,7 +196,31 @@ LBL_W = 10           # ancho (en letras) de la columna de nombres en el editor
 class App:
     UNIT, GAP = 60, 7
     RUNIT, RGAP = 40, 6         # teclas de la fila de números
-    VUNIT, VGAP = 58, 8         # teclas virtuales
+    VUNIT, VGAP = 58, 8         # teclas virtuales (se recalculan con la ventana)
+    VMARGIN = VPAD = (0, 0, 0, 0)   # en px de pantalla (se recalculan con la escala)
+    VBORDER = 0
+    # Recuadro de las teclas virtuales como una caja de CSS, en px a escala 1
+    # (tools/ajustar_panel.py los edita a la vista). Lados: (arriba, derecha, abajo, izquierda).
+    V_MARGIN = (8, 0, 16, 0)        # margin: espacio fuera del recuadro
+    V_BORDER = 0                    # border: grosor del borde del recuadro (0 = sin borde)
+    V_PADDING = (14, 14, 14, 14)    # padding: espacio entre el borde y las teclas
+    V_MAX = 88                      # content: lado máximo de una tecla
+    V_MIN = 28                      # content: lado mínimo (si no cabe, antes se achica que cortarse)
+    V_GAP_DIV = 8                   # content: separación entre teclas = lado / V_GAP_DIV (mín. 6 px)
+    V_ALIGN = "center"              # position: el recuadro a la izquierda ("left"), "center" o "right"
+    NMARGIN = NPAD = (0, 0, 0, 0)   # numpad: en px de pantalla (se recalculan con la escala)
+    NBORDER = 0
+    # Recuadro de las teclas del numpad, la misma caja de CSS que el de las virtuales
+    N_MARGIN = (4, 0, 8, 0)         # margin: espacio fuera del recuadro
+    N_BORDER = 0                    # border: grosor del borde del recuadro (0 = sin borde)
+    N_PADDING = (14, 14, 14, 14)    # padding: espacio entre el borde y las teclas
+    N_MAX = 92                      # content: lado máximo de una tecla
+    N_MIN = 28                      # content: lado mínimo (si no cabe, antes se achica que cortarse)
+    N_GAP_DIV = 9                   # content: separación entre teclas = lado / N_GAP_DIV (mín. 6 px)
+    N_ALIGN = "center"              # position: el recuadro a la izquierda ("left"), "center" o "right"
+    N_SAFE = 10                     # margen de seguridad que siempre queda libre al final del panel
+    # padding de cada pestaña de la derecha (arriba, derecha, abajo, izquierda), como en CSS
+    TAB_PADDING = (14, 18, 10, 18)
 
     def __init__(self, root: tk.Tk, start_minimized=False):
         self.root = root
@@ -187,6 +234,10 @@ class App:
         self.sender, self.sender_err = make_sender()
         self.board = make_soundboard(self.cfg["audio"])
         self.engine = Engine(self.cfg, self.sender, on_save=self._write_cfg, soundboard=self.board)
+        if self.cfg.get("start_paused", True):
+            # Empieza en pausa: el numpad escribe normal hasta pulsar ACTIVO (se fija antes de
+            # abrir la captura, así nunca se toma el numpad al iniciar)
+            self.engine.active = False
         # app del celular: los avisos llegan desde otros hilos y se atienden en _poll
         self.remote = RemoteServer(self.cfg, self.engine, self.board,
                                    notify=lambda *w: self.uiq.put(("remote",) + w),
@@ -206,6 +257,18 @@ class App:
         self._rec_mods = set()
         self.update_rel = None                        # versión nueva encontrada
         self._upd_dialog = None
+        self.estudio_upd = None                       # (Release, versión) del Estudio de Temas
+        self._estudio_busy = False
+        try:
+            choice = updater.take_installer_choice()        # lo elegido en el instalador de Windows
+            if choice is not None:
+                self.cfg["updates"]["estudio"] = choice
+                config.save(self.cfg)                       # el valor del registro ya se borró
+            elif self.cfg["updates"].get("estudio") is None:   # sin decidir: activa si ya está instalado
+                self.cfg["updates"]["estudio"] = updater.estudio_installed() is not None
+        except Exception:
+            if self.cfg["updates"].get("estudio") is None:
+                self.cfg["updates"]["estudio"] = False
         self._lufs_q: queue.Queue = queue.Queue()
         self._lufs_busy = False
         for item in self.cfg.get("library", []):      # mediciones guardadas
@@ -227,6 +290,9 @@ class App:
                              "(se pide tu contraseña una sola vez).", bad=True)
         elif self.sender_err:
             self._set_status(f"Los atajos no funcionarán: {self.sender_err}", bad=True)
+        elif not self.engine.active:
+            self._set_status("En pausa: el numpad funciona normal. Pulsa PAUSADO (arriba a la derecha) "
+                             "para activar tus acciones.")
         self._apply_audio_async(initial=True)
         self._redraw()
         self._load_editor()
@@ -240,6 +306,7 @@ class App:
         self._queue_loudness()
         self._setup_alpha()
         self._setup_responsive()
+        self.root.after_idle(lambda: xbg.paint(self.root))       # fondo nativo de los widgets ttk
         self.root.after(1200, self._startup_news)
         self.root.after(3000, lambda: self._check_updates(manual=False))
 
@@ -473,10 +540,10 @@ class App:
         # ---- vista numpad
         vn = ttk.Frame(left, style="Panel.TFrame")
         self.view_numpad = vn
-        w = 4 * self.UNIT + 3 * self.GAP
-        h = 5 * self.UNIT + 4 * self.GAP
-        self.canvas = tk.Canvas(vn, width=w, height=h, bg=C["panel"], highlightthickness=0)
-        self.canvas.pack(pady=(4, 8))
+        self.canvas = tk.Canvas(vn, bg=C["panel"], highlightthickness=0)
+        w, h = self._numpad_box_size()
+        self.canvas.configure(width=w, height=h)
+        self._pack_numpad_box()
         self.canvas.bind("<Button-1>", self._on_canvas_click)
         self.row_title = ttk.Label(vn, style="Muted.TLabel", wraplength=280)
         self.row_title.pack(anchor="w", pady=(4, 0))
@@ -499,10 +566,9 @@ class App:
                   font=(FONT, BASE, "bold")).pack(side="left")
         ttk.Label(top, text=f"{VIRTUAL_COLS} columnas × {VIRTUAL_ROWS} filas · G = Global",
                   style="Muted.TLabel").pack(side="right")
-        vw = VIRTUAL_COLS * self.VUNIT + (VIRTUAL_COLS - 1) * self.VGAP
-        vh = VIRTUAL_ROWS * self.VUNIT + (VIRTUAL_ROWS - 1) * self.VGAP
+        vw, vh = self._virt_box_size()
         self.virt_canvas = tk.Canvas(vv, width=vw, height=vh, bg=C["panel"], highlightthickness=0)
-        self.virt_canvas.pack(pady=(8, 8))
+        self._pack_virt_box()
         self.virt_canvas.bind("<Button-1>", self._on_virt_click)
         ttk.Label(vv, style="Muted.TLabel", wraplength=300, justify="left", text=(
             "Solo se tocan en la app del celular: nunca interfieren con los teclados del equipo.")
@@ -512,12 +578,14 @@ class App:
         nb = ttk.Notebook(r)
         nb.grid(row=1, column=1, sticky="nsew", padx=(8, 18), pady=(0, 8))
         self.nb = nb
-        self.tab_key = ttk.Frame(nb, style="Panel.TFrame", padding=18)
-        self.tab_lib = ttk.Frame(nb, style="Panel.TFrame", padding=18)
-        self.tab_cap = ttk.Frame(nb, style="Panel.TFrame", padding=18)
-        self.tab_audio = ttk.Frame(nb, style="Panel.TFrame", padding=18)
-        self.tab_dev = ttk.Frame(nb, style="Panel.TFrame", padding=18)
-        self.tab_themes = ttk.Frame(nb, style="Panel.TFrame", padding=18)
+        pt, pr, pb, pl = self.TAB_PADDING          # CSS (arriba, derecha, abajo, izquierda) -> ttk
+        pad = (pl, pt, pr, pb)
+        self.tab_key = ttk.Frame(nb, style="Panel.TFrame", padding=pad)
+        self.tab_lib = ttk.Frame(nb, style="Panel.TFrame", padding=pad)
+        self.tab_cap = ttk.Frame(nb, style="Panel.TFrame", padding=pad)
+        self.tab_audio = ttk.Frame(nb, style="Panel.TFrame", padding=pad)
+        self.tab_dev = ttk.Frame(nb, style="Panel.TFrame", padding=pad)
+        self.tab_themes = ttk.Frame(nb, style="Panel.TFrame", padding=pad)
         nb.add(self.tab_key, text="Tecla")
         nb.add(self.tab_lib, text="Sonidos")
         nb.add(self.tab_cap, text="Numpad y opciones")
@@ -619,10 +687,8 @@ class App:
             W = max(self.root.winfo_width(), 900)
         d = getattr(self, "dpi", 1.0)
         pad, top = 18, 14
-        tfont = tkfont.Font(font=cv.itemcget(self.title_txt.item, "font"))
-        sfont = tkfont.Font(font=(FONT, BASE - 1))
-        title_h = tfont.metrics("linespace")
-        chip_h = sfont.metrics("linespace")
+        title_h = font_linespace(cv, cv.itemcget(self.title_txt.item, "font"))
+        chip_h = font_linespace(cv, (FONT, BASE - 1))
         block_h = title_h + 4 + chip_h
         x = pad
         if art.has("logo"):
@@ -659,10 +725,10 @@ class App:
         rx -= lw + 6
         cv.coords(self._head_win[self.bank_prev], rx - bw, by)
         rx -= bw + 22
-        mfont = tkfont.Font(font=(FONT, BASE - 2))
-        val_w = mfont.measure("−60.0 dB") + 4
-        label_w = max(mfont.measure(r[0].cget("text")) for r in self._meter_rows)
-        row_h = max(13, mfont.metrics("linespace"))
+        mfont = (FONT, BASE - 2)
+        val_w = font_measure(cv, mfont, "−60.0 dB") + 4
+        label_w = max(font_measure(cv, mfont, r[0].cget("text")) for r in self._meter_rows)
+        row_h = max(13, font_linespace(cv, mfont))
         meters_left = rx - val_w - 6 - 190 - 6 - label_w
         my = top + max(0, (ah - 2 * row_h) / 2)
         for i, (lbl, m, mw, val) in enumerate(self._meter_rows):
@@ -753,7 +819,7 @@ class App:
         d = getattr(self, "dpi", 1.0)
         pad = 18
         bh = max(b.winfo_reqheight() for b, _ in self._foot_btns)
-        sfont = tkfont.Font(font=(FONT, BASE - 1))
+        line_h = max(1, font_linespace(cv, (FONT, BASE - 1)))
         x = W - pad
         for b, item in reversed(self._foot_btns):
             x -= b.winfo_reqwidth()
@@ -767,8 +833,8 @@ class App:
             if got:
                 status_w = max(100, free_r - got[0] - 12 - pad)
         cv.itemconfigure(self.status.item, width=status_w)
-        lines = max(1, self.status.height() // max(1, sfont.metrics("linespace")))
-        H = int(max(bh, lines * sfont.metrics("linespace")) + 10 + 4)
+        lines = max(1, self.status.height() // line_h)
+        H = int(max(bh, lines * line_h) + 10 + 4)
         cy = (H - 10) / 2 + 2
         xb = W - pad
         for b, item in reversed(self._foot_btns):
@@ -815,7 +881,11 @@ class App:
                 last["w"] = w
                 art.show("leftbot", lambda ph: lb.configure(image=ph), w, int(160 * d), key="leftbot")
             left.bind("<Configure>", fit, add="+")
-            art.show("leftbot", lambda ph: lb.configure(image=ph), int(300 * d), int(160 * d), key="leftbot")
+
+            def first(ph):                   # su alto cambia el espacio de las teclas
+                lb.configure(image=ph)
+                self._refit_soon()
+            art.show("leftbot", first, int(300 * d), int(160 * d), key="leftbot")
             self.leftbot_lbl = lb
         self.tabsend_lbl = None
         if art.has("tabsend"):
@@ -1052,6 +1122,11 @@ class App:
     # ---------------------------------------------------------------- editor
     def _build_editor(self):
         t = scroll_frame(self.tab_key)          # en pantallas bajas se desplaza en vez de cortarse
+        self._key_inner = t
+        self._pick_job = None
+        # el selector de sonidos toma el alto que sobra: se recalcula si cambia la ventana o el contenido
+        t.bind("<Configure>", lambda e: self._fit_pick_soon(), add="+")
+        t.master.bind("<Configure>", lambda e: self._fit_pick_soon(), add="+")
         self._paint_tab_corner(t.master)
         t.columnconfigure(0, weight=1)
         self.ed_title = ttk.Label(t, style="H.TLabel")
@@ -1111,7 +1186,7 @@ class App:
         self.picker = SoundPicker(f, self, on_pick=lambda item: self._assign_file(item, rebuild=False),
                                   on_add=self._add_files_for_key, label_width=LBL_W)
         self.picker.grid(row=1, column=0, sticky="ew", pady=(8, 0))
-        self._fit_pick_rows()
+        self._fit_pick_soon()
 
         opts = ttk.Frame(f, style="Panel.TFrame")
         opts.grid(row=3, column=0, sticky="ew", pady=(10, 0))
@@ -1312,8 +1387,12 @@ class App:
                         style="Card.TCheckbutton", command=self._on_upd_opts).grid(row=2, column=0, columnspan=3, sticky="w")
         ttk.Checkbutton(up, text="Recibir también versiones de prueba (beta)", variable=self.upd_beta,
                         style="Card.TCheckbutton", command=self._on_upd_opts).grid(row=3, column=0, columnspan=3, sticky="w")
+        self.upd_estudio = tk.BooleanVar(value=bool(upd.get("estudio")))
+        ttk.Checkbutton(up, text="Estudio de Temas (editor de temas): instalarlo y buscar también sus versiones",
+                        variable=self.upd_estudio, style="Card.TCheckbutton",
+                        command=self._on_estudio_opt).grid(row=4, column=0, columnspan=3, sticky="w")
         ub = ttk.Frame(up, style="Card.TFrame")
-        ub.grid(row=4, column=0, columnspan=3, sticky="w", pady=(8, 0))
+        ub.grid(row=5, column=0, columnspan=3, sticky="w", pady=(8, 0))
         self.btn_check = ttk.Button(ub, text="Buscar ahora", command=lambda: self._check_updates(manual=True))
         self.btn_check.pack(side="left")
         ttk.Button(ub, text="Novedades de esta versión", command=self._show_news).pack(side="left", padx=8)
@@ -1652,6 +1731,7 @@ class App:
         ttk.Label(t, text="Comportamiento", style="H.TLabel").grid(row=r, column=0, sticky="w", pady=(20, 0))
         self.block_var = tk.BooleanVar(value=self.cfg.get("block_unassigned", True))
         self.toast_var = tk.BooleanVar(value=self.cfg.get("bank_toast", True))
+        self.paused_var = tk.BooleanVar(value=self.cfg.get("start_paused", True))
         self.auto_var = tk.BooleanVar(value=sysutil.autostart_enabled())
         r += 1
         ttk.Checkbutton(t, text="Bloquear las teclas sin acción (si no, escriben números)",
@@ -1659,6 +1739,9 @@ class App:
         r += 1
         ttk.Checkbutton(t, text="Mostrar aviso en pantalla al cambiar de banco",
                         variable=self.toast_var, command=self._on_opts).grid(row=r, column=0, sticky="w", pady=(6, 0))
+        r += 1
+        ttk.Checkbutton(t, text="Empezar en pausa al abrir (el numpad funciona normal hasta pulsar ACTIVO)",
+                        variable=self.paused_var, command=self._on_opts).grid(row=r, column=0, sticky="w", pady=(6, 0))
         r += 1
         ttk.Checkbutton(t, text=f"Iniciar con {OS_NAME}", variable=self.auto_var,
                         command=self._on_autostart).grid(row=r, column=0, sticky="w", pady=(6, 0))
@@ -2397,8 +2480,50 @@ class App:
         if self._fit_job:
             self.root.after_cancel(self._fit_job)
         self._fit_job = self.root.after(90, self._fit_keys)
+        if getattr(self, "_settle_job", None):
+            self.root.after_cancel(self._settle_job)
+        self._settle_job = self.root.after(150, self._after_resize)
+        # mientras se arrastra el borde, también en cada cuadro (no solo al soltar); cuesta unos 2 ms
+        if getattr(self, "_repaint_job", None) is None:
+            self._repaint_job = self.root.after(16, self._repaint_moved)
 
-    def _repaint_all(self, later=(120, 600)):
+    def _after_resize(self):
+        """Cuando la ventana deja de cambiar de tamaño: lo que se movió de sitio se vuelve a mostrar
+        entero. En algunos sistemas (XWayland) lo movido no recibe aviso de repintado y queda vacío."""
+        self._settle_job = None
+        self._repaint_moved()
+        xbg.paint(self.root, only_mapped=True)                    # widgets que aparecieron desde entonces
+
+    def _repaint_moved(self):
+        """Pide a cada widget visible que se dibuje entero otra vez (sin ocultarlo: no parpadea).
+        Volver a poner una opción con el mismo valor obliga a Tk a redibujar todo el widget.
+        Solo los que cambiaron de sitio o de tamaño desde la vez anterior: redibujar un widget le
+        cuesta a Tk ~1 ms en XWayland y la ventana entera (~60 ms) no alcanzaba a seguir el arrastre."""
+        self._repaint_job = None
+        geo = self.__dict__.setdefault("_repaint_geo", {})        # widget -> (geometría, vuelta)
+        n = self._repaint_pass = getattr(self, "_repaint_pass", 0) + 1
+
+        def walk(w):
+            try:
+                if not w.winfo_ismapped():
+                    return
+                g = (w.winfo_rootx(), w.winfo_rooty(), w.winfo_width(), w.winfo_height())
+                key = str(w)
+                old = geo.get(key)
+                geo[key] = (g, n)
+                # también si la vuelta anterior no estaba a la vista (se volvió a mostrar)
+                if old is None or old[0] != g or old[1] != n - 1:
+                    if isinstance(w, ttk.Widget):
+                        w.configure(style=w.cget("style"))
+                    elif "background" in w.keys():
+                        w.configure(background=w.cget("background"))
+            except tk.TclError:
+                return
+            for c in w.winfo_children():
+                walk(c)
+        walk(self.root)
+
+    def _repaint_all(self, later=(120, 600, 1500)):
         """Pide a cada elemento que se vuelva a dibujar. En algunos escritorios Linux con efectos
         (KWin, Mutter…) quedaban rectángulos negros después de cambiar el tema o de pasar a pantalla
         completa: partes de la ventana que el sistema no mandó a redibujar."""
@@ -2424,11 +2549,15 @@ class App:
         W, H = self.root.winfo_width(), self.root.winfo_height()
         if W < 50 or H < 50 or (W, H) == self._fit_size:
             return
-        resized = self._fit_size is not None
+        # (al cambiar de tamaño, lo que se movió se repinta con _repaint_moved/_after_resize: no hace falta
+        # pedirle a toda la ventana que se redibuje, que en XWayland frenaba el redimensionado)
         self._fit_size = (W, H)
-        if resized:
-            self._repaint_all()
         self._paint_window_bg()
+        if self.themes_wide():
+            # panel de teclas oculto (pestaña Temas): medirlo obliga a dibujar toda la ventana a medio
+            # cambiar de tamaño (~0,4 s) y la pestaña se ve a medio cargar. Se ajusta al volver a verse
+            # (_apply_wide pone _fit_size en None y lo vuelve a llamar).
+            return
         d = self.dpi
         # alto libre para el dibujo (cabecera, pestañas y pie fuera)
         free = H - self.left_top_h()
@@ -2453,36 +2582,148 @@ class App:
             except tk.TclError:
                 pass
         # numpad: 5 filas + fila de números (2/3 del tamaño) + títulos y botón
-        u = (free - 135 * d) / 6.5
-        u = min(u, (width_cap - 3 * 7) / 4, 92 * d)
-        self.UNIT = int(max(44 * d, u))
-        self.GAP = max(6, int(self.UNIT / 9))
+        u = self._numpad_room(free, d)
+        mt, mr, mb, ml = self.NMARGIN
+        pt, pr, pb, pl = self.NPAD
+        u = min(u, (width_cap - 3 * 7 - ml - mr - pl - pr - 2 * self.NBORDER) / 4, self.N_MAX * d)
+        self.UNIT = int(max(self.N_MIN * d, u))
+        self.GAP = max(6, int(self.UNIT / self.N_GAP_DIV))
         self.RUNIT = int(self.UNIT * .66)
         self.RGAP = max(5, int(self.GAP * .8))
-        v = (free - 90 * d) / 6.15
-        v = min(v, (width_cap - 4 * 8) / 5, 88 * d)
-        self.VUNIT = int(max(44 * d, v))
-        self.VGAP = max(6, int(self.VUNIT / 8))
+        v = self._virt_room(free, d)
+        mt, mr, mb, ml = self.VMARGIN
+        pt, pr, pb, pl = self.VPAD
+        v = min(v, (width_cap - 4 * 8 - ml - mr - pl - pr - 2 * self.VBORDER) / 5, self.V_MAX * d)
+        self.VUNIT = int(max(self.V_MIN * d, v))
+        self.VGAP = max(6, int(self.VUNIT / self.V_GAP_DIV))
         if getattr(self, "picker", None) is not None:
             self._fit_pick_rows()
-        self.canvas.configure(width=4 * self.UNIT + 3 * self.GAP, height=5 * self.UNIT + 4 * self.GAP)
+        nw, nh = self._numpad_box_size()
+        self.canvas.configure(width=nw, height=nh)
         self.row_canvas.configure(width=6 * self.RUNIT + 5 * self.RGAP, height=2 * self.RUNIT + self.RGAP)
-        self.virt_canvas.configure(width=VIRTUAL_COLS * self.VUNIT + (VIRTUAL_COLS - 1) * self.VGAP,
-                                   height=VIRTUAL_ROWS * self.VUNIT + (VIRTUAL_ROWS - 1) * self.VGAP)
+        vw, vh = self._virt_box_size()
+        self.virt_canvas.configure(width=vw, height=vh)
         self._redraw()
 
+    def _panel_room(self, canvases, view):
+        """Alto libre en el panel izquierdo para los lienzos dados (todo lo demás, medido), o None."""
+        try:
+            lp = self.left_panel
+            avail = lp.winfo_height()
+            if avail <= 100:
+                return None
+            rest = lp.winfo_reqheight() - sum(c.winfo_reqheight() for c in canvases)
+            if self.left_view != view:               # medido con la otra vista puesta
+                shown, other = ((self.view_numpad, self.view_virt) if view == "virt"
+                                else (self.view_virt, self.view_numpad))
+                rest += other.winfo_reqheight() - shown.winfo_reqheight()
+            return avail - rest - 2 * getattr(self, "dpi", 1.0)
+        except (tk.TclError, AttributeError):
+            return None
+
+    def _numpad_room(self, free, d):
+        """Lado máximo de una tecla del numpad para que el numpad y la fila 1–0 quepan enteros."""
+        self._pack_numpad_box()                      # el margin cuenta en lo que se mide
+        try:
+            self.root.update_idletasks()
+        except tk.TclError:
+            pass
+        h = self._panel_room((self.canvas, self.row_canvas), "numpad")
+        if h is None:                                # aún sin dibujar: estimación
+            h = free - 135 * d - self.NMARGIN[0] - self.NMARGIN[2]
+        h -= self.NPAD[0] + self.NPAD[2] + 2 * self.NBORDER     # padding y border de arriba y abajo
+        h -= self.N_SAFE * d                                     # margen de seguridad
+        k = self.N_GAP_DIV
+        # numpad: 5 lados + 4 separaciones (lado / k, mín. 6); fila 1–0: 2 × 0,66 lado + 1 separación
+        return min(h / (5 + 4 / k + 1.32 + .8 / k), (h - 4 * 6 - 5) / (5 + 1.32))
+
+    def _virt_room(self, free, d):
+        """Lado máximo de una tecla virtual para que las 6 filas quepan enteras en el panel.
+        Se mide lo que ocupa todo lo demás (pestañas, capa, títulos, texto de ayuda y la imagen
+        del tema abajo) en vez de estimarlo."""
+        self._pack_virt_box()                        # el margin cuenta en lo que se mide
+        try:
+            self.root.update_idletasks()             # medir con el margin nuevo, no con el anterior
+        except tk.TclError:
+            pass
+        h = self._panel_room((self.virt_canvas,), "virt")
+        if h is None:                                # aún sin dibujar: estimación
+            h = free - 90 * d - self.VMARGIN[0] - self.VMARGIN[2]
+        h -= self.VPAD[0] + self.VPAD[2] + 2 * self.VBORDER     # padding y border de arriba y abajo
+        rows, gaps = VIRTUAL_ROWS, VIRTUAL_ROWS - 1
+        # separación = lado / V_GAP_DIV (mínimo 6 px)
+        return min(h / (rows + gaps / self.V_GAP_DIV), (h - gaps * 6) / rows)
+
+    def _pack_virt_box(self):
+        """Aplica margin y position del recuadro de teclas virtuales (como en CSS)."""
+        d = getattr(self, "dpi", 1.0)
+        self.VMARGIN = tuple(int(v * d) for v in self.V_MARGIN)
+        self.VPAD = tuple(int(v * d) for v in self.V_PADDING)
+        self.VBORDER = int(self.V_BORDER * d)
+        mt, mr, mb, ml = self.VMARGIN
+        anchor = {"left": "w", "right": "e"}.get(self.V_ALIGN, "center")
+        self.virt_canvas.pack_configure(pady=(mt, mb), padx=(ml, mr), anchor=anchor)
+
+    def _pack_numpad_box(self):
+        """Aplica margin y position del recuadro del numpad (como en CSS)."""
+        d = getattr(self, "dpi", 1.0)
+        self.NMARGIN = tuple(int(v * d) for v in self.N_MARGIN)
+        self.NPAD = tuple(int(v * d) for v in self.N_PADDING)
+        self.NBORDER = int(self.N_BORDER * d)
+        mt, mr, mb, ml = self.NMARGIN
+        anchor = {"left": "w", "right": "e"}.get(self.N_ALIGN, "center")
+        self.canvas.pack_configure(pady=(mt, mb), padx=(ml, mr), anchor=anchor)
+
+    def _numpad_box_size(self):
+        """Ancho y alto del recuadro del numpad: content + padding + border."""
+        pt, pr, pb, pl = self.NPAD
+        b = 2 * self.NBORDER
+        return (4 * self.UNIT + 3 * self.GAP + pl + pr + b, 5 * self.UNIT + 4 * self.GAP + pt + pb + b)
+
+    def _virt_box_size(self):
+        """Ancho y alto del recuadro: content + padding + border (el margin va por fuera)."""
+        pt, pr, pb, pl = self.VPAD
+        b = 2 * self.VBORDER
+        return (VIRTUAL_COLS * self.VUNIT + (VIRTUAL_COLS - 1) * self.VGAP + pl + pr + b,
+                VIRTUAL_ROWS * self.VUNIT + (VIRTUAL_ROWS - 1) * self.VGAP + pt + pb + b)
+
+    def _refit_soon(self):
+        """Vuelve a calcular el tamaño de las teclas (p. ej. cuando carga una imagen del tema)."""
+        self._fit_size = None
+        if getattr(self, "_fit_job", None):
+            self.root.after_cancel(self._fit_job)
+        self._fit_job = self.root.after(90, self._fit_keys)
+
+    PICK_MIN, PICK_MAX = 96, 560    # alto del selector de sonidos (px a escala 1)
+    TAB_SAFE = 12                   # margen de seguridad al final de una pestaña (px a escala 1)
+
+    def _fit_pick_soon(self):
+        if getattr(self, "_pick_job", None) is None:
+            try:
+                self._pick_job = self.root.after_idle(self._fit_pick_rows)
+            except tk.TclError:
+                pass
+
     def _fit_pick_rows(self):
-        """Alto del selector de sonidos según el alto de la ventana (la pestaña se desplaza si no cabe)."""
+        """Alto del selector de sonidos: todo lo que sobra en la pestaña «Tecla», medido (como las
+        teclas del panel). Solo si ni con el mínimo cabe, la pestaña se desplaza."""
+        self._pick_job = None
         pk = getattr(self, "picker", None)
         if pk is None:
             return
+        d = getattr(self, "dpi", 1.0)
         try:
-            H = self.root.winfo_height()
-            if H < 50:
+            inner = self._key_inner
+            have = inner.master.winfo_height()          # alto visible de la pestaña
+            if have < 50:
                 return
-            d = getattr(self, "dpi", 1.0)
-            pk.set_height(max(200 * d, min(560 * d, H - 660 * d)))
-        except tk.TclError:
+            rest = inner.winfo_reqheight() - pk.body.winfo_reqheight()
+            border = pk.body.winfo_reqheight() - pk.height
+            target = have - rest - border - self.TAB_SAFE * d
+            target = max(self.PICK_MIN * d, min(self.PICK_MAX * d, target))
+            if abs(target - pk.height) >= 2:
+                pk.set_height(target)
+        except (tk.TclError, AttributeError):
             pass
 
     def left_top_h(self):
@@ -2497,8 +2738,8 @@ class App:
 
     def _key_rect(self, kid):
         _, c, r, w, h = NUMPAD_LAYOUT[kid]
-        u, g = self.UNIT, self.GAP
-        x0, y0 = c * (u + g), r * (u + g)
+        u, g, b = self.UNIT, self.GAP, self.NBORDER
+        x0, y0 = b + self.NPAD[3] + c * (u + g), b + self.NPAD[0] + r * (u + g)
         return x0, y0, x0 + w * u + (w - 1) * g, y0 + h * u + (h - 1) * g
 
     def _row_rect(self, kid):
@@ -2509,8 +2750,8 @@ class App:
 
     def _virt_rect(self, kid):
         _, c, r = phone_layout()[kid]
-        u, g = self.VUNIT, self.VGAP
-        x0, y0 = c * (u + g), r * (u + g)
+        u, g, b = self.VUNIT, self.VGAP, self.VBORDER
+        x0, y0 = b + self.VPAD[3] + c * (u + g), b + self.VPAD[0] + r * (u + g)
         return x0, y0, x0 + u, y0 + u
 
     def _key_font(self, px, bold=False):
@@ -2642,16 +2883,25 @@ class App:
             cv = self.virt_canvas
             cv.delete("all")
             self._draw_keys_bg(cv)
+            self._draw_box_border(cv, self.VBORDER)
             for kid, (label, _c, _r) in phone_layout().items():
                 self._draw_key(cv, self._virt_rect(kid), kid, label, layer.get(kid), glob(kid))
             return
         cv = self.canvas
         cv.delete("all")
         self._draw_keys_bg(cv)
+        self._draw_box_border(cv, self.NBORDER)
         for kid, (label, *_rest) in NUMPAD_LAYOUT.items():
             self._draw_key(cv, self._key_rect(kid), kid, label, layer.get(kid), glob(kid))
         self._draw_row()
         self._draw_extras()
+
+    @staticmethod
+    def _draw_box_border(cv, b):
+        """border del recuadro de teclas (CSS), con el color de línea del tema."""
+        if b:
+            w, h = int(cv.cget("width")), int(cv.cget("height"))
+            cv.create_rectangle(b / 2, b / 2, w - b / 2, h - b / 2, outline=C["line"], width=b)
 
     def _draw_keys_bg(self, cv):
         """Imagen del tema detrás de la tabla de teclas (y la plancha de la sección «keys»)."""
@@ -2798,6 +3048,43 @@ class App:
     def _on_tab(self):
         if self.nb.index("current") == 1:
             self._fill_library()
+        self._apply_wide()
+
+    def themes_wide(self) -> bool:
+        """En «Temas» el panel de teclas se oculta (salvo que el usuario pida verlo)."""
+        try:
+            on_themes = self.nb.select() == str(self.tab_themes)
+        except tk.TclError:
+            return False
+        return on_themes and not self.cfg.get("ui", {}).get("temas_teclas", False)
+
+    def _apply_wide(self):
+        """Oculta o muestra el panel de teclas y vuelve a pintar lo que se movió."""
+        wide = self.themes_wide()
+        lp = self.left_panel
+        if wide == (not lp.winfo_manager()):
+            return
+        if wide:
+            lp.grid_remove()
+            self.nb.grid_configure(column=0, columnspan=2, padx=(18, 18))
+        else:
+            lp.grid()
+            self.nb.grid_configure(column=1, columnspan=1, padx=(8, 18))
+        if hasattr(self, "themestab"):
+            self.themestab.paint_header()
+            self.root.after(80, self.themestab.repaint_after_move)
+        if self.art.one_piece:
+            self._unify_soon(120)
+        self._fit_size = None
+        self.root.after(100, self._fit_keys)
+
+    def toggle_theme_keys(self):
+        """Botón de la pestaña Temas: mostrar u ocultar el panel de teclas (se recuerda)."""
+        ui = self.cfg.setdefault("ui", {})
+        with self.engine.lock:
+            ui["temas_teclas"] = not ui.get("temas_teclas", False)
+        self._save()
+        self._apply_wide()
 
     # ================================================================ capas / bancos
     def _refresh_layer_combo(self):
@@ -3139,6 +3426,7 @@ class App:
         with self.engine.lock:
             self.cfg["block_unassigned"] = self.block_var.get()
             self.cfg["bank_toast"] = self.toast_var.get()
+            self.cfg["start_paused"] = self.paused_var.get()
         self._save()
 
     def _on_autostart(self):
@@ -3342,6 +3630,8 @@ class App:
             self._after_vbcable(ev[1], ev[2])
         elif kind == "update":
             self._on_update_result(*ev[1:])
+        elif kind == "estudio":
+            self._after_estudio(*ev[1:])
         elif kind == "remote":
             self._on_remote(ev[1:])
         elif kind == "remote_save":
@@ -3400,7 +3690,7 @@ class App:
         r = self.root
         keep = dict(selected=self.selected, layer=self.layer, view=self.left_view,
                     tab=self.nb.index("current"), status=getattr(self, "_status_last", None),
-                    banner=bool(self.update_rel) and self.banner.shown,
+                    banner=bool(self.update_rel or self.estudio_upd) and self.banner.shown,
                     theme_sel=getattr(self.themestab, "sel", None))
         for seq in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
             r.unbind_all(seq)                    # ruedas de listas que se van a borrar
@@ -3429,7 +3719,9 @@ class App:
         self.art = ThemeArt(self, theme)
         self.art.tweak_colors()
         self._style(first=False)
+        xbg.forget()
         self._build()
+        self.root.after_idle(lambda: xbg.paint(self.root))       # los widgets nuevos, con el color nuevo
         self.layer = keep["layer"]
         self._refresh_layer_combo()
         self.left_view, self.selected = keep["view"], keep["selected"]
@@ -3447,7 +3739,7 @@ class App:
         self._load_editor()
         self._update_bank_label()
         if keep["banner"]:
-            self._paint_banner(self.update_rel)
+            self._repaint_banner()
         if keep["status"]:
             self._set_status(*keep["status"])
         try:
@@ -3562,13 +3854,13 @@ class App:
 
         def job():
             try:
-                rel = updater.check(snapshot, __version__, manual=manual)
-                self.uiq.put(("update", manual, rel, None, snapshot.get("last_check", 0)))
+                rel, est_rel, est_ver = updater.check_all(snapshot, __version__, manual=manual)
+                self.uiq.put(("update", manual, rel, None, snapshot.get("last_check", 0), est_rel, est_ver))
             except Exception as e:
                 self.uiq.put(("update", manual, None, str(e), 0))
         threading.Thread(target=job, daemon=True).start()
 
-    def _on_update_result(self, manual, rel, err, checked_at):
+    def _on_update_result(self, manual, rel, err, checked_at, est_rel=None, est_ver=None):
         self._upd_btn(True)
         if checked_at:
             with self.engine.lock:
@@ -3580,16 +3872,33 @@ class App:
                 self._set_status("No pude consultar si hay versiones nuevas (¿hay internet?).", bad=True)
             return
         stamp = time.strftime("%H:%M")
+        self.estudio_upd = (est_rel, est_ver) if est_ver else None
+        est_txt = f" · Estudio de Temas: versión nueva {est_ver}" if est_ver else ""
         if not rel:
+            if self.estudio_upd:
+                self._upd_text(f"Numpad Macros está al día{est_txt}")
+                self._repaint_banner()
+                if manual:
+                    self._open_update()
+                return
             self._upd_text(f"Estás al día · comprobado a las {stamp}")
             if manual:
                 self._set_status("Tienes la última versión.")
             return
         self.update_rel = rel
-        self._upd_text(f"Hay una versión nueva: {rel.version}")
+        self._upd_text(f"Hay una versión nueva: {rel.version}{est_txt}")
         self._paint_banner(rel)
         if manual:
             self._open_update()
+
+    def _repaint_banner(self):
+        """Vuelve a mostrar el aviso de la cabecera (Numpad Macros primero; si no, el Estudio)."""
+        if self.update_rel:
+            self._paint_banner(self.update_rel)
+        elif self.estudio_upd:
+            self.banner_lbl.configure(text=f"Hay una nueva versión del Estudio de Temas: {self.estudio_upd[1]}")
+            self.banner_later.grid()
+            self.banner.grid()
 
     def _paint_banner(self, rel):
         extra = " · importante" if rel.important else (" · beta" if rel.prerelease else "")
@@ -3605,6 +3914,15 @@ class App:
     def _open_update(self):
         rel = self.update_rel
         if not rel:
+            if self.estudio_upd:
+                est_rel, ver = self.estudio_upd
+                have = updater.estudio_installed()
+                if messagebox.askyesno("Estudio de Temas",
+                                       f"Hay una versión nueva del Estudio de Temas: {ver}"
+                                       + (f" (tienes {have[1]})" if have and have[1] else "")
+                                       + ".\n\n¿Instalarla ahora? Si el Estudio está abierto, se cerrará.",
+                                       parent=self.root):
+                    self._install_estudio(est_rel, ver)
             return
         if self._upd_dialog is not None and self._upd_dialog.winfo_exists():
             self._upd_dialog.lift()
@@ -3612,6 +3930,102 @@ class App:
         self.root.deiconify()
         self._upd_dialog = UpdateDialog(self.root, rel, updater.install_kind(), self._skip_version,
                                         self._install_update)
+
+    # ---------------------------------------------------------------- Estudio de Temas
+    def _on_estudio_opt(self):
+        on = self.upd_estudio.get()
+        with self.engine.lock:
+            self.cfg["updates"]["estudio"] = on
+        self._save()
+        if not on:
+            self.estudio_upd = None
+            if not self.update_rel:
+                self.banner.grid_remove()
+            return
+        if updater.estudio_installed() is None:
+            if messagebox.askyesno("Estudio de Temas",
+                                   "El Estudio de Temas (el editor para crear tus propios temas) no está "
+                                   "instalado.\n\n¿Instalarlo ahora?", parent=self.root):
+                self._install_estudio()
+        else:
+            self._check_updates(manual=True)
+
+    def open_estudio(self):
+        """Abre el Estudio de Temas. Si no está instalado, sugiere instalarlo (lo usan las
+        funciones de la app que necesitan el editor de temas)."""
+        have = updater.estudio_installed()
+        if have is None:
+            if messagebox.askyesno("Estudio de Temas",
+                                   "Para crear o editar temas se usa el Estudio de Temas, un programa "
+                                   "aparte que no está instalado en este equipo.\n\n"
+                                   "¿Instalarlo ahora? (también se buscarán sus actualizaciones)",
+                                   parent=self.root):
+                self.upd_estudio.set(True)
+                with self.engine.lock:
+                    self.cfg["updates"]["estudio"] = True
+                self._save()
+                self._install_estudio(open_after=True)
+            return
+        exe = have[0]
+        try:
+            if IS_WIN:
+                os.startfile(exe)
+            elif IS_MAC:
+                import subprocess
+                subprocess.Popen(["open", exe])
+            else:
+                import subprocess
+                subprocess.Popen([exe], env=updater.relaunch_env(), start_new_session=True, close_fds=True)
+            self._set_status("Abriendo el Estudio de Temas…")
+        except Exception as e:
+            self._set_status(f"No pude abrir el Estudio de Temas: {e}", bad=True)
+
+    def _install_estudio(self, rel=None, version=None, open_after=False):
+        """Descarga e instala (o actualiza) el Estudio desde la Release de GitHub, en un hilo."""
+        if not updater.estudio_can_install():
+            self._set_status("Descarga el Estudio de Temas desde la página de versiones.")
+            self._open(updater.RELEASES_URL)
+            return
+        if self._estudio_busy:
+            return
+        self._estudio_busy = True
+        self._set_status("Descargando el Estudio de Temas…")
+        beta = bool(self.cfg["updates"].get("beta"))
+
+        def progress(done, total):
+            if total:
+                self.uiq.put(("estudio", None, f"Descargando el Estudio de Temas… {done * 100 // total} %", False))
+
+        def job():
+            try:
+                r, v = rel, version
+                if r is None:
+                    r = updater.fetch_latest_estudio(beta)
+                    v = updater.estudio_version(r)
+                    if not r:
+                        raise updater.UpdateError("No encontré ninguna versión publicada del Estudio de Temas.")
+                    if updater.ESTUDIO_ASSET[updater.platform_key()] not in r.assets:
+                        raise updater.UpdateError("La última versión del Estudio de Temas no trae archivo para tu sistema.")
+                updater.install_estudio(r, v, progress)
+                self.uiq.put(("estudio", True, f"Estudio de Temas {v} instalado.".replace("  ", " "), open_after))
+            except Exception as e:
+                self.uiq.put(("estudio", False, f"No se pudo instalar el Estudio de Temas: {e}", False))
+        threading.Thread(target=job, daemon=True).start()
+
+    def _after_estudio(self, ok, msg, open_after):
+        if ok is None:                       # progreso de la descarga
+            self._set_status(msg)
+            return
+        self._estudio_busy = False
+        self._set_status(msg, bad=not ok)
+        if not ok:
+            return
+        self.estudio_upd = None
+        if not self.update_rel:
+            self.banner.grid_remove()
+        self._upd_text(msg)
+        if open_after and updater.estudio_installed() is not None:
+            self.open_estudio()
 
     def _skip_version(self, version):
         with self.engine.lock:

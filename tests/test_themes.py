@@ -92,6 +92,107 @@ class NptTest(unittest.TestCase):
             self.assertEqual(themes.current(cfg)["name"], "Original")
 
 
+def _th(name="Dos Mares", key="aa", version="1.0", official=False, sha=None, **kw):
+    return dict(name=name, author_key=key, version=version, official=official, sha256=sha, **kw)
+
+
+class PlanInstallTest(unittest.TestCase):
+    """La decisión de qué hacer con un tema que llega (función pura, sin disco)."""
+
+    def test_nuevo_si_no_hay_igual(self):
+        self.assertEqual(themes.plan_install(_th(), []), ("nuevo", None))
+        # otro autor con el mismo nombre: otro tema
+        self.assertEqual(themes.plan_install(_th(key="bb"), [_th(file="a.npt")])[0], "nuevo")
+        # oficial y de la comunidad con el mismo nombre: otro tema
+        self.assertEqual(themes.plan_install(_th(official=True), [_th(file="a.npt")])[0], "nuevo")
+        # sin firma de autor no se reconoce por el nombre
+        self.assertEqual(themes.plan_install(_th(key=""), [_th(key="", file="a.npt")])[0], "nuevo")
+
+    def test_igual_por_sha_o_por_version(self):
+        a = _th(file="a.npt", sha="x")
+        self.assertEqual(themes.plan_install(_th(sha="x"), [a]), ("igual", a))
+        self.assertEqual(themes.plan_install(_th(sha="y"), [a])[0], "igual")        # misma versión y firma
+        self.assertEqual(themes.plan_install(_th(key="", sha="x"), [a])[0], "igual")  # mismo contenido
+        self.assertEqual(themes.plan_install(_th(name="dos mares"), [a])[0], "igual")  # mayúsculas no cuentan
+        b = _th(official=True, file="b.npt")
+        self.assertEqual(themes.plan_install(_th(official=True, key=""), [b])[0], "igual")
+
+    def test_version_nueva_y_vieja(self):
+        a = _th(file="a.npt", version="1.2")
+        self.assertEqual(themes.plan_install(_th(version="1.10"), [a]), ("actualizar", a))
+        self.assertEqual(themes.plan_install(_th(version="1.1"), [a]), ("anterior", a))
+
+    def test_varias_copias_viejas_cuenta_la_mas_nueva(self):
+        c = [_th(file="a.npt", version="1.0"), _th(file="b.npt", version="1.2")]
+        self.assertEqual(themes.plan_install(_th(version="1.2"), c)[1]["file"], "b.npt")
+        self.assertEqual(themes.plan_install(_th(version="1.2"), c)[0], "igual")
+
+
+class InstallTest(unittest.TestCase):
+    """Importar un .npt a la carpeta de temas (sin firma oficial: no hay clave privada en las pruebas)."""
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        p = mock.patch.object(themes, "themes_dir", lambda: os.path.join(self.d, "Temas"))
+        p.start()
+        self.addCleanup(p.stop)
+        self.key = npt.SigningKey.generate("autor", "kenji")
+
+    def _file(self, name="Dos Mares", version="1.0", key=None, fname=None, desc=""):
+        th = npt.Theme(name=name, author="kenji", colors=dict(themes.BUILTIN[1][1]), version=version,
+                       description=desc)
+        path = os.path.join(self.d, fname or f"{name}-{version}-{desc}.npt")
+        with open(path, "wb") as f:
+            f.write(npt.write(th, key or self.key))
+        return path
+
+    def _files(self):
+        return sorted(os.listdir(os.path.join(self.d, "Temas")))
+
+    def test_importar_dos_veces_no_duplica(self):
+        src = self._file()
+        r1 = themes.install(src)
+        self.assertEqual((r1["result"], r1["file"]), ("nuevo", "Dos Mares.npt"))
+        for _ in range(3):
+            r = themes.install(src)
+            self.assertEqual((r["result"], r["file"]), ("igual", "Dos Mares.npt"))
+        self.assertEqual(self._files(), ["Dos Mares.npt"])
+        # mismo tema y versión pero otro archivo (contenido distinto): también es el mismo tema
+        self.assertEqual(themes.install(self._file(desc="otra nota"))["result"], "igual")
+        self.assertEqual(len(themes.imported()), 1)
+
+    def test_version_nueva_reemplaza(self):
+        themes.install(self._file(version="1.0"))
+        r = themes.install(self._file(version="1.1"))
+        self.assertEqual((r["result"], r["file"], r["old_version"]), ("actualizado", "Dos Mares.npt", "1.0"))
+        self.assertEqual(self._files(), ["Dos Mares.npt"])               # sin restos .nuevo ni copias
+        self.assertEqual(themes.imported()[0]["version"], "1.1")
+
+    def test_version_vieja_pide_confirmacion(self):
+        themes.install(self._file(version="1.2"))
+        old = self._file(version="1.0")
+        r = themes.install(old)
+        self.assertEqual((r["result"], r["old_version"]), ("anterior", "1.2"))
+        self.assertEqual(themes.imported()[0]["version"], "1.2")         # no se tocó
+        r = themes.install(old, downgrade=True)
+        self.assertEqual(r["result"], "actualizado")
+        self.assertEqual(themes.imported()[0]["version"], "1.0")
+        self.assertEqual(self._files(), ["Dos Mares.npt"])
+
+    def test_otra_firma_con_el_mismo_nombre_lleva_sufijo(self):
+        themes.install(self._file())
+        otro = npt.SigningKey.generate("autor", "ana")
+        r = themes.install(self._file(key=otro, desc="de ana"))
+        self.assertEqual((r["result"], r["file"]), ("nuevo", "Dos Mares (2).npt"))
+        self.assertEqual(len(self._files()), 2)
+
+    def test_reimportar_desde_la_propia_carpeta(self):
+        themes.install(self._file())
+        inside = os.path.join(self.d, "Temas", "Dos Mares.npt")
+        self.assertEqual(themes.install(inside)["result"], "igual")
+        self.assertEqual(self._files(), ["Dos Mares.npt"])
+
+
 class BuiltinThemesTest(unittest.TestCase):
     def test_same_as_docs(self):
         here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

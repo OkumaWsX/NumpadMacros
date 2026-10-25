@@ -78,7 +78,7 @@ class EvdevBackend:
         self._force_scan = True
 
     def connected(self) -> bool:
-        return any(self._matches(d) for d in self.devs.values())
+        return any(self._matches(d) for d in list(self.devs.values()))   # el hilo de captura lo modifica
 
     # -------------------------------------------------- interno
     def _matches(self, dev) -> bool:

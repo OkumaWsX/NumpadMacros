@@ -13,7 +13,12 @@ if not exist third_party\install-interception.exe (
 py -m pip install --disable-pip-version-check -q -r requirements.txt pyinstaller==6.22.3 pillow || goto :err
 py -m PyInstaller --noconfirm NumpadMacros.spec || goto :err
 for /f %%v in ('py -c "import npm; print(npm.__version__)"') do set VER=%%v
-"%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" /Q /DAppVersion=%VER% installer\NumpadMacros.iss || goto :err
+rem Version del Estudio de Temas que ofrece el instalador (la de tools\estudio\estudio.py)
+set EVER=
+for /f "tokens=3" %%v in ('findstr /b /c:"VERSION = " tools\estudio\estudio.py') do set EVER=%%~v
+set EDEF=
+if defined EVER set EDEF=/DEstudioVersion=%EVER%
+"%ProgramFiles(x86)%\Inno Setup 6\ISCC.exe" /Q /DAppVersion=%VER% %EDEF% installer\NumpadMacros.iss || goto :err
 echo.
 echo Listo: dist-installer\NumpadMacros-Setup-%VER%.exe
 pause

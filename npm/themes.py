@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 # Copyright (C) 2026 OkumaWsX
 """Temas de colores: los incluidos y los importados (.npt)."""
+import hashlib
 import os
-import shutil
 
 from . import npt
 from .config import config_dir
@@ -80,19 +80,120 @@ def current(cfg: dict) -> dict:
     return builtin()[0]
 
 
-def install(path: str) -> dict:
-    """Copia un .npt a la carpeta de temas. Devuelve el tema (NptError si no sirve)."""
-    t, official = npt.read_file(path)
-    os.makedirs(themes_dir(), exist_ok=True)
-    base = "".join(c if c.isalnum() or c in " -_" else "_" for c in t["name"]).strip() or "tema"
+def _ver(v) -> tuple:
+    from .updater import parse_version
+    return parse_version(str(v or "0"))
+
+
+def same_theme(a: dict, b: dict) -> bool:
+    """¿Son el mismo tema? Mismo nombre interno y misma firma: los dos oficiales, o los dos de la
+    comunidad con la misma clave de autor (la huella). Un tema sin firma de autor no se reconoce por
+    el nombre: dos «Neón» sin firma pueden ser de gente distinta."""
+    if a.get("builtin") or b.get("builtin") or a.get("name", "").casefold() != b.get("name", "").casefold():
+        return False
+    if a.get("official") or b.get("official"):
+        return bool(a.get("official")) and bool(b.get("official"))
+    ka, kb = a.get("author_key") or "", b.get("author_key") or ""
+    return bool(ka) and ka.lower() == kb.lower()
+
+
+def plan_install(new: dict, installed: list[dict]) -> tuple[str, dict | None]:
+    """Decide qué hacer con un tema que llega (importado o descargado). Función pura: no toca el disco.
+
+    ``new`` y cada tema de ``installed`` son dicts de tema; ``sha256`` (si está) es la huella del archivo.
+    Devuelve ``(acción, tema_instalado)``:
+      - ``"igual"``: ya lo tienes (mismo contenido, o misma versión y misma firma): no se copia;
+      - ``"actualizar"``: es el mismo tema con versión más nueva: reemplaza al instalado;
+      - ``"anterior"``: es el mismo tema con una versión más vieja: hay que preguntar;
+      - ``"nuevo"``: no hay uno igual (``None``): se copia con un nombre de archivo libre.
+    """
+    sha = new.get("sha256")
+    if sha:
+        twin = next((t for t in installed if t.get("sha256") == sha and not t.get("builtin")), None)
+        if twin is not None:
+            return "igual", twin
+    same = [t for t in installed if same_theme(new, t)]
+    if not same:
+        return "nuevo", None
+    v = _ver(new.get("version"))
+    # si hay varias copias (de antes de esta regla), se toma la de versión más alta: es la que cuenta
+    cur = max(same, key=lambda t: _ver(t.get("version")))
+    if v == _ver(cur.get("version")):
+        return "igual", cur
+    return ("actualizar" if v > _ver(cur.get("version")) else "anterior"), cur
+
+
+def _safe_base(name: str) -> str:
+    return "".join(c if c.isalnum() or c in " -_" else "_" for c in name).strip() or "tema"
+
+
+def free_path(name: str) -> str:
+    """Ruta libre en la carpeta de temas para un tema llamado ``name`` («Nombre.npt», «Nombre (2).npt»…)."""
+    base = _safe_base(name)
     dest = os.path.join(themes_dir(), base + npt.EXT)
     n = 2
-    while os.path.exists(dest) and os.path.abspath(dest) != os.path.abspath(path):
+    while os.path.exists(dest):
         dest = os.path.join(themes_dir(), f"{base} ({n}){npt.EXT}")
         n += 1
+    return dest
+
+
+def write_atomic(dest: str, data: bytes) -> None:
+    """Guarda ``data`` en ``dest`` de una vez: nunca queda un tema a medias."""
+    tmp = dest + ".nuevo"
+    try:
+        with open(tmp, "wb") as f:
+            f.write(data)
+        os.replace(tmp, dest)
+    except OSError:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def installed_with_sha() -> list[dict]:
+    """Los temas de la carpeta, cada uno con la huella SHA256 de su archivo."""
+    out = imported()
+    for t in out:
+        try:
+            with open(os.path.join(themes_dir(), t["file"]), "rb") as f:
+                t["sha256"] = hashlib.sha256(f.read()).hexdigest()
+        except OSError:
+            pass
+    return out
+
+
+def install(path: str, downgrade: bool = False) -> dict:
+    """Instala un .npt en la carpeta de temas. Devuelve el tema (NptError si no sirve), con ``result``:
+    ``"nuevo"``, ``"igual"`` (ya lo tenías: no se copió), ``"actualizado"`` (se reemplazó la versión
+    anterior; ``old_version`` dice cuál era) o ``"anterior"`` (es una versión más vieja que la instalada:
+    no se copió; vuelve a llamar con ``downgrade=True`` si el usuario quiere reemplazarla)."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read(npt.MAX_SIZE + 1)
+    except OSError as e:
+        raise npt.NptError(f"No pude leer el archivo: {e}")
+    t, official = npt.unpack(data)
+    t.update(official=official, builtin=False, sha256=hashlib.sha256(data).hexdigest())
+    os.makedirs(themes_dir(), exist_ok=True)
+    action, twin = plan_install(t, installed_with_sha())
+    if action == "nuevo":
+        dest = free_path(t["name"])
+        if os.path.abspath(dest) != os.path.abspath(path):
+            write_atomic(dest, data)
+        t.update(file=os.path.basename(dest), result="nuevo")
+        return t
+    t.update(file=twin["file"], old_version=twin.get("version"))
+    if action == "igual" or (action == "anterior" and not downgrade):
+        t.update(version=twin.get("version") if action == "igual" else t.get("version"),
+                 result="igual" if action == "igual" else "anterior")
+        return t
+    dest = os.path.join(themes_dir(), twin["file"])
     if os.path.abspath(dest) != os.path.abspath(path):
-        shutil.copyfile(path, dest)
-    t.update(official=official, file=os.path.basename(dest), builtin=False)
+        write_atomic(dest, data)                    # reemplaza al instalado (mismo archivo)
+    t["result"] = "actualizado"
     return t
 
 

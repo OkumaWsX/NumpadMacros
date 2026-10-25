@@ -23,6 +23,7 @@ Numpad Macros usa o integra los siguientes componentes. Cada uno conserva su pro
 | [cryptography](https://cryptography.io/) | Temas .npt: cifrado y firma | Apache-2.0 / BSD-3-Clause | Empaquetado (todos los sistemas) |
 | [segno](https://github.com/heuer/segno) | Código QR para vincular el celular | BSD-3-Clause | Empaquetado (todos los sistemas) |
 | [PyObjC](https://github.com/ronaldoussoren/pyobjc) (IOBluetooth) | Bluetooth con el celular en macOS | MIT | Empaquetado (macOS) |
+| [Simple Icons](https://simpleicons.org/) 13.21.0 | Íconos de redes sociales (Twitch, YouTube, TikTok, Kick, Instagram, X, Facebook, Discord) en la ficha de los creadores digitales (`assets/redes/`, generados con `tools/generar_iconos_redes.py`) | CC0 1.0 (dominio público) | Incluidos como imágenes PNG. Los trazados son de Simple Icons; los colores y la composición (relleno blanco, degradado, sombras de TikTok) siguen las guías de marca de cada red. Las marcas y logos pertenecen a sus dueños |
 
 ### App Android (carpeta `android/`)
 
@@ -55,3 +56,5 @@ Numpad Macros usa o integra los siguientes componentes. Cada uno conserva su pro
 - Las actualizaciones y publicaciones usan la **API de GitHub** y **GitHub Actions** (servicios de GitHub).
 
 **Nota sobre Interception:** su licencia gratuita cubre el uso no comercial. Numpad Macros es gratuito (las donaciones son voluntarias). Una distribución comercial requeriría la licencia comercial de Interception.
+
+Los nombres y logotipos de Twitch, YouTube, TikTok, Kick, Instagram, X, Facebook y Discord son marcas de sus respectivos dueños. Numpad Macros solo los usa para señalar el enlace al perfil de cada creador y no tiene relación ni respaldo de esas empresas.

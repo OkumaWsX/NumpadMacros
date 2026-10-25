@@ -83,7 +83,16 @@ jobs:
         run: |
           choco install innosetup -y --no-progress
           $version = python -c "import npm; print(npm.__version__)"
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q "/DAppVersion=$version" installer\NumpadMacros.iss
+          # la última versión publicada del Estudio de Temas (sus propias Releases «estudio-v…»):
+          # el instalador la ofrece y la descarga. Sin conexión con la API, la de estudio.py.
+          $env:GH_TOKEN = "${{ github.token }}"
+          $tag = gh api "repos/${{ github.repository }}/releases?per_page=30" --jq '[.[] | select((.draft or .prerelease) | not) | select(.tag_name | startswith("estudio-v"))][0].tag_name' 2>$null
+          if ($LASTEXITCODE -ne 0 -or -not $tag) {
+            $tag = "estudio-v" + (Select-String -Path tools/estudio/estudio.py -Pattern '^VERSION = "([^"]+)"').Matches[0].Groups[1].Value
+          }
+          $estudio = $tag -replace '^estudio-v', ''
+          Write-Host "Estudio de Temas para el instalador: $estudio"
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Q "/DAppVersion=$version" "/DEstudioVersion=$estudio" installer\NumpadMacros.iss
           if ($LASTEXITCODE -ne 0) { exit 1 }
           Copy-Item "dist-installer\NumpadMacros-Setup-$version.exe" "NumpadMacros-Windows-Setup.exe"
           # versión portátil (sin instalar), por si alguien la prefiere

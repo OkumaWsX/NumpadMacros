@@ -320,7 +320,8 @@ class ReadResult:
                "version": t.version, "colors": dict(t.colors)}
         if t.transparency:
             out["alpha"] = {"window": t.window.get("opacidad", 100) / 100, "idle": t.window.get("sin_usar", 100) / 100}
-        out.update(description=t.description, kind=t.kind, layer_alpha=dict(t.alpha), image_slots=sorted(t.images),
+        out.update(description=t.description, kind=t.kind, created=t.created, layer_alpha=dict(t.alpha),
+                   image_slots=sorted(t.images),
                    background=dict(t.background), sections={k: dict(v) for k, v in t.sections.items()},
                    animated_slots=t.animated, gif_pause=t.gif_pause,
                    author_key=self.author_key, reserved_name=self.reserved_name, format=self.format)

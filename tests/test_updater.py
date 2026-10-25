@@ -99,6 +99,71 @@ class UpdaterTest(unittest.TestCase):
         finally:
             srv.shutdown()
 
+    @unittest.skipUnless(sys.platform.startswith("linux"), "rutas de Linux")
+    def test_estudio_check_and_install_linux(self):
+        root = tempfile.mkdtemp()
+        home = os.path.join(root, "home")
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+            for name, data in (("EstudioTemas/EstudioTemas-NumpadMacros", b"#!/bin/sh\necho estudio\n"),
+                               ("EstudioTemas/icon-estudio.png", b"no-es-png")):
+                info = tarfile.TarInfo(name)
+                info.size = len(data)
+                tf.addfile(info, io.BytesIO(data))
+        pkg = buf.getvalue()
+        files = {"EstudioTemas-Linux.tar.gz": pkg}
+        files["SHA256SUMS.txt"] = (f"{hashlib.sha256(pkg).hexdigest()}  EstudioTemas-Linux.tar.gz\n").encode()
+        for name, data in files.items():
+            with open(os.path.join(root, name), "wb") as f:
+                f.write(data)
+        handler = lambda *a, **k: _Quiet(*a, directory=root, **k)  # noqa: E731
+        srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        base = f"http://127.0.0.1:{srv.server_address[1]}"
+        assets = [{"name": n, "browser_download_url": f"{base}/{n}", "size": len(d)} for n, d in files.items()]
+        # el Estudio tiene sus propias Releases («estudio-v…»), aparte de las de Numpad Macros
+        est_data = dict(self._release(), tag_name="estudio-v1.2.0", assets=assets)
+        app_data = dict(self._release(), assets=[])
+        rel = updater.Release(est_data)
+        env = {"HOME": home, "XDG_DATA_HOME": os.path.join(home, "datos"),
+               "XDG_CONFIG_HOME": os.path.join(home, "config")}
+        try:
+            with mock.patch.dict(os.environ, env), mock.patch.object(updater, "platform_key", return_value="linux"), \
+                    mock.patch("npm.desktop_linux.refresh"), \
+                    mock.patch.object(updater, "_releases", return_value=[app_data, est_data]):
+                # no instalado: no hay nada que actualizar, ni aunque la opción esté activa
+                self.assertIsNone(updater.estudio_installed())
+                self.assertEqual(updater.check_all({"estudio": True}, "9.0.0")[1:], (None, None))
+                self.assertEqual(updater.estudio_version(rel), "1.2.0")
+                exe = updater.install_estudio(rel, "1.2.0")
+                self.assertEqual(exe, os.path.join(home, ".local", "bin", "estudio-temas"))
+                self.assertTrue(os.access(exe, os.X_OK))
+                self.assertEqual(updater.estudio_installed(), (exe, "1.2.0"))
+                self.assertTrue(os.path.isfile(os.path.join(env["XDG_DATA_HOME"], "applications",
+                                                            "estudio-temas-numpad-macros.desktop")))
+                # al día -> nada; versión vieja anotada -> se ofrece la nueva
+                self.assertEqual(updater.check_all({"estudio": True}, "9.0.0"), (None, None, None))
+                with open(exe + ".version", "w") as f:
+                    f.write("1.1.1\n")
+                app, est_rel, ver = updater.check_all({"estudio": True}, "9.0.0")
+                self.assertIsNone(app)
+                self.assertEqual(est_rel.tag, "estudio-v1.2.0")
+                self.assertEqual(ver, "1.2.0")
+                self.assertEqual(updater.fetch_latest_estudio().version, "1.2.0")
+                # con la opción apagada solo se busca Numpad Macros
+                app, est_rel, ver = updater.check_all({"estudio": False}, "8.0.0")
+                self.assertEqual((app.version, est_rel, ver), ("9.0.0", None, None))
+                # una Release de Numpad Macros no es del Estudio (aunque trajera el archivo)
+                self.assertEqual(updater.estudio_version(updater.Release(dict(app_data, assets=assets))), "")
+                # la elección del instalador de Linux se lee una sola vez
+                os.makedirs(os.path.join(env["XDG_CONFIG_HOME"], "NumpadMacros"))
+                with open(os.path.join(env["XDG_CONFIG_HOME"], "NumpadMacros", updater.CHOICE_FILE), "w") as f:
+                    f.write("1\n")
+                self.assertTrue(updater.take_installer_choice())
+                self.assertIsNone(updater.take_installer_choice())
+        finally:
+            srv.shutdown()
+
     def test_changelog_bundled(self):
         here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         from npm import __version__

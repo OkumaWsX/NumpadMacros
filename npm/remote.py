@@ -64,10 +64,9 @@ def local_ips() -> list[str]:
     """IPv4 del PC (sin 127.x), la de la ruta principal primero."""
     ips = []
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("10.255.255.255", 1))
-        ips.append(s.getsockname()[0])
-        s.close()
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("10.255.255.255", 1))
+            ips.append(s.getsockname()[0])
     except OSError:
         pass
     try:
@@ -673,8 +672,15 @@ class RemoteServer:
             try:
                 sock, addr = srv.accept()
             except OSError:
-                return
-            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                if not self.running or srv.fileno() < 0:
+                    return
+                time.sleep(0.1)         # error pasajero (conexión abortada, sin descriptores): seguir escuchando
+                continue
+            try:
+                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            except OSError:             # el celular ya cortó: no tumbar el hilo que acepta
+                sock.close()
+                continue
             tr = "usb" if _looks_usb(addr[0]) else transport
             self._start_session(sock, tr, addr[0])
 
@@ -704,7 +710,9 @@ class RemoteServer:
             try:
                 data, addr = udp.recvfrom(2048)
             except OSError:
-                return
+                if not self.running or udp.fileno() < 0:
+                    return
+                continue                # Windows avisa aquí (ConnectionResetError) de un envío anterior fallido
             if not self.enabled():
                 continue
             try:

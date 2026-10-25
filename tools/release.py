@@ -44,8 +44,13 @@ def parse(v):
     return tuple(int(x) for x in m.groups()) if m else None
 
 
+def read_text(path):
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
 def code_version():
-    m = re.search(r'__version__\s*=\s*"([^"]+)"', open(INIT, encoding="utf-8").read())
+    m = re.search(r'__version__\s*=\s*"([^"]+)"', read_text(INIT))
     return m.group(1) if m else "0.0.0"
 
 
@@ -89,7 +94,7 @@ def prepare(args):
         fail(f"La versión {'.'.join(map(str, ver_t))} no es mayor que la última publicada "
              f"({'.'.join(map(str, last))}).")
     ver = ".".join(map(str, ver_t))
-    text = open(CHANGELOG, encoding="utf-8").read()
+    text = read_text(CHANGELOG)
     m, body, end = split_unreleased(text)
     if not re.search(r"^\s*[-*] \S", body, re.M):
         fail("La sección «Sin publicar» del CHANGELOG está vacía: anota qué cambió antes de publicar.")
@@ -103,7 +108,7 @@ def prepare(args):
         new = new[:refs.start()] + link + "\n" + new[refs.start():] if refs else new.rstrip("\n") + "\n\n" + link + "\n"
     with open(CHANGELOG, "w", encoding="utf-8") as f:
         f.write(new)
-    src = open(INIT, encoding="utf-8").read()
+    src = read_text(INIT)
     src = re.sub(r'__version__\s*=\s*"[^"]+"', f'__version__ = "{ver}"', src)
     with open(INIT, "w", encoding="utf-8") as f:
         f.write(src)
@@ -128,7 +133,7 @@ def captures_section(version, ref):
     manifest = os.path.join(folder, "capturas.txt")
     items = []
     if os.path.isfile(manifest):
-        for line in open(manifest, encoding="utf-8"):
+        for line in read_text(manifest).splitlines():
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
@@ -170,7 +175,7 @@ def captures_cmd(args):
     section = captures_section(version, args.ref)
     if not section:
         fail(f"No hay capturas para la versión {version} (falta la carpeta docs/capturas/{version}/).")
-    body = open(args.notas, encoding="utf-8").read() if args.notas else ""
+    body = read_text(args.notas) if args.notas else ""
     sys.stdout.write(put_captures(body, section))
 
 

@@ -618,8 +618,15 @@ class PipeWireBoard(_BoardBase):
                          "En Arch/CachyOS: sudo pacman -S pipewire-pulse")
 
     def _run(self, *args) -> str:
-        r = subprocess.run([self.pactl, *args], capture_output=True, text=True, timeout=5,
-                           env=clean_env())
+        # si el audio del sistema se trabó, no esperar 5 s en cada llamada (la app se congelaría)
+        if time.monotonic() < getattr(self, "_hung_until", 0):
+            raise SoundboardError("El audio del sistema (PipeWire) no responde.")
+        try:
+            r = subprocess.run([self.pactl, *args], capture_output=True, text=True, timeout=5,
+                               env=clean_env())
+        except subprocess.TimeoutExpired:
+            self._hung_until = time.monotonic() + 30
+            raise SoundboardError("El audio del sistema (PipeWire) no responde.")
         if r.returncode != 0:
             raise SoundboardError((r.stderr or r.stdout).strip() or f"pactl {args[0]} falló")
         return r.stdout
