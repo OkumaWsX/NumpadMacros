@@ -7,7 +7,9 @@ import tempfile
 import unittest
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, HERE)                       # el código del Estudio está en esta carpeta
+# código del Estudio: tools/estudio en el repositorio, o esta misma carpeta en la copia local por programas
+EST = os.path.join(HERE, "tools", "estudio") if os.path.isdir(os.path.join(HERE, "tools", "estudio")) else HERE
+sys.path.insert(0, EST)
 try:
     import PIL  # noqa: F401
     import logica as L  # noqa: E402
@@ -401,7 +403,7 @@ class ActualizarTest(unittest.TestCase):
         self.assertEqual(U.read_changelog(str(ruta) + ".no"), [])
 
     def test_changelog_real_tiene_la_version_actual(self):
-        ruta = os.path.join(HERE, "CHANGELOG.md")
+        ruta = os.path.join(EST, "CHANGELOG.md")
         e = U.read_changelog(ruta)
         self.assertTrue(e)
         self.assertTrue(U.changelog_for(e, "1.0.0")["groups"])
