@@ -34,6 +34,20 @@ def uinput():
         return _ui
 
 
+def clone(dev):
+    """Copia virtual de un teclado (mismas teclas y tipos de evento) para reenviar
+    al sistema lo que llega mientras está tomado. Su nombre empieza con
+    «Numpad Macros», así la captura nunca la toma a ella. RuntimeError si no se puede."""
+    from evdev import UInput
+    e = _ecodes()
+    try:
+        return UInput.from_device(dev, filtered_types=(e.EV_SYN, e.EV_FF),
+                                  name=f"Numpad Macros (reenvío) {dev.name}"[:79])
+    except Exception as ex:   # OSError, PermissionError o UInputError de evdev
+        raise RuntimeError(
+            "falta dar permisos (pestaña «Numpad y opciones» → «Dar permisos…»)") from ex
+
+
 def emit(code: int, value: int):
     ui = uinput()
     e = _ecodes()

@@ -279,6 +279,7 @@ class VirtualKeysTest(unittest.TestCase):
     def make(self):
         cfg = copy.deepcopy(config.DEFAULT)
         cfg["row_mode"]["enabled"] = False
+        cfg["hotkey"] = ""                            # sin combinación del modo macros
         self.board, self.snd = FakeBoard(), FakeSender()
         return Engine(cfg, self.snd, soundboard=self.board), cfg
 
@@ -294,7 +295,7 @@ class VirtualKeysTest(unittest.TestCase):
 
     def test_only_mode_does_not_listen_keyboards(self):
         e, cfg = self.make()
-        cfg["row_mode"]["enabled"] = True
+        cfg["hotkey"] = "ctrl+alt+m"
         self.assertTrue(e.main_wanted())
         cfg["phone"]["only"] = True
         self.assertFalse(e.main_wanted())

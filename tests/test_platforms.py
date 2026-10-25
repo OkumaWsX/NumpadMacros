@@ -249,6 +249,13 @@ esac
     def tearDown(self):
         self.board.close()
         os.environ["PATH"] = self.old_path
+        # el audio falso pesa cientos de MB: no dejarlo en /tmp (pw-cat puede tardar en cerrarse)
+        import shutil
+        for _ in range(20):
+            shutil.rmtree(self.dir, ignore_errors=True)
+            if not os.path.exists(self.dir):
+                break
+            time.sleep(0.05)
 
     def lines(self):
         with open(self.log) as f:
@@ -287,10 +294,11 @@ esac
 
 # ------------------------------------------------------------------ captura Linux (evdev)
 class FakeDev:
-    def __init__(self, path, name, vendor, product, keys_caps):
+    def __init__(self, path, name, vendor, product, keys_caps, extra_caps=None):
         self.path, self.name = path, name
         self.info = types.SimpleNamespace(vendor=vendor, product=product)
         self._caps = keys_caps
+        self._extra = extra_caps or {}
         self._r, self._w = os.pipe()
         self.fd = self._r
         self.queue = []
@@ -299,12 +307,13 @@ class FakeDev:
 
     def capabilities(self):
         from evdev import ecodes as e
-        return {e.EV_KEY: self._caps}
+        return {e.EV_KEY: self._caps, **self._extra}
 
-    def push(self, code, value):
+    def push(self, code, value, etype=None):
         from evdev import ecodes as e
         with self.lock:
-            self.queue.append(types.SimpleNamespace(type=e.EV_KEY, code=code, value=value))
+            self.queue.append(types.SimpleNamespace(type=e.EV_KEY if etype is None else etype,
+                                                    code=code, value=value))
         os.write(self._w, b"x")
 
     def read(self):
@@ -323,6 +332,22 @@ class FakeDev:
         pass
 
 
+class FakeUI:
+    """Copia virtual (uinput) de un teclado tomado: anota lo que se reenvía."""
+    def __init__(self, log):
+        self.log, self.closed = log, False
+
+    def write(self, etype, code, value):
+        self.log.append((etype, code, value))
+
+    def syn(self):
+        from evdev import ecodes as e
+        self.log.append((e.EV_SYN, 0, 0))
+
+    def close(self):
+        self.closed = True
+
+
 @unittest.skipIf(sys.platform == "win32", "solo Unix")
 class EvdevTest(unittest.TestCase):
     def setUp(self):
@@ -334,7 +359,7 @@ class EvdevTest(unittest.TestCase):
         self.e = e
         self.numpad = FakeDev("/dev/input/event7", "USB Numpad", 0x1a2c, 0x0e24, [e.KEY_KP0, e.KEY_KP7])
         self.main = FakeDev("/dev/input/event3", "HyperX Alloy", 0x0951, 0x16e6, [e.KEY_A, e.KEY_KP7])
-        devs = {d.path: d for d in (self.numpad, self.main)}
+        devs = self.devmap = {d.path: d for d in (self.numpad, self.main)}
         self._orig = (evdev.list_devices, evdev.InputDevice)
         evdev.list_devices = lambda: list(devs)
         evdev.InputDevice = lambda p: devs[p]
@@ -342,10 +367,20 @@ class EvdevTest(unittest.TestCase):
         self.emitted = []
         self._orig_emit = send_linux.emit
         send_linux.emit = lambda c, v: self.emitted.append((c, v))
+        self.fwd, self.clones = [], []                  # lo reenviado por las copias virtuales
+
+        def clone(dev):
+            ui = FakeUI(self.fwd)
+            self.clones.append(ui)
+            return ui
+        self._orig_clone = send_linux.clone
+        send_linux.clone = clone
         cfg = copy.deepcopy(config.DEFAULT)
         cfg["banks"][0]["keys"]["47"] = {"type": "bank_go", "bank": 2}
         cfg["banks"][0]["keys"]["02"] = {"type": "bank_go", "bank": 2}   # fila: tecla 1
         cfg["row_mode"]["enabled"] = "row" in self._testMethodName
+        if "main" not in self._testMethodName:
+            cfg["hotkey"] = ""                     # sin combinación: el teclado principal no se usa
         self.engine = Engine(cfg)
         from npm.capture_linux import EvdevBackend
         self.b = EvdevBackend(self.engine, "")
@@ -356,6 +391,7 @@ class EvdevTest(unittest.TestCase):
         self.b.stop()
         evdev.list_devices, evdev.InputDevice = self._orig
         send_linux.emit = self._orig_emit
+        send_linux.clone = self._orig_clone
 
     def wait_for(self, cond, timeout=2.0):
         end = time.time() + timeout
@@ -395,40 +431,168 @@ class EvdevTest(unittest.TestCase):
         self.assertFalse(self.numpad.grabbed)
 
 
-    def test_row_mode_main_keyboard(self):
-        e = self.e
+    def keys(self, *seq, dev=None):
+        for ev in seq:
+            (dev or self.main).push(*ev)
+
+    def fwd_keys(self):
+        return [(c, v) for t, c, v in self.fwd if t == self.e.EV_KEY]
+
+    def start_main(self):
         self.b.device = "1a2c:0e24:USB Numpad"
         self.b.start()
         self.assertTrue(self.wait_for(lambda: len(self.b.devs) == 2))     # numpad + principal
-        self.assertTrue(self.wait_for(lambda: self.numpad.grabbed))
-        self.assertFalse(self.main.grabbed)                                # solo se lee
-        # escribir normal: no se toca nada
-        self.main.push(e.KEY_1, 1); self.main.push(e.KEY_1, 0)
-        time.sleep(0.15)
-        self.assertEqual(self.emitted, [])
-        self.assertEqual(self.engine.bank, 0)
-        # Ctrl+Alt+M activa el modo macros; se toma el teclado cuando se sueltan las teclas
-        for code, v in ((e.KEY_LEFTCTRL, 1), (e.KEY_LEFTALT, 1), (e.KEY_M, 1)):
-            self.main.push(code, v)
-        self.assertTrue(self.wait_for(lambda: self.engine.row_mode))
-        time.sleep(0.1)
-        self.assertFalse(self.main.grabbed)                                # aún hay teclas apretadas
-        for code in (e.KEY_M, e.KEY_LEFTALT, e.KEY_LEFTCTRL):
-            self.main.push(code, 0)
+
+    def test_row_mode_main_keyboard(self):
+        e = self.e
+        self.engine.set_active(False)
+        self.start_main()
+        # en pausa el numpad queda libre, pero el principal se toma (para la combinación)
         self.assertTrue(self.wait_for(lambda: self.main.grabbed))
+        self.assertFalse(self.numpad.grabbed)
+        # escribir normal: todo se reenvía tal cual por la copia del teclado
+        self.keys((e.KEY_1, 1), (e.KEY_1, 0))
+        self.assertTrue(self.wait_for(lambda: self.fwd_keys() == [(e.KEY_1, 1), (e.KEY_1, 0)]))
+        self.assertEqual(self.engine.bank, 0)
+        self.assertEqual(self.emitted, [])                               # nada por el teclado compartido
+        # Ctrl+Alt+M: el motor activa todo y la M no llega al sistema
+        self.fwd.clear()
+        self.keys((e.KEY_LEFTCTRL, 1), (e.KEY_LEFTALT, 1), (e.KEY_M, 1), (e.KEY_M, 2), (e.KEY_M, 0),
+                  (e.KEY_LEFTALT, 0), (e.KEY_LEFTCTRL, 0))
+        self.assertTrue(self.wait_for(lambda: len(self.fwd_keys()) == 4))
+        self.assertEqual(self.fwd_keys(), [(e.KEY_LEFTCTRL, 1), (e.KEY_LEFTALT, 1),
+                                           (e.KEY_LEFTALT, 0), (e.KEY_LEFTCTRL, 0)])   # sin toque extra
+        self.assertTrue(self.engine.active)
+        self.assertEqual([ev for ev in drain(self.engine.events) if ev[0] == "active_toggle"],
+                         [("active_toggle", True)])                     # una sola vez (con repetición)
+        self.assertTrue(self.wait_for(lambda: self.numpad.grabbed))
         # la tecla 1 lanza su acción; la Q se reenvía al sistema
-        self.main.push(e.KEY_1, 1); self.main.push(e.KEY_1, 0)
+        self.fwd.clear()
+        self.keys((e.KEY_1, 1), (e.KEY_1, 0))
         self.assertTrue(self.wait_for(lambda: self.engine.bank == 1))
-        self.main.push(e.KEY_Q, 1); self.main.push(e.KEY_Q, 0)
-        self.assertTrue(self.wait_for(lambda: self.emitted == [(e.KEY_Q, 1), (e.KEY_Q, 0)]))
-        # apagar: las teclas de la combinación se reenvían y luego se suelta el teclado
-        self.emitted.clear()
-        for code, v in ((e.KEY_LEFTCTRL, 1), (e.KEY_LEFTALT, 1), (e.KEY_M, 1), (e.KEY_M, 0),
-                        (e.KEY_LEFTALT, 0), (e.KEY_LEFTCTRL, 0)):
-            self.main.push(code, v)
-        self.assertTrue(self.wait_for(lambda: not self.engine.row_mode and not self.main.grabbed))
-        self.assertEqual(self.emitted, [(e.KEY_LEFTCTRL, 1), (e.KEY_LEFTALT, 1),
-                                        (e.KEY_LEFTALT, 0), (e.KEY_LEFTCTRL, 0)])
+        self.keys((e.KEY_Q, 1), (e.KEY_Q, 0))
+        self.assertTrue(self.wait_for(lambda: self.fwd_keys() == [(e.KEY_Q, 1), (e.KEY_Q, 0)]))
+        # en pausa el principal sigue tomado y la fila vuelve a escribir
+        self.engine.toggle_active()
+        self.assertTrue(self.wait_for(lambda: not self.numpad.grabbed))
+        self.assertTrue(self.main.grabbed)
+        self.fwd.clear()
+        self.keys((e.KEY_1, 1), (e.KEY_1, 0))
+        self.assertTrue(self.wait_for(lambda: self.fwd_keys() == [(e.KEY_1, 1), (e.KEY_1, 0)]))
+        self.b.stop()
+        self.assertFalse(self.main.grabbed or self.numpad.grabbed)
+        self.assertTrue(all(ui.closed for ui in self.clones))
+
+    def test_main_forwards_every_event_type_and_high_codes(self):
+        """Se reenvía todo, no solo EV_KEY: SYN, MSC (scancode), LED y teclas ≥ 249 (BTN_*, Fn)."""
+        e = self.e
+        self.main._caps += [e.BTN_LEFT, e.KEY_FN, e.KEY_MICMUTE + 5]
+        self.start_main()
+        self.assertTrue(self.wait_for(lambda: self.main.grabbed))
+        seq = [(e.MSC_SCAN, 0x70004, e.EV_MSC), (e.KEY_A, 1), (e.SYN_REPORT, 0, e.EV_SYN),
+               (e.KEY_FN, 1), (e.KEY_FN, 0), (e.KEY_MICMUTE + 5, 1), (e.KEY_MICMUTE + 5, 0),
+               (e.LED_CAPSL, 1, e.EV_LED), (e.KEY_A, 0), (e.SYN_REPORT, 0, e.EV_SYN)]
+        self.keys(*seq)
+        want = [(t, c, v) for c, v, *rest in seq for t in [rest[0] if rest else e.EV_KEY]]
+        self.assertTrue(self.wait_for(lambda: self.fwd == want))
+        self.assertEqual(self.emitted, [])
+
+    def test_main_pointer_devices_are_only_read(self):
+        """Un teclado que también mueve un puntero (como la interfaz extra de algunos HyperX)
+        no se toma: el mouse seguiría funcionando, pero la combinación igual se detecta."""
+        e = self.e
+        combo = FakeDev("/dev/input/event4", "HyperX Alloy Mouse", 0x0951, 0x16e6, [e.KEY_A, e.BTN_LEFT],
+                        {e.EV_REL: [e.REL_X, e.REL_Y, e.REL_WHEEL]})
+        import evdev
+        devs = {d.path: d for d in (self.numpad, self.main, combo)}
+        evdev.list_devices = lambda: list(devs)
+        evdev.InputDevice = lambda p: devs[p]
+        self.engine.set_active(False)
+        self.b.device = "1a2c:0e24:USB Numpad"
+        self.b.start()
+        self.assertTrue(self.wait_for(lambda: len(self.b.devs) == 3 and self.main.grabbed))
+        time.sleep(0.15)
+        self.assertFalse(combo.grabbed)
+        self.keys((e.KEY_LEFTCTRL, 1), (e.KEY_LEFTALT, 1), (e.KEY_M, 1), (e.KEY_M, 0),
+                  (e.KEY_LEFTALT, 0), (e.KEY_LEFTCTRL, 0), (e.REL_X, 5, e.EV_REL), dev=combo)
+        self.assertTrue(self.wait_for(lambda: self.engine.active))
+        self.assertEqual(self.fwd, [])                                   # el sistema ya lo recibió
+        self.assertEqual(len(self.clones), 1)                            # solo el teclado tomado
+
+    def test_main_unplug_releases_held_keys(self):
+        """Desconectar con Ctrl (o la combinación) apretados: se sueltan en el motor y en el sistema."""
+        e = self.e
+        self.start_main()
+        self.assertTrue(self.wait_for(lambda: self.main.grabbed and self.numpad.grabbed))
+        self.numpad.push(e.KEY_KP0, 1)                                  # numpad: sin acción, bloqueada
+        self.assertTrue(self.wait_for(lambda: "52" in self.engine._pressed))
+        self.keys((e.KEY_LEFTCTRL, 1), (e.KEY_LEFTALT, 1), (e.KEY_M, 1))   # combinación apretada
+        self.assertTrue(self.wait_for(lambda: self.engine._toggle_held == "32"))
+        self.engine.toggle_active()                                     # (vuelve a activo)
+        self.fwd.clear()
+
+        def unplugged():
+            raise OSError(19, "No such device")
+        for d in (self.main, self.numpad):                              # se desconectan los dos
+            self.devmap.pop(d.path)
+            d.read = unplugged
+            os.write(d._w, b"x")
+        self.assertTrue(self.wait_for(lambda: not self.b.devs))
+        self.assertEqual(sorted(c for c, v in self.fwd_keys() if v == 0), sorted([e.KEY_LEFTCTRL, e.KEY_LEFTALT]))
+        self.assertTrue(self.clones[0].closed)
+        self.assertEqual(self.engine._mods_down, set())                 # Ctrl/Alt no quedan pegados
+        self.assertIsNone(self.engine._toggle_held)                     # la M tampoco
+        self.assertEqual(self.engine._pressed, {})                      # ni la tecla del numpad
+        # al volver a conectarlos, Ctrl+Alt+M funciona de inmediato
+        self.assertTrue(self.engine.main_key("1d", True) is False and self.engine.main_key("38", True) is False)
+        self.assertTrue(self.engine.active)
+        self.assertTrue(self.engine.main_key("32", True))
+        self.assertFalse(self.engine.active)
+
+    def test_main_alt_win_combo_is_masked(self):
+        """Alt+F9 (o Win+…): un toque de Ctrl antes de soltar, para que no se abra el menú."""
+        e = self.e
+        self.engine.cfg["hotkey"] = "alt+f9"
+        self.start_main()
+        self.assertTrue(self.wait_for(lambda: self.main.grabbed))
+        self.keys((e.KEY_LEFTALT, 1), (e.KEY_F9, 1), (e.KEY_F9, 0), (e.KEY_LEFTALT, 0))
+        self.assertTrue(self.wait_for(lambda: len(self.fwd_keys()) == 4))
+        self.assertEqual(self.fwd_keys(), [(e.KEY_LEFTALT, 1), (e.KEY_LEFTCTRL, 1), (e.KEY_LEFTCTRL, 0),
+                                           (e.KEY_LEFTALT, 0)])
+
+    def test_main_without_row_and_without_uinput(self):
+        """Con la fila desmarcada la combinación sigue funcionando; sin copia virtual
+        el principal solo se lee (si no, dejaría de escribir) y se avisa una vez."""
+        from npm import send_linux
+
+        def broken(dev):
+            raise RuntimeError("sin permisos")
+        send_linux.clone = broken
+        e = self.e
+        self.start_main()
+        self.assertTrue(self.wait_for(lambda: self.numpad.grabbed))
+        self.keys((e.KEY_LEFTCTRL, 1), (e.KEY_LEFTALT, 1), (e.KEY_M, 1), (e.KEY_M, 0),
+                  (e.KEY_LEFTALT, 0), (e.KEY_LEFTCTRL, 0))
+        self.assertTrue(self.wait_for(lambda: not self.engine.active))
+        self.assertTrue(self.wait_for(lambda: self.b.held.get(self.main.path) == set()))   # todo soltado
+        evs = drain(self.engine.events)
+        self.assertIn(("active_toggle", False), evs)
+        self.assertEqual(sum(1 for ev in evs if ev[0] == "error" and "Teclado virtual" in ev[1]), 1)
+        self.assertFalse(self.main.grabbed)
+        self.assertEqual(self.emitted, [])
+
+    def test_main_grab_failure_warns_once(self):
+        def busy():
+            raise OSError(16, "Device or resource busy")
+        self.main.grab = busy
+        self.start_main()
+        self.assertTrue(self.wait_for(lambda: any(
+            ev[0] == "error" and "teclado principal" in ev[1] for ev in list(self.engine.events.queue))))
+        time.sleep(0.3)
+        errs = [ev for ev in drain(self.engine.events) if ev[0] == "error"]
+        self.assertEqual(len(errs), 1)
+        self.assertIn("Otro programa", errs[0][1])
+        self.assertTrue(all(ui.closed for ui in self.clones))           # la copia no queda abierta
 
 
 class EngineFile(unittest.TestCase):

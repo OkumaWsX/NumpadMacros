@@ -16,7 +16,8 @@ Al pausar o cerrar la app, el numpad vuelve a funcionar como un numpad normal.
 - **Atajos de teclado** (por ejemplo `Ctrl+Shift+F13`) para OBS, Discord u otro programa. Se mantienen apretados mientras mantengas la tecla, así que sirven para push-to-talk.
 - **Bancos:** varias páginas de asignaciones. La capa **Global** aplica en todos los bancos; por defecto **NumLock** pasa al banco siguiente.
 - **Solo tu numpad:** «Detectar numpad» identifica el numpad exacto; los demás teclados no se tocan.
-- **Sin numpad, con la fila de números:** pulsa **Ctrl+Alt+M** para activar el **modo macros**. Con el modo activo, las teclas **1–0, - y =** de tu teclado normal lanzan sus propias acciones (cada banco tiene las suyas, en la fila de números del dibujo). Todas las demás teclas siguen escribiendo normal. Con Ctrl+Alt+M otra vez vuelves a escribir números. La combinación se puede cambiar en «Numpad y opciones».
+- **Activar y pausar con el teclado:** **Ctrl+Alt+M** activa o pausa el **modo macros**, igual que el botón ACTIVO / PAUSADO, desde cualquier programa. En pausa, el numpad y la fila de números escriben normal; las teclas virtuales del celular funcionan siempre. La combinación se puede cambiar en «Numpad y opciones» → «Modo macros».
+- **Sin numpad, con la fila de números:** con el modo macros activo, las teclas **1–0, - y =** de tu teclado normal también lanzan sus propias acciones (cada banco tiene las suyas, en la fila de números del dibujo). Todas las demás teclas siguen escribiendo normal. Se activa o se desactiva con la casilla de la fila en «Numpad y opciones».
 
 ## Medidores, igualar volumen y compresor
 - Arriba de la ventana hay dos **medidores**: lo que suena en tus audífonos y lo que sale por el micrófono virtual. Si algo satura aparece **SATURA**; si el compresor está bajando el volumen, lo indica.
@@ -79,7 +80,7 @@ Para compilar desde el código, consulta la sección «Compilar desde el código
 ## Avisos
 - **Si por error elegiste tu teclado principal**, pulsa **PAUSADO** con el mouse y vuelve a detectar el numpad.
 - **Anti-cheat (Windows):** algunos juegos con anti-cheat estricto detectan el driver Interception. Si un juego se queja, desinstálalo (`install-interception.exe /uninstall` y reiniciar); la app vuelve sola al modo sin driver.
-- **Fila de números en Linux:** con el modo macros activo, la app toma el teclado y reenvía las demás teclas al sistema; si se cierra, el teclado vuelve a la normalidad al instante. Al *activar* el modo, la M de la combinación puede llegar a la ventana activa (con Ctrl+Alt casi nunca hace nada).
+- **Teclado principal en Linux:** para que Ctrl+Alt+M funcione también en pausa, la app toma el teclado y reenvía al sistema todo lo demás por una copia virtual del mismo teclado, salvo la combinación (y, con el modo macros activo, la fila de números); si se cierra, el teclado vuelve a la normalidad al instante. Los dispositivos que también mueven un puntero (mouse o touchpad en el mismo teclado) no se toman, solo se leen. Si el teclado virtual no tiene permisos, el teclado solo se lee y la combinación también le llega a la ventana activa. En Windows y macOS, una combinación de solo Win (o Alt) puede abrir el menú del sistema al soltarla: mejor usa Ctrl+Alt o Ctrl+Shift.
 - **Fila de números en macOS:** usa el permiso de **Accesibilidad**.
 - **Teclas extra** (`00`, `=`, calculadora…): pulsa **Capturar tecla física** y luego esa tecla; aparecerá bajo el dibujo para asignarle algo.
 - **Linux con Wayland:** los atajos se envían bien, pero OBS solo tiene atajos *globales* en algunos escritorios. Los sonidos no dependen de esto.

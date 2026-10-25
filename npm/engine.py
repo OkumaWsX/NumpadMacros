@@ -29,17 +29,18 @@ class Engine:
         self.sender = sender
         self.on_save = on_save              # callback para persistir cambios
         self.lock = threading.RLock()
-        self.active = True                  # False = pausado (numpad normal)
+        self.active = True                  # modo macros; False = pausado (numpad y fila normales)
         self.capture_next = False           # la GUI espera "presiona una tecla"
         self.events: queue.Queue = queue.Queue()   # avisos hacia la GUI
         self._jobs: queue.Queue = queue.Queue()
         self._pressed: dict[str, dict | None] = {}  # teclas que consumimos
         self._passed: set[str] = set()              # teclas que dejamos pasar
-        self.row_mode = False                       # modo macros de la fila de números
         self._mods_down: set[str] = set()           # modificadores apretados (ids)
-        self._toggle_held = False
+        self._toggle_held = None                    # tecla de la combinación apretada (autorepetición)
+        self.mask_pending = False                   # la captura debe "tapar" el soltar de Alt/Win
+        self._toggle_src = None                     # combinación ya leída (texto, resultado)
         self._toggle = None
-        self._toggle_src = None
+        self.combos_off = False                     # la GUI está grabando una combinación
         self._worker = threading.Thread(target=self._work, name="acciones", daemon=True)
         self._worker.start()
 
@@ -64,6 +65,16 @@ class Engine:
             self.active = value
         self.events.put(("active", value))
 
+    def toggle_active(self) -> bool:
+        """Activar / pausar el modo macros (botón, bandeja o combinación). Todo bajo el
+        lock, para que la captura nunca vea un estado a medias."""
+        with self.lock:
+            new = not self.active
+            if not new:
+                self.release_all()
+            self.set_active(new)
+        return new
+
     def resolve(self, kid: str):
         """Acción de la tecla: primero la capa Global, luego el banco activo."""
         act = self.cfg["global"].get(kid)
@@ -74,34 +85,52 @@ class Engine:
             return act
         return None
 
-    # ------------------------------------------------------------ fila de números
+    # ------------------------------------------------------------ fila de números y combinación
     def row_enabled(self) -> bool:
         return bool(self.cfg.get("row_mode", {}).get("enabled"))
 
-    def main_wanted(self) -> bool:
-        """Hay que escuchar los teclados principales (solo para la fila de números)."""
-        return self.row_enabled() and not self.cfg.get("phone", {}).get("only")
+    @property
+    def row_mode(self) -> bool:
+        """La fila 1–0, - y = lanza acciones: sigue al modo macros (no se alterna aparte)."""
+        return self.active and self.row_enabled()
 
-    def set_row_mode(self, value: bool):
-        with self.lock:
-            self.row_mode = bool(value) and self.row_enabled()
-        self.events.put(("row_mode", self.row_mode))
+    def main_wanted(self) -> bool:
+        """Hay que escuchar los teclados principales: la combinación del modo macros
+        tiene que funcionar siempre (también en pausa y sin la fila de números)."""
+        return self._parsed_toggle() is not None and not self.cfg.get("phone", {}).get("only")
 
     def _parsed_toggle(self):
-        src = self.cfg.get("row_mode", {}).get("toggle", "")
+        src = self.cfg.get("hotkey", "")
         if src != self._toggle_src:
             self._toggle_src = src
             try:
                 self._toggle = parse_toggle(src)
-            except ValueError:
+            except (ValueError, AttributeError):
                 self._toggle = None
         return self._toggle
+
+    def _combo_key(self, tog, kid, down, mods):
+        """Tecla de la combinación. True = recién se pulsó, "held" = es suya
+        (repetición o soltar), None = no es suya."""
+        if self._toggle_held == kid:              # autorepetición o soltar (aunque se haya
+            if not down:                          # cambiado la combinación con la tecla apretada)
+                self._toggle_held = None
+            return "held"
+        if not down or not tog or kid != tog[1]:
+            return None
+        current = frozenset(mods) if mods is not None else \
+            frozenset(MOD_KIDS[k] for k in self._mods_down)
+        if current != tog[0] or self.combos_off:   # grabando: la tecla llega a la ventana
+            return None
+        self._toggle_held = kid
+        return True
 
     def main_key(self, kid: str, down: bool, mods=None) -> bool:
         """Tecla del teclado principal. True = consumirla.
 
-        Solo se consumen: la tecla de la combinación que activa el modo macros y,
-        con el modo activo, las teclas de la fila de números (1–0, - y =).
+        Solo se consumen: la tecla de la combinación que activa o pausa el modo
+        macros (funciona también en pausa y con la fila de números desactivada) y,
+        con el modo activo y la fila activada, las teclas 1–0, - y =.
         `mods` (conjunto de nombres) lo entrega macOS; en los demás sistemas los
         modificadores se siguen aquí mismo.
         """
@@ -113,24 +142,15 @@ class Engine:
             # una tecla de la fila que ya empezamos a manejar termina por el mismo camino
             if kid in self._pressed or kid in self._passed:
                 return self.decide(kid, down)
-            if not self.row_enabled():
-                return False
+            # activar / pausar aquí mismo (bajo el lock); la GUI solo repinta y avisa
             tog = self._parsed_toggle()
-            if tog and kid == tog[1]:
-                if not down:
-                    if self._toggle_held:
-                        self._toggle_held = False
-                        return True
-                    return False
-                if self._toggle_held:                 # autorepetición
-                    return True
-                current = frozenset(mods) if mods is not None else \
-                    frozenset(MOD_KIDS[k] for k in self._mods_down)
-                if current == tog[0]:
-                    self._toggle_held = True
-                    self.set_row_mode(not self.row_mode)
-                    return True
-                return False
+            hit = self._combo_key(tog, kid, down, mods)
+            if hit is True:
+                # Alt o Win soltados sin otra tecla abren el menú del escritorio
+                self.mask_pending = bool(tog[0] & {"alt", "win"}) and "ctrl" not in tog[0]
+                self.events.put(("active_toggle", self.toggle_active()))
+            if hit:
+                return True
             if kid in ROW_IDS and down and self.row_mode:
                 return self.decide(kid, True)
             return False

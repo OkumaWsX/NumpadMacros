@@ -57,7 +57,7 @@ Es independiente: trae su propia biblioteca y su propio reproductor de sonidos, 
 | | |
 |---|---|
 | 🎹 **Solo tu numpad** | Detecta el numpad exacto y lo toma en exclusiva. Tu teclado principal sigue funcionando normal. |
-| ⌨️ **Sin numpad también** | El **modo macros** (`Ctrl+Alt+M`) convierte la fila `1–0`, `-` y `=` de tu teclado en teclas macro. Las demás teclas siguen escribiendo. |
+| ⌨️ **Sin numpad también** | `Ctrl+Alt+M` activa o pausa el **modo macros** desde cualquier programa; activo, también la fila `1–0`, `-` y `=` de tu teclado lanza macros. Las demás teclas siguen escribiendo. |
 | 🔊 **Biblioteca de sonidos** | Agrega archivos o carpetas completas (MP3, WAV, OGG, FLAC, OPUS), búscalos, escúchalos y asígnalos con un clic. |
 | 🎙️ **Micrófono virtual** | Los sonidos salen por tus audífonos y por un micrófono virtual. También puedes mezclar tu micrófono real para hablar y lanzar efectos a la vez. |
 | ⏯️ **4 formas de sonar** | Superponer, Reiniciar, Alternar (pulsa para sonar y otra vez para detener) o *Mientras se mantiene*. Volumen por tecla. |
@@ -145,7 +145,7 @@ Sin el driver Interception la app funciona igual en *modo sin driver* (captura e
 3. Haz clic en una tecla del dibujo, elige un sonido y pulsa **Asignar**.
 4. Elige cómo suena y pruébalo con **▶ Probar**.
 
-¿Sin numpad? Asigna sonidos a la **fila de números** del dibujo y pulsa `Ctrl+Alt+M` para activar el modo macros.
+¿Sin numpad? Asigna sonidos a la **fila de números** del dibujo y pulsa `Ctrl+Alt+M` (o ACTIVO) para activar el modo macros.
 
 La guía completa está en **[LEEME.md](LEEME.md)**.
 

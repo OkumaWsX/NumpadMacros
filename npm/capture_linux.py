@@ -5,13 +5,18 @@
 El numpad se toma en exclusiva con EVIOCGRAB: sus teclas llegan solo a este
 programa y el resto del sistema no las ve.
 
-Los demás teclados solo se leen (sin bloquear nada) para detectar la
-combinación del modo macros. Mientras el modo macros está activo se toman
-también, y todas sus teclas se reenvían al sistema por el teclado virtual,
-salvo la fila de números (1–0, - y =). El cambio se hace cuando no hay
-ninguna tecla apretada, para que nada quede pegado.
-En pausa se suelta el grab y el numpad vuelve a funcionar normal; al cerrar
-el programa el kernel lo suelta solo.
+Los demás teclados también se toman (también en pausa), para que la
+combinación que activa o pausa el modo macros no le llegue al programa que
+está al frente. Cada teclado tomado tiene su copia virtual (uinput, con sus
+mismas teclas y tipos de evento) y todo lo que llega se reenvía por ella,
+salvo esa combinación y, con el modo macros activo, la fila de números
+(1–0, - y =). Los dispositivos que además mueven un puntero (mouse, touchpad,
+rueda: EV_REL / EV_ABS) nunca se toman, solo se leen, igual que todos si la
+copia virtual no se puede crear: la combinación funciona, pero el programa
+del frente también la recibe.
+El cambio se hace cuando no hay ninguna tecla apretada, para que nada quede
+pegado. En pausa se suelta el numpad y vuelve a funcionar normal; al cerrar
+el programa el kernel suelta todo solo.
 """
 import errno
 import os
@@ -44,7 +49,10 @@ class EvdevBackend:
         self.learning_until = 0.0
         self.devs = {}            # ruta -> InputDevice abiertos
         self.grabbed = set()      # numpads tomados en exclusiva
-        self.main_grabbed = set() # teclados principales tomados (modo macros)
+        self.main_grabbed = set() # teclados principales tomados
+        self.fwd = {}             # ruta -> copia virtual (uinput) de ese teclado tomado
+        self.fwd_down = {}        # ruta -> teclas reenviadas que siguen apretadas
+        self._retry = {}          # ruta -> no volver a intentar tomarlo antes de este momento
         self.held = {}            # ruta -> teclas apretadas en ese teclado
         self._running = False
         self._thread = None
@@ -114,7 +122,7 @@ class EvdevBackend:
                 pass
             dev.close()
         # Fuera del modo aprendizaje solo quedan abiertos el numpad elegido y,
-        # si se usa la fila de números, los demás teclados
+        # si hay combinación del modo macros, los demás teclados
         if not learning and not self.engine.main_wanted():
             for path, dev in list(self.devs.items()):
                 if not self._matches(dev):
@@ -125,37 +133,131 @@ class EvdevBackend:
             self.engine.events.put(("device_state", state))
 
     def _close(self, path):
-        dev = self.devs.pop(path, None)
+        """Cerrar (o desconectado): lo que quedó apretado se suelta en el motor y en
+        el sistema, para que no quede pegado (Ctrl, la combinación, una tecla de la fila)."""
+        from .send_linux import emit
+        dev = self.devs.get(path)
+        is_pad = dev is not None and self._matches(dev)
+        for code in sorted(self.held.get(path) or ()):
+            kid = evdev_kid(code)
+            try:
+                if not is_pad:
+                    self.engine.main_key(kid, False)
+                elif path in self.grabbed and not self.engine.decide(kid, False):
+                    emit(code, 0)                     # se había devuelto al sistema
+            except Exception:
+                pass
+        self._drop_forward(path)
+        self.devs.pop(path, None)
         self.grabbed.discard(path)
         self.main_grabbed.discard(path)
         self.held.pop(path, None)
+        self._retry.pop(path, None)
         if dev:
             try:
                 dev.close()
             except OSError:
                 pass
 
+    def _drop_forward(self, path):
+        """Suelta en el sistema lo reenviado que sigue apretado y cierra la copia virtual."""
+        ui = self.fwd.pop(path, None)
+        down = self.fwd_down.pop(path, set())
+        if not ui:
+            return
+        from evdev import ecodes as e
+        try:
+            for code in sorted(down):
+                ui.write(e.EV_KEY, code, 0)
+            if down:
+                ui.syn()
+        except Exception:
+            pass
+        try:
+            ui.close()
+        except Exception:
+            pass
+
+    def _forward(self, path, etype, code, value):
+        """Reenviar un evento del teclado tomado por su copia virtual."""
+        ui = self.fwd.get(path)
+        if not ui:
+            return
+        from evdev import ecodes as e
+        try:
+            ui.write(etype, code, value)
+        except Exception as ex:
+            self.engine.events.put(("error", str(ex)))
+            return
+        if etype == e.EV_KEY:
+            down = self.fwd_down.setdefault(path, set())
+            (down.add if value else down.discard)(code)
+
+    def _mask(self, path):
+        """Toque de Ctrl entre medio, para que soltar Alt o Win no abra el menú del escritorio."""
+        from evdev import ecodes as e
+        ui = self.fwd.get(path)
+        if not ui:
+            return
+        try:
+            for v in (1, 0):
+                ui.write(e.EV_KEY, e.KEY_LEFTCTRL, v)
+                ui.syn()
+        except Exception:
+            pass
+
+    @staticmethod
+    def _points(dev) -> bool:
+        """También mueve un puntero (mouse, touchpad, rueda): no se toma."""
+        from evdev import ecodes as e
+        caps = dev.capabilities()
+        return e.EV_REL in caps or e.EV_ABS in caps
+
+    def _warn_main(self, msg):
+        if not getattr(self, "_warned_main", False):
+            self._warned_main = True
+            self.engine.events.put(("error", msg + ": la combinación del modo macros también le "
+                                    "llegará al programa del frente"))
+
     def _sync_main(self, path, dev, want: bool):
         """Toma o suelta un teclado principal, solo si no tiene teclas apretadas."""
         if self.held.get(path) or want == (path in self.main_grabbed):
             return
-        try:
-            if want:
-                dev.grab()
-                self.main_grabbed.add(path)
-            else:
+        if not want:
+            try:
                 dev.ungrab()
-                self.main_grabbed.discard(path)
-        except OSError as ex:
+            except OSError:
+                pass
             self.main_grabbed.discard(path)
-            if want and not getattr(self, "_warned_main", False):
-                self._warned_main = True
-                self.engine.events.put(("error", "No se pudo tomar el teclado principal "
-                                        f"({ex}); la fila de números también escribirá números"))
+            self._drop_forward(path)
+            return
+        if time.monotonic() < self._retry.get(path, 0.0):
+            return
+        try:
+            if self._points(dev):
+                self._retry[path] = float("inf")           # nunca: solo se lee
+                return
+        except OSError:
+            return
+        from . import send_linux
+        try:
+            self.fwd[path] = send_linux.clone(dev)        # primero la copia: sin ella dejaría de escribir
+        except Exception as ex:
+            self._retry[path] = time.monotonic() + 5.0
+            self._warn_main(f"Teclado virtual no disponible ({ex})")
+            return
+        try:
+            dev.grab()
+            self.main_grabbed.add(path)
+        except OSError as ex:
+            self._drop_forward(path)
+            self._retry[path] = time.monotonic() + 5.0
+            self._warn_main("Otro programa ya tiene tomado el teclado principal" if ex.errno == errno.EBUSY
+                            else f"No se pudo tomar el teclado principal ({ex})")
 
     def _sync_grab(self, learning: bool):
         want = self.engine.active and not learning
-        want_main = want and self.engine.row_mode
+        want_main = not learning and self.engine.main_wanted()
         for path, dev in self.devs.items():
             if not self._matches(dev):
                 self._sync_main(path, dev, want_main)
@@ -217,6 +319,9 @@ class EvdevBackend:
                     is_pad = self._matches(dev)
                     for ev in events:
                         if ev.type != e.EV_KEY:
+                            # teclado principal tomado: se reenvía todo lo demás (SYN, MSC, LED…)
+                            if not is_pad and path in self.main_grabbed:
+                                self._forward(path, ev.type, ev.code, ev.value)
                             continue
                         held = self.held.setdefault(path, set())
                         if ev.value == 1:
@@ -235,11 +340,12 @@ class EvdevBackend:
                         if not learning and not is_pad:
                             # teclado principal
                             consumed = self.engine.main_key(evdev_kid(ev.code), down)
-                            if path in self.main_grabbed and not consumed:
-                                try:
-                                    emit(ev.code, ev.value)
-                                except Exception as ex:
-                                    self.engine.events.put(("error", str(ex)))
+                            mask, self.engine.mask_pending = self.engine.mask_pending, False
+                            if path in self.main_grabbed:
+                                if not consumed:
+                                    self._forward(path, e.EV_KEY, ev.code, ev.value)
+                                elif mask:
+                                    self._mask(path)
                             continue
                         if learning or path not in self.grabbed:
                             continue                      # el sistema ya recibió la tecla

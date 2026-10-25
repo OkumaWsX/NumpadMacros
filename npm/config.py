@@ -62,9 +62,9 @@ DEFAULT = {
     "phone": {"only": False},        # True = sin teclado: solo se usa la app del celular
     "theme": {"name": "Original", "file": "", "phone": True},   # tema de colores
     "ui": {},                        # preferencias de la ventana
+    "hotkey": "ctrl+alt+m",          # activa / pausa el modo macros (como el botón ACTIVO / PAUSADO)
     "row_mode": {                    # fila de números del teclado principal
-        "enabled": True,
-        "toggle": "ctrl+alt+m",      # combinación que activa/desactiva el modo macros
+        "enabled": True,             # con el modo macros activo, 1–0, - y = también lanzan acciones
     },
 }
 
@@ -72,6 +72,7 @@ DEFAULT = {
 def load(path: str | None = None) -> dict:
     path = path or config_path()
     cfg = copy.deepcopy(DEFAULT)
+    data = {}
     try:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
@@ -91,6 +92,14 @@ def load(path: str | None = None) -> dict:
     cfg.pop("device_hwid", None)
     row = copy.deepcopy(DEFAULT["row_mode"])
     row.update(cfg.get("row_mode") or {})
+    # Hasta 3.5.0 la combinación era solo de la fila de números ("row_mode.toggle");
+    # ahora activa o pausa todo el modo macros y se conserva la que el usuario tenía
+    old = row.pop("toggle", None)
+    # (vacía también se respeta: combinación desactivada)
+    if not (isinstance(data, dict) and "hotkey" in data) and isinstance(old, str):
+        cfg["hotkey"] = old
+    if not isinstance(cfg.get("hotkey"), str):
+        cfg["hotkey"] = DEFAULT["hotkey"]
     cfg["row_mode"] = row
     audio = copy.deepcopy(DEFAULT["audio"])
     audio.update(cfg.get("audio") or {})

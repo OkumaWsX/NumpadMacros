@@ -65,7 +65,7 @@ def phone_count(cfg: dict | None = None) -> int:
 MOD_KIDS = {"1d": "ctrl", "e0:1d": "ctrl", "38": "alt", "e0:38": "alt",
             "2a": "shift", "36": "shift", "e0:5b": "win", "e0:5c": "win"}
 
-# Teclas que pueden formar la combinación que activa el modo macros (nombre -> id)
+# Teclas que pueden formar la combinación que activa / pausa el modo macros (nombre -> id)
 TOGGLE_KEYS = {c: f"{v:02x}" for c, v in zip(
     "qwertyuiop", range(0x10, 0x1A))}
 TOGGLE_KEYS.update({c: f"{v:02x}" for c, v in zip("asdfghjkl", range(0x1E, 0x27))})

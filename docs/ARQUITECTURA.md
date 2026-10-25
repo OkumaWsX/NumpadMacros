@@ -17,7 +17,7 @@ Resumen para quien quiera entender o modificar el código.
                                      soundboard.py (sonido)        send_*.py (atajo)   bancos
 ```
 
-- **La captura** corre en su propio hilo y llama a `Engine.decide(id_tecla, presionada)` por cada tecla del numpad, o a `Engine.main_key(...)` por cada tecla del teclado principal (modo macros de la fila de números). Estas funciones responden al instante: solo consultan diccionarios.
+- **La captura** corre en su propio hilo y llama a `Engine.decide(id_tecla, presionada)` por cada tecla del numpad, o a `Engine.main_key(...)` por cada tecla del teclado principal (combinación que activa o pausa el modo macros, y fila de números). La combinación no cambia el estado desde ese hilo: deja `("active_toggle",)` en `Engine.events` y la GUI hace lo mismo que el botón ACTIVO / PAUSADO. Estas funciones responden al instante: solo consultan diccionarios.
 - **Las acciones lentas** (sonidos, atajos, guardar) se encolan y las ejecuta un hilo trabajador, para no frenar el teclado.
 - **La ventana** (`gui.py`, tkinter) lee los eventos del motor desde una cola cada 30 ms.
 
@@ -45,7 +45,7 @@ Linux convierte con `evdev_kid()` y macOS con `hid_kid()` (numpad) y `MAC_TO_KID
 | `soundboard.py` | `MixerBoard` (Windows/macOS: mezclador propio con sounddevice) y `PipeWireBoard` (Linux: crea el micrófono virtual con `pactl`). |
 | `capture.py` | Elige el método de captura según el sistema. |
 | `capture_win.py` | `InterceptionBackend` (driver, por dispositivo) y `HookBackend` (`WH_KEYBOARD_LL`). |
-| `capture_linux.py` | `EvdevBackend`: toma el numpad con `EVIOCGRAB`; con el modo macros toma también el teclado principal y reenvía el resto por `uinput`. |
+| `capture_linux.py` | `EvdevBackend`: toma el numpad con `EVIOCGRAB` (solo si está activo); el teclado principal se toma siempre que haya combinación (también en pausa) y todo lo que no se consume (todos los tipos de evento) se reenvía por su propia copia `uinput` (`send_linux.clone`, `UInput.from_device`). Los dispositivos con `EV_REL`/`EV_ABS` (puntero) y los que no admiten copia solo se leen. Al cerrar o desconectar se sueltan las teclas apretadas en el motor y en la copia. |
 | `capture_mac.py` | `IOKitBackend`: numpad con `IOHIDManager` en modo *seize* y teclado principal con `CGEventTap`. |
 | `send_*.py` | Envío de atajos: `SendInput`, `uinput` o eventos Quartz. |
 | `linux_perms.py` | Regla udev (`uaccess`) y botón «Dar permisos…» con `pkexec`. |

@@ -3,6 +3,12 @@
 Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
+### Cambiado
+- **Ctrl+Alt+M activa o pausa todo el modo macros**: ahora hace lo mismo que el botón ACTIVO / PAUSADO, desde cualquier programa, y muestra un aviso en pantalla. Activo: el numpad y, si su casilla está marcada, la fila 1–0, - y = lanzan tus acciones; pausado: escriben normal. La fila ya no se enciende aparte: sigue al modo macros. Las teclas virtuales del celular funcionan siempre, también en pausa. La combinación funciona aunque la fila de números esté desmarcada y también en pausa (para volver a activarlo). Se cambia en «Numpad y opciones» → «Modo macros» (antes estaba dentro de la fila de números); si ya la habías cambiado, se conserva. Aparece en el menú de la bandeja («Pausar (Ctrl+Alt+M)»).
+- **Teclado principal en Linux**: para que la combinación funcione también en pausa sin llegarle al programa del frente, la app toma el teclado principal siempre y reenvía todo lo demás por una copia virtual de ese mismo teclado (todas sus teclas, también Fn y multimedia). Los dispositivos que además mueven un puntero (mouse, touchpad o rueda en el mismo teclado) no se toman: solo se leen, así el puntero nunca se pierde. Si la copia virtual no tiene permisos o el teclado está tomado por otro programa, solo se lee (la combinación funciona, pero también llega a la ventana activa) y la app lo avisa una vez. Al desconectar un teclado con teclas apretadas, se sueltan solas. Con una combinación de solo Alt o Win, la app evita que al soltarla se abra el menú del escritorio. Si la combinación estaba vacía, sigue desactivada.
+
+### Corregido
+- **Grabar la combinación**: mientras se graba, la combinación actual ya no pausa ni activa el programa, y llega a la ventana para poder grabarla.
 
 ## [3.5.0] - 2026-10-25
 ### Añadido

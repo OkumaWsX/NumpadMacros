@@ -127,8 +127,8 @@ class InterceptionBackend:
             for d in range(1, self.MAX_KB + 1):
                 if self._hw(d).lower() == want:
                     found.add(d)
-        # Con la fila de números activada también se reciben los demás teclados
-        # (solo para la combinación del modo macros y las teclas 1–0, - y =)
+        # Con la combinación del modo macros también se reciben los demás teclados
+        # (solo para esa combinación y las teclas 1–0, - y =)
         need_all = learning or self.engine.main_wanted()
         all_kb = {d for d in range(1, self.MAX_KB + 1) if self._hw(d)} if need_all else set()
         wanted = all_kb | found

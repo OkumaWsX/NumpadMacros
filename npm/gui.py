@@ -1668,34 +1668,12 @@ class App:
             self.btn_perm.pack(side="left", padx=12)
 
         r += 1
-        ttk.Label(t, text="Fila de números (sin numpad)", style="H.TLabel").grid(
-            row=r, column=0, sticky="w", pady=(20, 0))
-        rm = self.cfg["row_mode"]
-        r += 1
-        self.row_on_var = tk.BooleanVar(value=rm.get("enabled", True))
-        ttk.Checkbutton(t, text="Usar 1–0, - y = del teclado principal en «modo macros»",
-                        variable=self.row_on_var, command=self._on_row_opts).grid(
-            row=r, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(t, text="Modo macros", style="H.TLabel").grid(row=r, column=0, sticky="w", pady=(20, 0))
         r += 1
         tg = ttk.Frame(t, style="Panel.TFrame")
-        tg.grid(row=r, column=0, sticky="w", pady=(6, 0))
-        ttk.Label(tg, text="Activar / desactivar con", style="Panel.TLabel").pack(side="left", padx=(0, 10))
-        try:
-            tmods, _tkid, tkey = parse_toggle(rm.get("toggle", ""))
-        except ValueError:
-            tmods, tkey = {"ctrl", "alt"}, "m"
-        self.tog_vars = {}
-        for m in MODIFIERS:
-            v = tk.BooleanVar(value=m in tmods)
-            self.tog_vars[m] = v
-            ttk.Checkbutton(tg, text=MOD_LABEL[m], variable=v, command=self._on_row_opts).pack(
-                side="left", padx=(0, 8))
-        ttk.Label(tg, text="+", style="Panel.TLabel").pack(side="left", padx=(0, 8))
-        self.tog_key = ttk.Combobox(tg, state="readonly", width=10,
-                                    values=[k.upper() for k in TOGGLE_CHOICES])
-        self.tog_key.set(tkey.upper())
-        self.tog_key.pack(side="left")
-        self.tog_key.bind("<<ComboboxSelected>>", lambda e: self._on_row_opts())
+        tg.grid(row=r, column=0, sticky="w", pady=(8, 0))
+        self.tog_vars, self.tog_key = self._build_combo_row(
+            tg, "Activar / pausar el modo macros con", self.cfg.get("hotkey", ""), "m", self._on_toggle_opts)
         r += 1
         self.btn_rec_tog = ttk.Button(t, text="⏺ Grabar pulsando las teclas",
                                       command=lambda: self._start_rec("toggle"))
@@ -1703,12 +1681,28 @@ class App:
         r += 1
         self.tog_warn = ttk.Label(t, style="Warn.TLabel", wraplength=520, justify="left")
         self.tog_warn.grid(row=r, column=0, sticky="w")
-        self._paint_tog_warn(rm.get("toggle", ""))
+        self._paint_tog_warn(self.cfg.get("hotkey", ""))
         r += 1
         ttk.Label(t, style="Muted.TLabel", wraplength=520, justify="left", text=(
-            "Con el modo macros apagado la fila de números escribe normal. Al activarlo, 1–0, - y = "
-            "lanzan lo que asignes en la fila de números del dibujo (cada banco tiene las suyas); "
-            "todas las demás teclas siguen escribiendo.")).grid(row=r, column=0, sticky="w", pady=(4, 0))
+            "Hace lo mismo que el botón ACTIVO / PAUSADO, desde cualquier programa (también en pausa, "
+            "para volver a activarlo). Activo: el numpad y, si la activas abajo, la fila de números "
+            "lanzan tus acciones. Pausado: escriben normal. Las teclas virtuales del celular "
+            "funcionan siempre.")).grid(row=r, column=0, sticky="w", pady=(4, 0))
+
+        r += 1
+        ttk.Label(t, text="Fila de números (sin numpad)", style="H.TLabel").grid(
+            row=r, column=0, sticky="w", pady=(20, 0))
+        rm = self.cfg["row_mode"]
+        r += 1
+        self.row_on_var = tk.BooleanVar(value=rm.get("enabled", True))
+        ttk.Checkbutton(t, text="Usar también 1–0, - y = del teclado principal en «modo macros»",
+                        variable=self.row_on_var, command=self._on_row_opts).grid(
+            row=r, column=0, sticky="w", pady=(8, 0))
+        r += 1
+        ttk.Label(t, style="Muted.TLabel", wraplength=520, justify="left", text=(
+            "Con el modo macros activo, 1–0, - y = lanzan lo que asignes en la fila de números del "
+            "dibujo (cada banco tiene las suyas); todas las demás teclas siguen escribiendo. En pausa, "
+            "o con esta casilla desmarcada, la fila escribe normal.")).grid(row=r, column=0, sticky="w", pady=(4, 0))
 
         r += 1
         ttk.Label(t, text="Teclas virtuales (app del celular)", style="H.TLabel").grid(
@@ -2980,7 +2974,7 @@ class App:
         cv.delete("all")
         enabled = self.cfg["row_mode"].get("enabled", True)
         try:
-            toggle = self._combo_text(self.cfg["row_mode"]["toggle"])
+            toggle = self._toggle_text() or "sin combinación"
         except Exception:
             toggle = "?"
         self.row_title.configure(
@@ -3178,7 +3172,7 @@ class App:
             note = "Lo que asignes aquí funciona en todos los bancos (ideal para cambiar de banco o detener sonidos)."
         if kid in ROW_IDS:
             row_note = (f"Tecla {ROW_LAYOUT[kid][0]} de la fila de números: funciona solo con el modo "
-                        f"macros activo ({self._combo_text(self.cfg['row_mode'].get('toggle', ''))}).")
+                        f"macros activo (ACTIVO, o {self._toggle_text() or 'su combinación'}).")
             if not self.cfg["row_mode"].get("enabled", True):
                 row_note = "La fila de números está desactivada: actívala en «Numpad y opciones»."
             note = (row_note + " " + note).strip()
@@ -3337,6 +3331,8 @@ class App:
         self.root.bind_all("<KeyPress>", self._rec_key, add="+")
         self.root.bind_all("<KeyRelease>", self._rec_release, add="+")
         self.root.focus_force()
+        if target != "keys":
+            self.engine.combos_off = True     # que la combinación llegue a la ventana y no pause
         btn = self.btn_rec_keys if target == "keys" else self.btn_rec_tog
         btn.configure(text="● Pulsa la combinación… (Esc cancela)")
         self._set_status("Pulsa en tu teclado la combinación que quieres (con Ctrl/Shift/Alt si quieres). "
@@ -3344,6 +3340,7 @@ class App:
 
     def _stop_rec(self, msg=None):
         self._rec = None
+        self.engine.combos_off = False
         self.root.unbind_all("<KeyPress>")
         self.root.unbind_all("<KeyRelease>")
         for name in ("btn_rec_keys", "btn_rec_tog"):
@@ -3389,7 +3386,7 @@ class App:
             for m, v in self.tog_vars.items():
                 v.set(m in self._rec_mods)
             self.tog_key.set(key.upper())
-            self._on_row_opts()
+            self._on_toggle_opts()
             self._set_status(f"Modo macros: {self._combo_text(combo)}")
         else:
             for m, v in self.mod_vars.items():
@@ -3450,22 +3447,28 @@ class App:
             self.nb.select(2)
             self._set_status("La fila de números está desactivada: actívala aquí.")
             return
-        self.engine.set_row_mode(not self.engine.row_mode)
+        self._toggle_active()               # la fila sigue al modo macros
 
     def _paint_row(self):
         rm = self.cfg["row_mode"]
         if not rm.get("enabled", True):
             self.chip_row.configure(text="", bg=C["bg"])
             return
-        tog = self._combo_text(rm.get("toggle", ""))
         if self.engine.row_mode:
-            self.chip_row.configure(text=f"⌨ Modo macros ACTIVO ({tog})", bg=C["accent"], fg=C["on_accent"])
+            self.chip_row.configure(text="⌨ Fila 1–0: macros", bg=C["accent"], fg=C["on_accent"])
         else:
-            self.chip_row.configure(text=f"⌨ Modo macros apagado ({tog})", bg=C["panel2"], fg=C["muted"])
+            self.chip_row.configure(text="⌨ Fila 1–0: escribe normal", bg=C["panel2"], fg=C["muted"])
 
     def _on_row_opts(self):
-        mods = [m for m, v in self.tog_vars.items() if v.get()]
-        combo = "+".join(mods + [self.tog_key.get().lower()])
+        with self.engine.lock:
+            self.cfg["row_mode"]["enabled"] = self.row_on_var.get()
+        self._save()
+        self._paint_row()
+        self._redraw()
+        self._load_editor()
+
+    def _on_toggle_opts(self):
+        combo = self._combo_from(self.tog_vars, self.tog_key)
         try:
             parse_toggle(combo)
         except ValueError as e:
@@ -3473,18 +3476,56 @@ class App:
             return
         self._paint_tog_warn(combo)
         with self.engine.lock:
-            self.cfg["row_mode"]["enabled"] = self.row_on_var.get()
-            self.cfg["row_mode"]["toggle"] = combo
-            if not self.row_on_var.get():
-                self.engine.row_mode = False
+            self.cfg["hotkey"] = combo
         self._save()
         self._paint_row()
-        self._redraw()
         self._load_editor()
+        self._rescan_keyboards()
+        if self.tray:
+            try:
+                self.tray.update_menu()
+            except Exception:
+                pass
+
+    def _build_combo_row(self, parent, text, combo, fallback, command):
+        """Fila «texto  [Ctrl] [Shift] [Alt] [Win] + [tecla]» para la combinación del modo macros.
+        Devuelve (casillas de modificadores, combobox de la tecla)."""
+        ttk.Label(parent, text=text, style="Panel.TLabel").pack(side="left", padx=(0, 10))
+        try:
+            tmods, _tkid, tkey = parse_toggle(combo)
+        except ValueError:
+            tmods, tkey = {"ctrl", "alt"}, fallback
+        mvars = {}
+        for m in MODIFIERS:
+            v = tk.BooleanVar(value=m in tmods)
+            mvars[m] = v
+            ttk.Checkbutton(parent, text=MOD_LABEL[m], variable=v, command=command).pack(side="left", padx=(0, 8))
+        ttk.Label(parent, text="+", style="Panel.TLabel").pack(side="left", padx=(0, 8))
+        key = ttk.Combobox(parent, state="readonly", width=10, values=[k.upper() for k in TOGGLE_CHOICES])
+        key.set(tkey.upper())
+        key.pack(side="left")
+        key.bind("<<ComboboxSelected>>", lambda e: command())
+        return mvars, key
+
+    @staticmethod
+    def _combo_from(mvars, key_cb):
+        return "+".join([m for m, v in mvars.items() if v.get()] + [key_cb.get().lower()])
+
+    def _rescan_keyboards(self):
+        """Se escuchan (o se dejan) los teclados principales según la combinación."""
         if self.backend and hasattr(self.backend, "_force_scan"):
             self.backend._force_scan = True
         if self.backend and hasattr(self.backend, "_next_scan"):
             self.backend._next_scan = 0
+
+    def _toggle_text(self):
+        """«Ctrl+Alt+M», o "" si la combinación no sirve."""
+        combo = self.cfg.get("hotkey", "")
+        try:
+            parse_toggle(combo)
+        except ValueError:
+            return ""
+        return self._combo_text(combo)
 
     def _on_phone_opts(self):
         only = self.only_var.get()
@@ -3511,11 +3552,14 @@ class App:
     def _paint_tog_warn(self, combo):
         try:
             mods, _key = parse_combo(combo)
-        except ValueError:
-            mods = ["?"]
+            parse_toggle(combo)
+        except (ValueError, AttributeError):
+            self.tog_warn.configure(text="Sin combinación: el modo macros solo se activa con el botón "
+                                         "ACTIVO. Elige una para activarla.")
+            return
         why = busy_reason(combo)
         if not mods:
-            txt = "Ojo: sin Ctrl/Alt/Shift/Win, esa tecla sola activará el modo macros y dejará de escribir."
+            txt = "Ojo: sin Ctrl/Alt/Shift/Win, esa tecla sola activará o pausará el modo macros y dejará de escribir."
         elif why:
             txt = f"Ojo: {self._combo_text(combo)} ya se usa para {why} en muchos programas."
         else:
@@ -3523,10 +3567,7 @@ class App:
         self.tog_warn.configure(text=txt)
 
     def _toggle_active(self):
-        new = not self.engine.active
-        if not new:
-            self.engine.release_all()
-        self.engine.set_active(new)
+        self.engine.toggle_active()             # repinta con el evento "active"
 
     def _paint_active(self):
         self._schedule_head()
@@ -3585,13 +3626,15 @@ class App:
             if self.cfg.get("bank_toast", True):
                 label = name if name.lower().startswith("banco") else f"Banco {idx + 1} · {name}"
                 self._show_toast(label)
-        elif kind == "row_mode":
-            self._paint_row()
-            self._show_toast("Modo macros: ACTIVADO" if ev[1] else "Modo macros: desactivado")
         elif kind == "active":
             self._paint_active()
-            self._set_status("Activo: el numpad lanza tus acciones." if ev[1]
-                             else "Pausado: el numpad funciona normal.")
+            self._paint_row()
+            hint = self._toggle_text()
+            hint = f" ({hint} para {'pausar' if ev[1] else 'activar'})" if hint else ""
+            self._set_status(("Activo: el numpad lanza tus acciones." if ev[1]
+                              else "Pausado: el numpad funciona normal.") + hint)
+        elif kind == "active_toggle":          # la combinación ya lo cambió en el motor: solo avisar
+            self._show_toast("Modo macros: ACTIVO" if ev[1] else "Modo macros: PAUSADO")
         elif kind == "device":
             with self.engine.lock:
                 self.cfg["device"] = ev[1]
@@ -4092,12 +4135,17 @@ class App:
         """Opciones del icono de la bandeja: [(texto, comando)] o None = separador."""
         return [
             ("Mostrar ventana", "show"),
-            ("Pausar" if self.engine.active else "Reanudar", "toggle"),
+            (self._active_label(), "toggle"),
             None,
             ("Ayuda y soporte", "help"),
             None,
             ("Salir de Numpad Macros", "quit"),
         ]
+
+    def _active_label(self):
+        label = "Pausar" if self.engine.active else "Reanudar"
+        combo = self._toggle_text()
+        return f"{label} ({combo})" if combo else label
 
     def _setup_tray(self):
         if IS_MAC:          # en macOS el icono de bandeja necesita el hilo principal (lo usa tkinter)
@@ -4138,8 +4186,7 @@ class App:
             return pystray.MenuItem(text, lambda: put(("tray", cmd)), **kw)
         menu = pystray.Menu(
             item("Mostrar ventana", "show", default=True),
-            pystray.MenuItem(lambda _i: "Pausar" if self.engine.active else "Reanudar",
-                             lambda: put(("tray", "toggle"))),
+            pystray.MenuItem(lambda _i: self._active_label(), lambda: put(("tray", "toggle"))),
             pystray.Menu.SEPARATOR,
             item("Ayuda y soporte", "help"),
             pystray.Menu.SEPARATOR,
