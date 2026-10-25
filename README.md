@@ -96,7 +96,7 @@ imágenes. Tiene su propio número de versión y sus propias
 [Releases](https://github.com/OkumaWsX/NumpadMacros/releases?q=Estudio+de+Temas&expanded=true)
 ([novedades](tools/estudio/CHANGELOG.md)).
 
-<p align="center"><a href="https://github.com/OkumaWsX/NumpadMacros/releases/download/estudio-v1.0.0/EstudioTemas-Windows-Setup.exe"><img src="https://img.shields.io/badge/%E2%AC%87%20Estudio%20de%20Temas-Windows-7e5fc4?style=for-the-badge&logo=windows" alt="Descargar el Estudio de Temas para Windows"></a></p>
+<p align="center"><a href="https://github.com/OkumaWsX/NumpadMacros/releases/download/estudio-v1.1.0/EstudioTemas-Windows-Setup.exe"><img src="https://img.shields.io/badge/%E2%AC%87%20Estudio%20de%20Temas-Windows-7e5fc4?style=for-the-badge&logo=windows" alt="Descargar el Estudio de Temas para Windows"></a></p>
 
 | Sistema | Archivo | Cómo se instala |
 |---|---|---|
