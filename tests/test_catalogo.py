@@ -53,12 +53,23 @@ def _theme(name, author, key, version="1.0"):
     return npt.write(th, key)
 
 
+
+def aislar_config(test, cfg):
+    """La carpeta de configuración de la prueba en ``cfg`` en todos los sistemas (en macOS no depende de
+    variables de entorno, y en Windows de APPDATA): se cambia ``config_dir`` donde se usa."""
+    carpeta = lambda: os.path.join(cfg, "NumpadMacros")  # noqa: E731
+    for mod in ("npm.config", "npm.catalogo", "npm.themes", "npm.sysutil"):
+        p = mock.patch(mod + ".config_dir", carpeta)
+        p.start()
+        test.addCleanup(p.stop)
+
 class CatalogoTest(unittest.TestCase):
     def setUp(self):
         self.cfg = tempfile.mkdtemp()
         self.web = tempfile.mkdtemp()
         self.env = mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": self.cfg, "APPDATA": self.cfg})
         self.env.start()
+        aislar_config(self, self.cfg)
         self.key = npt.SigningKey.generate("autor", "kenji")
         big = npt.Theme(name="Sakura", author="kenji", colors=dict(themes.BUILTIN[3][1]), version="1.0",
                         description="x" * 10)
@@ -257,10 +268,12 @@ class ArmadorCreadorTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         import importlib.util
-        path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                            "NumpadMacros-Temas", "tools", "armar_catalogo.py")
-        if not os.path.isfile(path):
-            raise unittest.SkipTest("no está el repositorio NumpadMacros-Temas junto a la app")
+        base = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        # la librería de temas junto a la app (carpeta «Librería de Temas» o el nombre del repositorio)
+        path = next((p for p in (os.path.join(base, d, "tools", "armar_catalogo.py")
+                                 for d in ("Librería de Temas", "NumpadMacros-Temas")) if os.path.isfile(p)), "")
+        if not path:
+            raise unittest.SkipTest("no está la librería de temas (NumpadMacros-Temas) junto a la app")
         spec = importlib.util.spec_from_file_location("armar_catalogo", path)
         cls.armar = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cls.armar)
@@ -381,6 +394,7 @@ class AvatarCreadorTest(unittest.TestCase):
         self.env = mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": self.cfg, "NUMPADMACROS_TEMAS_URL": self.cat})
         self.env.start()
         self.addCleanup(self.env.stop)
+        aislar_config(self, self.cfg)
 
     def _publicar(self, datos, sha=None, tam=None):
         with open(os.path.join(self.cat, "creadores", "ana", "avatar.png"), "wb") as f:
