@@ -5,7 +5,11 @@ import sys
 from PyInstaller.utils.hooks import collect_data_files
 
 HERE = os.path.abspath(SPECPATH)
-ROOT = os.path.dirname(os.path.dirname(HERE))
+ROOT = os.path.dirname(os.path.dirname(HERE))          # en el repositorio: tools/estudio → raíz
+if not os.path.isdir(os.path.join(ROOT, "npm")):       # en local: carpeta hermana «Numpad Macros X.Y.Z»
+    import glob
+    ROOT = next(iter(sorted(glob.glob(os.path.join(os.path.dirname(HERE), "Numpad Macros *", "")),
+                            reverse=True)), ROOT).rstrip(os.sep)
 datas = [(os.path.join(ROOT, "assets", "icon-estudio.png"), "."),
          (os.path.join(ROOT, "docs", "temas", "temas.json"), "."),
          # «Novedades de esta versión» (pestaña Acerca de)

@@ -34,7 +34,9 @@ Tiene sus propias [Releases](https://github.com/OkumaWsX/NumpadMacros/releases?q
    animado** (hasta 120 cuadros), con ajuste, opacidad, oscurecido y desenfoque. Las plantillas llenan los
    espacios de una vez.
 5. **Exportar**: crea el `.npt` cifrado y firmado. Con un editor de texto no se puede leer, y si alguien lo
-   modifica, Numpad Macros lo rechaza.
+   modifica, Numpad Macros lo rechaza. Con **«Enviar a la comunidad…»** (solo con firma de autor) guardas el
+   tema listo en `Documentos/Temas para enviar` y el Estudio te lleva paso a paso: copias el título y el
+   mensaje, abres el foro de Discord y subes el archivo. OkumaWsX revisa cada tema antes de publicarlo.
 6. **Proyecto `.nptproj`**: guarda tu trabajo sin cifrar para seguir editándolo después.
 
 **Más espacio para la vista previa**: con los interruptores «Panel izquierdo» y «Panel derecho» (arriba a la

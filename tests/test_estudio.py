@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(HERE, "tools", "estudio"))
+sys.path.insert(0, HERE)                       # el código del Estudio está en esta carpeta
 try:
     import PIL  # noqa: F401
     import logica as L  # noqa: E402
@@ -401,7 +401,7 @@ class ActualizarTest(unittest.TestCase):
         self.assertEqual(U.read_changelog(str(ruta) + ".no"), [])
 
     def test_changelog_real_tiene_la_version_actual(self):
-        ruta = os.path.join(HERE, "tools", "estudio", "CHANGELOG.md")
+        ruta = os.path.join(HERE, "CHANGELOG.md")
         e = U.read_changelog(ruta)
         self.assertTrue(e)
         self.assertTrue(U.changelog_for(e, "1.0.0")["groups"])
@@ -447,6 +447,82 @@ class DiscordAnuncioTest(unittest.TestCase):
         many = "\n".join(f"- cosa {i}" for i in range(9))
         self.assertIn("…y 4 más.", A.message("1.0.0", many))
         self.assertLessEqual(len(A.message("1.0.0", "- " + "x" * 5000)), 1900)
+
+
+@unittest.skipIf(L is None, "Pillow no está instalado")
+class EnvioComunidadTest(unittest.TestCase):
+    def _tema(self, **kw):
+        npt = L.npt
+        t = npt.Theme(name=kw.pop("name", "Mi Tema"), author=kw.pop("author", "Ana"),
+                      colors=L.builtin_themes()[0]["colores"], version=kw.pop("version", "1.0"), **kw)
+        return npt.write(t, kw.get("key") or npt.SigningKey.generate("autor", "Ana"))
+
+    def test_foro_url(self):
+        ok = ("https://discord.com/channels/123/456", "https://discord.gg/AbC-12", "https://discord.gg/abc/")
+        for u in ok:
+            self.assertTrue(L.foro_url_valida(u), u)
+        for u in ("", "   ", "http://discord.com/channels/1/2", "https://discord.com/channels/1",
+                  "https://discord.com.evil.com/channels/1/2", "https://evil.com/https://discord.gg/x",
+                  "https://discord.gg/", "javascript:alert(1)", "https://discord.com/channels/a/b"):
+            self.assertFalse(L.foro_url_valida(u), u)
+
+    def test_recortar(self):
+        self.assertEqual(L.recortar("hola", 10), "hola")
+        r = L.recortar("x" * 50, 10)
+        self.assertEqual((len(r), r[-1]), (10, "…"))
+
+    def test_nombre_y_carpeta(self):
+        self.assertEqual(L.nombre_envio("Mi Tema Ñandú!", "1.2"), "mi-tema-nandu-1.2.npt")
+        self.assertEqual(L.nombre_envio("###", "2"), "tema-2.npt")
+        old = os.environ.get("NPT_ENVIOS_DIR")
+        try:
+            os.environ["NPT_ENVIOS_DIR"] = "/tmp/x-envios"
+            self.assertEqual(L.carpeta_envios(), "/tmp/x-envios")
+            del os.environ["NPT_ENVIOS_DIR"]
+            self.assertEqual(os.path.basename(L.carpeta_envios()), L.CARPETA_ENVIOS)
+            self.assertTrue(os.path.isabs(L.carpeta_envios()))
+        finally:
+            os.environ.pop("NPT_ENVIOS_DIR", None)
+            if old is not None:
+                os.environ["NPT_ENVIOS_DIR"] = old
+
+    def test_armar_envio_limites(self):
+        t, m = L.armar_envio("Mi Tema", "1.0", "Ana", "Un tema azul.", "AAAA BBBB", "1.1.0")
+        self.assertEqual(t, "Mi Tema 1.0 · por Ana")
+        for s in ("Un tema azul.", "Autor: Ana", "Huella de la firma de autor: AAAA BBBB",
+                  "Requiere Numpad Macros 3.5.0 o superior", "Enviado desde Estudio de Temas 1.1.0"):
+            self.assertIn(s, m)
+        t, m = L.armar_envio("N" * 80, "1.0", "A" * 50, "d" * 5000, "H", "1.1.0")
+        self.assertLessEqual(len(t), 100)
+        self.assertTrue(t.endswith("…"))
+        self.assertLessEqual(len(m), 2000)
+        self.assertIn("Huella de la firma de autor: H", m)         # lo recortado es la descripción
+        self.assertTrue(m.endswith("Estudio de Temas 1.1.0"))
+        _t, m = L.armar_envio("T", "1", "", "", "H", "1.1.0")      # sin descripción ni autor
+        self.assertIn("Autor: Anónimo", m)
+        self.assertFalse(m.startswith("\n"))
+
+    def test_problemas_previos(self):
+        self.assertEqual(L.problemas_previos("Mi Tema", "1.0", "comunidad", "Ana"), [])
+        self.assertTrue(L.problemas_previos("Mi Tema", "1.0", "creador", "Ana"))
+        self.assertTrue(L.problemas_previos("", "1.0", "comunidad", "Ana"))
+        self.assertTrue(L.problemas_previos("a", "1.0", "comunidad", "Ana"))   # el identificador necesita 2+
+        for v in ("", "v1", "1.2.3.4", "1..2", "1.0-beta"):
+            self.assertTrue(L.problemas_previos("Mi Tema", v, "comunidad", "Ana"), v)
+        self.assertTrue(L.problemas_previos("Mi Tema", "1.0", "comunidad", "OkumaWsX"))
+        self.assertTrue(L.problemas_previos("Mi Tema", "1.0", "comunidad", "0kuma W5X"))
+
+    def test_problemas_archivo(self):
+        self.assertEqual(L.problemas_archivo(self._tema(), "1.0"), [])
+        self.assertTrue(L.problemas_archivo(self._tema(), "2.0"))                # versión distinta
+        self.assertTrue(L.problemas_archivo(b"no es un tema", "1.0"))
+        self.assertTrue(L.problemas_archivo(b"x" * (L.npt.MAX_SIZE + 1), "1.0"))  # demasiado grande
+        self.assertTrue(L.problemas_archivo(self._tema(author="OkumaWsX"), "1.0"))  # nombre reservado
+
+    def test_mostrar_archivo_sin_gestor(self):
+        from unittest import mock
+        with mock.patch("shutil.which", return_value=None), mock.patch.object(L.sys, "platform", "linux"):
+            self.assertFalse(L.mostrar_archivo("/tmp/no-existe/tema.npt"))
 
 
 if __name__ == "__main__":

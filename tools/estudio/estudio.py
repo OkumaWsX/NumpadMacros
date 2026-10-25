@@ -15,7 +15,6 @@ import sys
 import threading
 import time
 import tkinter as tk
-import webbrowser
 from tkinter import colorchooser, filedialog, messagebox, ttk
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -83,7 +82,10 @@ try:
 except Exception:          # sin la librería se elige la imagen con un botón
     TkinterDnD = None
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
+# Foro de Discord (canal de tipo foro) donde la comunidad manda sus temas. Vacío = aún sin configurar.
+# Debe ser https://discord.com/channels/<id>/<id> o https://discord.gg/<código>.
+FORO_TEMAS_URL = "https://discord.com/channels/411199717708398622/1563795767494189056"
 APP = "Estudio de Temas"
 PROBE = "--probar" in sys.argv       # prueba automática: jamás toca la red
 if _IMPORT_ERROR:
@@ -1402,6 +1404,12 @@ class App:
         self.exp_btn = ttk.Button(line, text=self.export_label, style="Accent.TButton", command=self.export)
         self.exp_btn.pack(side="left")
         ttk.Button(line, text="Volver a editar", command=lambda: self.show("edit")).pack(side="left", padx=8)
+        line2 = tk.Frame(a, bg=C["panel"])
+        line2.pack(fill="x", pady=(8, 0))
+        self.send_btn = ttk.Button(line2, text="Enviar a la comunidad…", command=self.send_community)
+        self.send_btn.pack(side="left")
+        self.send_hint = self.lbl(a, "", -2, color="muted", wrap=440)
+        self.send_hint.pack(fill="x", pady=(4, 0))
         self.exp_done = tk.Frame(a, bg=C["ok_bg"], highlightthickness=1, highlightbackground="#2f6b4f", padx=10, pady=8)
         self.exp_done_t = self.lbl(self.exp_done, "", 0, True, bg="ok_bg")
         self.exp_done_t.pack(fill="x")
@@ -2189,6 +2197,24 @@ class App:
             self._paint_checks(checks)
         blocked = bool(bad) or reserved or kb > npt.MAX_FILE
         cfg(self.exp_btn, state="disabled" if blocked else "normal")
+        # «Enviar a la comunidad…»: solo con firma de autor; el motivo se dice debajo del botón
+        pre = L.problemas_previos(self.meta["nombre"], self.meta["version"], self.mode, self.author)
+        if self.mode == "creador":
+            why = "Los temas oficiales se publican con el Publicador."
+        elif bad:
+            why = "Arregla primero lo ilegible en «Editar tema»."
+        elif kb > npt.MAX_FILE:
+            why = f"El tema pesa {kb // 1024} KB y el máximo es 5 MB."
+        elif pre:
+            why = pre[0]
+        elif not K.has_author_key():
+            why = "Aún no tienes firma de autor: se creará al enviar."
+        else:
+            why = "Guarda el tema firmado y te guía para mandarlo al foro de la comunidad; OkumaWsX lo revisa antes de publicarlo."
+        cfg(self.send_btn, state="disabled" if (self.mode == "creador" or bad or kb > npt.MAX_FILE or pre)
+            else "normal")
+        cfg(self.send_hint, text=why, fg=C["warn_text"] if (bad or pre or kb > npt.MAX_FILE) and self.mode != "creador"
+            else C["muted"])
         if not self.file_var.get() or self.file_var.get() == getattr(self, "_auto_file", ""):
             self._auto_file = L.slug(name) + npt.EXTENSION
             self.file_var.set(self._auto_file)
@@ -2758,23 +2784,30 @@ class App:
                          sections=L.sections_clean(self.sections),
                          gif_pause=self.gif_pause)
 
-    def export(self):
+    def _make_npt(self):
+        """El tema firmado: (tema, bytes del .npt), o None si se canceló o falló (ya se avisó)."""
         try:
             key = self.signing_key()
         except _Cancel:
-            return
+            return None
         except Exception as e:
             messagebox.showerror(APP, f"No se pudo usar la clave de firma:\n{e}", parent=self.root)
-            return
+            return None
         if key is None:
-            return
+            return None
         theme = self.build_theme_meta()
         theme.images = self.final_images()
         try:
-            data = npt.write(theme, key)
+            return theme, npt.write(theme, key)
         except npt.NptError as e:
             messagebox.showerror(APP, str(e), parent=self.root)
+            return None
+
+    def export(self):
+        made = self._make_npt()
+        if made is None:
             return
+        theme, data = made
         fname = self.file_var.get().strip() or L.slug(theme.name) + npt.EXTENSION
         if not fname.lower().endswith(npt.EXTENSION):
             fname += npt.EXTENSION
@@ -2795,6 +2828,114 @@ class App:
                                        f"Macros lo mostrará como «{res.label}».")
         self.exp_done.pack(fill="x", pady=(10, 0))
         self.toast(f"Tema exportado: {path}", "ok")
+
+    # ---------------------------------------------------------------- enviar a la comunidad
+    def send_community(self):
+        """Revisa lo que exige el catálogo, guarda el .npt firmado en la carpeta de envíos y abre la guía."""
+        if self.mode == "creador":
+            messagebox.showinfo(APP, "Los temas oficiales se publican con el Publicador.", parent=self.root)
+            return
+        pre = L.problemas_previos(self.meta["nombre"], self.meta["version"], self.mode, self.author)
+        if pre:
+            messagebox.showwarning(APP, "Todavía no se puede enviar:\n\n• " + "\n• ".join(pre), parent=self.root)
+            return
+        made = self._make_npt()
+        if made is None:
+            return
+        theme, data = made
+        ver = self.meta["version"].strip()
+        bad = L.problemas_archivo(data, ver)
+        if bad:
+            messagebox.showwarning(APP, "El catálogo de la comunidad no aceptaría este tema:\n\n• "
+                                   + "\n• ".join(bad), parent=self.root)
+            return
+        path = os.path.join(L.carpeta_envios(), L.nombre_envio(theme.name, ver))
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as fh:
+                fh.write(data)
+        except OSError as e:
+            messagebox.showerror(APP, f"No se pudo guardar el tema en\n{os.path.dirname(path)}\n\n{e}",
+                                 parent=self.root)
+            return
+        res = npt.read(data)
+        title, msg = L.armar_envio(theme.name, ver, theme.author, theme.description,
+                                   npt.fingerprint(res.author_key), VERSION)
+        self.toast(f"Tema listo para enviar: {path}", "ok")
+        self.send_dialog(title, msg, path)
+
+    def send_dialog(self, title, msg, path):
+        """Los 3 pasos: copiar el texto, abrir el foro y crear la publicación con el archivo."""
+        d = Dialog(self.root, "Enviar a la comunidad")
+        self.lbl(d.body, "Enviar a la comunidad", 4, True).pack(anchor="w")
+        self.lbl(d.body, "Tu tema ya está firmado y guardado. Faltan tres pasos para mandarlo al foro.", -1,
+                 color="muted", wrap=520).pack(anchor="w", pady=(2, 10))
+
+        def step(n, head):
+            row = tk.Frame(d.body, bg=C["panel"])
+            row.pack(fill="x", pady=(8, 0))
+            tk.Label(row, text=str(n), bg=C["acc"], fg=C["on_acc"], font=fnt(0, True), width=2).pack(
+                side="left", anchor="n", padx=(0, 10))
+            col = tk.Frame(row, bg=C["panel"])
+            col.pack(side="left", fill="x", expand=True)
+            self.lbl(col, head, 1, True).pack(anchor="w")
+            return col
+
+        def copy(text, what):
+            self.root.clipboard_clear()
+            self.root.clipboard_append(text)
+            self.toast(f"{what} copiado.", "ok")
+
+        def readonly(parent, text, height):
+            t = tk.Text(parent, width=64, height=height, wrap="word", bg=C["panel2"], fg=C["text"],
+                        relief="flat", highlightthickness=1, highlightbackground=C["line"], font=fnt(-1),
+                        padx=8, pady=6, insertbackground=C["text"])
+            t.insert("1.0", text)
+            t.configure(state="disabled")           # solo lectura (se puede seleccionar y copiar)
+            t.pack(fill="x", pady=(4, 0))
+            return t
+
+        c = step(1, "Copia el texto")
+        self.lbl(c, "Título y mensaje de la publicación, ya listos:", -1, color="muted").pack(anchor="w")
+        readonly(c, title, 1)
+        readonly(c, msg, min(9, msg.count("\n") + 2))
+        bl = tk.Frame(c, bg=C["panel"])
+        bl.pack(anchor="w", pady=(6, 0))
+        ttk.Button(bl, text="Copiar texto", style="Accent.TButton", command=lambda: copy(msg, "Texto")).pack(side="left")
+        ttk.Button(bl, text="Copiar título", command=lambda: copy(title, "Título")).pack(side="left", padx=8)
+
+        c = step(2, "Abre el foro")
+        url = FORO_TEMAS_URL.strip()
+        ok_url = L.foro_url_valida(url)
+        if ok_url:
+            self.lbl(c, "Se abre en tu navegador, en el foro de temas del Discord de OkumaWsX.", -1, color="muted",
+                     wrap=500).pack(anchor="w")
+        else:
+            self.lbl(c, "El foro todavía no está configurado en esta versión." if not url else
+                     "El enlace del foro configurado en esta versión no es válido.", -1, color="warn_text",
+                     wrap=500).pack(anchor="w")
+        b = ttk.Button(c, text="Abrir el foro de Discord", command=lambda: self._open_url(url))
+        b.pack(anchor="w", pady=(6, 0))
+        if not ok_url:
+            b.configure(state="disabled")
+
+        c = step(3, "Crea la publicación")
+        self.lbl(c, "Pulsa «Nueva publicación», pega el título y el texto, y arrastra el archivo.", -1,
+                 color="muted", wrap=500).pack(anchor="w")
+        pl = tk.Label(c, text=path, bg=C["panel"], fg=C["text"], font=fnt(-1, mono=True), anchor="w",
+                      justify="left", wraplength=500)
+        pl.pack(anchor="w", pady=(4, 0))
+        ttk.Button(c, text="Mostrar el archivo", command=lambda: self.show_file(path)).pack(anchor="w", pady=(6, 0))
+
+        self.lbl(d.body, "OkumaWsX revisa cada tema antes de que aparezca en Numpad Macros.", -1, color="muted",
+                 wrap=520).pack(anchor="w", pady=(14, 0))
+        d.button("Cerrar", d.close, accent=True)
+        self.send_dlg = d
+        d.wait()
+
+    def show_file(self, path):
+        if not L.mostrar_archivo(path):
+            self.toast(f"No pude abrir la carpeta. El archivo está en {path}", "bad")
 
     def signing_key(self):
         kind = "oficial" if self.mode == "creador" else "autor"
@@ -3079,7 +3220,8 @@ class App:
 
     def _open_url(self, url):
         try:
-            webbrowser.open(url)
+            if not L.abrir_enlace(url):
+                raise OSError("sin navegador")
         except Exception:
             self.toast("No pude abrir el navegador.", "bad")
 

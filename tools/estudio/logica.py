@@ -10,11 +10,17 @@ import io
 import json
 import os
 import re
+import subprocess
 import sys
 import unicodedata
+from urllib.parse import quote
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(os.path.dirname(HERE))
+ROOT = os.path.dirname(os.path.dirname(HERE))          # en el repositorio: tools/estudio → raíz
+if not os.path.isdir(os.path.join(ROOT, "npm")):       # en local: carpeta hermana «Numpad Macros X.Y.Z»
+    import glob
+    ROOT = next(iter(sorted(glob.glob(os.path.join(os.path.dirname(HERE), "Numpad Macros *", "")),
+                            reverse=True)), ROOT).rstrip(os.sep)
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 from npm import npt  # noqa: E402
@@ -742,3 +748,181 @@ def load_project(path: str) -> dict:
     if data.get("imagen_colores"):
         data["imagen_colores"] = base64.b64decode(data["imagen_colores"])
     return data
+
+
+# ---------------------------------------------------------------- enviar a la comunidad
+# Lo que Discord admite en una publicación de foro, y lo que exige el catálogo de la Librería de Temas
+# (tools/armar_catalogo.py) a un tema de la comunidad.
+DISCORD_TITULO_MAX = 100
+DISCORD_MENSAJE_MAX = 2000
+VERSION_OK = re.compile(r"^\d+(\.\d+){0,2}$")                       # 1, 1.2 o 1.2.3
+ID_TEMA_OK = re.compile(r"^[a-z0-9][a-z0-9-]{1,40}$")                # el «slug» es la carpeta del catálogo
+REQUIERE_APP = "3.5.0"                                              # versión mínima de Numpad Macros (la del catálogo)
+CARPETA_ENVIOS = "Temas para enviar"
+_FORO_OK = re.compile(r"^https://(discord\.com/channels/\d+/\d+|discord\.gg/[A-Za-z0-9-]+)/?$")
+
+
+def foro_url_valida(url: str) -> bool:
+    """¿Es un enlace de Discord que se puede abrir? (canal/foro o invitación; nada más)."""
+    return bool(_FORO_OK.match((url or "").strip()))
+
+
+def recortar(texto: str, maximo: int) -> str:
+    """Recorta a ``maximo`` caracteres; si se cortó, termina en «…» (sin pasarse del máximo)."""
+    texto = texto or ""
+    if len(texto) <= maximo:
+        return texto
+    return texto[:max(0, maximo - 1)].rstrip() + "…"
+
+
+def nombre_envio(nombre: str, version: str) -> str:
+    """Nombre del archivo que se envía: ``<slug>-<versión>.npt``."""
+    ver = re.sub(r"[^0-9.]", "", str(version)) or "1.0"
+    return f"{slug(nombre)}-{ver}{npt.EXTENSION}"
+
+
+def _carpeta_documentos() -> str:
+    """La carpeta de documentos del sistema si existe; si no, la carpeta personal."""
+    casa = os.path.expanduser("~")
+    if sys.platform == "win32":
+        try:                                    # respeta la carpeta movida (OneDrive…)
+            import ctypes
+            from ctypes import wintypes
+            buf = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
+            if ctypes.windll.shell32.SHGetFolderPathW(None, 5, None, 0, buf) == 0 and os.path.isdir(buf.value):
+                return buf.value
+        except Exception:
+            pass
+    elif sys.platform != "darwin":              # Linux: ~/.config/user-dirs.dirs (XDG_DOCUMENTS_DIR)
+        conf = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.join(casa, ".config"), "user-dirs.dirs")
+        try:
+            with open(conf, encoding="utf-8") as f:
+                for linea in f:
+                    m = re.match(r'\s*XDG_DOCUMENTS_DIR="?([^"\n]+)"?', linea)
+                    if m:
+                        d = m.group(1).replace("$HOME", casa)
+                        if os.path.isdir(d):
+                            return d
+        except OSError:
+            pass
+    for nombre in ("Documents", "Documentos"):
+        d = os.path.join(casa, nombre)
+        if os.path.isdir(d):
+            return d
+    return casa
+
+
+def carpeta_envios() -> str:
+    """Carpeta fija donde queda el tema listo para enviar. ``NPT_ENVIOS_DIR`` la redirige (pruebas)."""
+    return os.environ.get("NPT_ENVIOS_DIR") or os.path.join(_carpeta_documentos(), CARPETA_ENVIOS)
+
+
+def problemas_previos(nombre: str, version: str, modo: str, autor: str) -> list[str]:
+    """Qué impide enviar el tema a la comunidad, antes de exportar (lista vacía = todo bien)."""
+    out = []
+    if modo == "creador":
+        out.append("Los temas oficiales se publican con el Publicador, no se envían a la comunidad.")
+    if not (nombre or "").strip() or not ID_TEMA_OK.match(slug(nombre)):
+        out.append("El nombre del tema debe tener al menos 2 letras o números (el catálogo lo usa como identificador).")
+    if not VERSION_OK.match((version or "").strip()):
+        out.append(f"La versión «{version}» no es válida: usa números separados por puntos (1.0, 1.2.3).")
+    if modo != "creador" and npt.is_reserved_name(autor or ""):
+        out.append("Ese nombre de autor está reservado para el creador oficial: cámbialo en «Mi firma de autor».")
+    return out
+
+
+def problemas_archivo(data: bytes, version: str) -> list[str]:
+    """Lo mismo que revisa el catálogo sobre el ``.npt`` ya firmado (tamaño, firma, oficial, versión)."""
+    if len(data) > npt.MAX_SIZE:
+        return [f"El tema pesa {len(data) // 1024} KB y el máximo es {npt.MAX_SIZE // 1024} KB."]
+    try:
+        r = npt.read(data)
+    except npt.NptError as e:
+        return [f"El archivo no es un tema válido ({e})."]
+    out = []
+    if r.official:
+        out.append("El tema salió con la firma oficial: los temas oficiales se publican con el Publicador.")
+    elif r.format < 2 or not r.author_key:
+        out.append("El tema no lleva la firma de autor: el catálogo exige que venga firmado por su autor.")
+    if r.reserved_name:
+        out.append("El tema usa el nombre del creador oficial sin serlo.")
+    if r.theme.version != (version or "").strip():
+        out.append(f"La versión del archivo ({r.theme.version}) no coincide con la del tema ({version}).")
+    return out
+
+
+def armar_envio(nombre: str, version: str, autor: str, descripcion: str, huella: str,
+                version_estudio: str, requiere_app: str = REQUIERE_APP) -> tuple[str, str]:
+    """Título y mensaje de la publicación del foro, ya dentro de los límites de Discord."""
+    autor = (autor or "").strip() or "Anónimo"
+    titulo = recortar(f"{nombre.strip() or 'Sin nombre'} {version} · por {autor}", DISCORD_TITULO_MAX)
+    datos = [f"Autor: {autor}", f"Huella de la firma de autor: {huella}"]
+    if requiere_app:
+        datos.append(f"Requiere Numpad Macros {requiere_app} o superior")
+    datos += ["", f"Enviado desde Estudio de Temas {version_estudio}"]
+    pie = "\n".join(datos)
+    desc = (descripcion or "").strip()
+    if not desc:
+        return titulo, pie
+    # lo que se recorta es la descripción; los datos de la firma siempre van completos
+    return titulo, recortar(desc, DISCORD_MENSAJE_MAX - len(pie) - 2) + "\n\n" + pie
+
+
+def _entorno_limpio() -> dict:
+    """Entorno para lanzar programas del sistema desde la app empaquetada (PyInstaller cambia
+    LD_LIBRARY_PATH y eso rompe el navegador y el gestor de archivos)."""
+    env = os.environ.copy()
+    if getattr(sys, "frozen", False):
+        orig = env.pop("LD_LIBRARY_PATH_ORIG", None)
+        if orig is not None:
+            env["LD_LIBRARY_PATH"] = orig
+        else:
+            env.pop("LD_LIBRARY_PATH", None)
+    return env
+
+
+def abrir_enlace(url: str) -> bool:
+    """Abre un enlace con el navegador del sistema (en Linux empaquetado, con el entorno limpio)."""
+    if sys.platform.startswith("linux") and getattr(sys, "frozen", False):
+        import shutil
+        opener = shutil.which("xdg-open")
+        if opener:
+            try:
+                subprocess.Popen([opener, url], env=_entorno_limpio(), stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL, start_new_session=True)
+                return True
+            except OSError:
+                pass
+    import webbrowser
+    return bool(webbrowser.open(url, new=2))
+
+
+def mostrar_archivo(path: str) -> bool:
+    """Abre la carpeta del archivo, dejándolo seleccionado si el gestor de archivos lo permite."""
+    import shutil
+    path = os.path.abspath(path)
+    carpeta = os.path.dirname(path)
+    env = _entorno_limpio()
+    try:
+        if sys.platform == "win32":
+            subprocess.Popen(["explorer", "/select,", path])
+            return True
+        if sys.platform == "darwin":
+            subprocess.Popen(["open", "-R", path])
+            return True
+        dbus = shutil.which("dbus-send")
+        if dbus and os.path.exists(path):          # Dolphin, Nautilus, Thunar…: la carpeta con el archivo marcado
+            r = subprocess.run([dbus, "--session", "--print-reply", "--dest=org.freedesktop.FileManager1",
+                                "/org/freedesktop/FileManager1", "org.freedesktop.FileManager1.ShowItems",
+                                f"array:string:file://{quote(path)}", "string:"],
+                               env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=4)
+            if r.returncode == 0:
+                return True
+        opener = shutil.which("xdg-open")
+        if opener:
+            subprocess.Popen([opener, carpeta], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             start_new_session=True)
+            return True
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return False

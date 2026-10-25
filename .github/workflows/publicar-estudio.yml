@@ -8,7 +8,8 @@
 # 2. compilar:  pruebas + Windows (instalador y portátil), Linux y macOS.
 # 3. publicar:  solo si todo salió bien: crea la etiqueta estudio-vX.Y.Z y la Release
 #               «Estudio de Temas X.Y.Z» con sus huellas SHA256. No se marca como «la última»
-#               del repositorio: esa siempre es la de Numpad Macros (y su actualizador la ignora).
+#               del repositorio (--latest=false) y, por si GitHub la recalcula, al final se vuelve a
+#               poner en la última versión estable de Numpad Macros: «Latest» siempre es de la app.
 #               Si «Anunciar en mi Discord» está marcado, avisa en el canal del webhook guardado en el
 #               secreto DISCORD_WEBHOOK_ESTUDIO (si falla, la versión igual queda publicada).
 #
@@ -177,6 +178,24 @@ jobs:
             --notes-file prep/notas.md $flags
           echo "## ✓ Estudio de Temas $VERSION publicado" >> "$GITHUB_STEP_SUMMARY"
           echo "https://github.com/${{ github.repository }}/releases/tag/estudio-v$VERSION" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Dejar «Latest» en Numpad Macros
+        # Las Releases del Estudio se crean con --latest=false, pero GitHub puede volver a calcular la
+        # «última» del repositorio con su regla antigua (la más reciente que no sea beta), por ejemplo al
+        # borrar un borrador. Entonces la «Latest» quedaba en el Estudio y los enlaces «releases/latest»
+        # llevaban al Estudio. Aquí se vuelve a poner en la última vX.Y.Z estable de Numpad Macros.
+        if: ${{ always() }}
+        continue-on-error: true
+        run: |
+          app=$(gh release list --exclude-drafts --exclude-pre-releases --limit 100 --json tagName \
+            --jq '[.[].tagName | select(test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))] | sort_by(ltrimstr("v") | split(".") | map(tonumber)) | last // empty')
+          latest=$(gh release view --json tagName --jq .tagName 2>/dev/null || true)
+          if [ -n "$app" ] && [ "$latest" != "$app" ]; then
+            gh release edit "$app" --latest
+            echo "«Latest» vuelve a ser Numpad Macros $app (estaba en ${latest:-ninguna})."
+          else
+            echo "«Latest»: ${latest:-ninguna} (sin cambios)."
+          fi
 
       - name: Anunciar en Discord
         if: ${{ !inputs.privado && inputs.discord }}

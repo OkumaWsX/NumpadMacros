@@ -4,6 +4,8 @@ El Estudio de Temas es un programa aparte de Numpad Macros, con su propio númer
 temas `.npt` que Numpad Macros importa. Formato: [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
 ## [Sin publicar]
+### Añadido
+- **Enviar a la comunidad**: en «4 · Exportar», el botón «Enviar a la comunidad…» revisa tu tema, lo guarda firmado en `Documentos/Temas para enviar` y te guía en tres pasos (copiar el texto, abrir el foro de Discord y crear la publicación con el archivo). OkumaWsX revisa cada tema antes de que aparezca en Numpad Macros.
 
 ## [1.0.0] - 2026-10-24
 ### Añadido
