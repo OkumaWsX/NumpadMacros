@@ -3,6 +3,8 @@
 Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
+
+## [3.5.0] - 2026-10-25
 ### Añadido
 - **Temas para descargar**: la pestaña Temas muestra, junto a tus temas, los del catálogo en línea (repositorio NumpadMacros-Temas). Los que aún no tienes se ven translúcidos, con el sello **OFICIAL** o **COMUNIDAD** (con su autor y su huella de firma). Un solo botón: **Descargar** → se llena con el progreso (con el mouse encima dice «Descargando…» y un clic cancela) → **Aplicar** → **En uso**; también **Descargar y aplicar**, y **Actualizar** cuando sale una versión nueva de un tema que tienes. Nada se instala sin comprobar su huella SHA256 y su firma; si la conexión se corta, reintenta solo y continúa donde quedó, y si no puede, ofrece «Reintentar» sin tocar tu tema actual. Sin internet se usa la última lista guardada.
 - **Estudio de Temas desde el instalador**: al instalar por primera vez eliges si quieres también el Estudio de Temas (editor para crear tus propios temas). En Windows se descarga de GitHub y se comprueba con su huella SHA256 antes de instalarlo; en Linux, `instalar_linux.sh` lo pregunta (o usa `--estudio` / `--sin-estudio`). Si ya tienes Numpad Macros, la casilla «Estudio de Temas» en Actualizaciones lo instala.
@@ -141,6 +143,7 @@ Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https:
 ### Añadido
 - Primera versión para Windows: numpad como panel de sonidos de Soundpad y atajos, con bancos.
 
+[3.5.0]: https://github.com/OkumaWsX/NumpadMacros/releases/tag/v3.5.0
 [3.4.4]: https://github.com/OkumaWsX/NumpadMacros/releases/tag/v3.4.4
 [3.4.3]: https://github.com/OkumaWsX/NumpadMacros/releases/tag/v3.4.3
 [3.4.2]: https://github.com/OkumaWsX/NumpadMacros/releases/tag/v3.4.2
