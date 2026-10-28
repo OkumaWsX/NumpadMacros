@@ -225,6 +225,15 @@ Numpad Macros es gratis. Si te sirve y quieres apoyar su desarrollo:
 
 <p align="center"><a href="https://ceneka.net/OkumaWsX"><img src="https://img.shields.io/badge/%E2%99%A5%20Donar-ceneka.net%2FOkumaWsX-f2a33a?style=for-the-badge" alt="Donar"></a></p>
 
+## Reportes de errores y privacidad
+
+Si algo falla, Numpad Macros lo anota en `registro.log` (en su carpeta de configuración) y puede enviar un
+reporte al creador: el error, la versión, el sistema y los últimos pasos antes del fallo. Antes de salir
+se quitan el nombre de usuario, la carpeta personal y los nombres de tus archivos; nunca se envían tus
+sonidos, tu configuración ni los códigos del celular. Al primer error la app pregunta; se cambia en
+*Numpad y opciones → Reportes de errores* («Preguntar», «Enviar solo» o «No enviar»). Detalles técnicos:
+[docs/REPORTES.md](docs/REPORTES.md).
+
 ## Licencia
 
 Numpad Macros es software libre bajo la **[GNU Lesser General Public License v3.0](LICENSE)** (o posterior). La LGPL complementa a la [GNU GPL v3](COPYING), incluida también en el repositorio.

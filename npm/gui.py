@@ -17,6 +17,7 @@ from .capture import PLATFORM, BackendError, describe_device
 from .engine import Engine
 from .dialogs import NewsDialog, UpdateDialog
 from . import themes
+from . import reportes
 from .devices_tab import DevicesTab
 from .sound_picker import SoundPicker
 from .theme_art import CanvasPill, CanvasText, ThemeArt
@@ -299,6 +300,7 @@ class App:
         self._update_bank_label()
         self.root.after(30, self._poll)
         self.root.after(200, self._tick_meters)
+        reportes.attach(self)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self._setup_tray()
         if start_minimized and self.tray:
@@ -1368,8 +1370,11 @@ class App:
 
         for i, (name, sub, url) in enumerate((about.INSTAGRAM, about.DISCORD, about.GITHUB)):
             self._link_card(t, name, sub, url).grid(row=2 + i, column=0, sticky="ew", pady=(0, 6))
-        ttk.Label(t, style="Muted.TLabel", text=f"Software libre bajo licencia {about.LICENSE}.").grid(
-            row=5, column=0, sticky="nw", pady=(4, 0))
+        lic = ttk.Frame(t)
+        lic.grid(row=5, column=0, sticky="ew", pady=(4, 0))
+        ttk.Label(lic, style="Muted.TLabel", text=f"Software libre bajo licencia {about.LICENSE}.").pack(
+            side="left", anchor="n")
+        ttk.Button(lic, text="Informar un problema…", command=self._report_problem).pack(side="right")
 
         up = ttk.Frame(t, style="Card.TFrame", padding=(16, 12))
         up.grid(row=6, column=0, sticky="ew", pady=(6, 0))
@@ -1752,6 +1757,39 @@ class App:
             "Al pausar o cerrar el programa todo vuelve a funcionar normal. Si por error elegiste "
             "tu teclado principal como numpad, pulsa PAUSADO con el mouse y vuelve a detectarlo.")
         ).grid(row=r, column=0, sticky="w", pady=(16, 0))
+
+        # reportes de errores
+        r += 1
+        ttk.Label(t, text="Reportes de errores", style="H.TLabel").grid(row=r, column=0, sticky="w", pady=(20, 0))
+        r += 1
+        ttk.Label(t, style="Muted.TLabel", wraplength=520, justify="left", text=(
+            "Si algo falla, la app puede enviar un reporte al creador para arreglarlo en una próxima versión: "
+            "el error, la versión, tu sistema y los últimos pasos. Nunca tus sonidos, tu nombre de usuario "
+            "ni tus archivos.")).grid(row=r, column=0, sticky="w", pady=(4, 0))
+        r += 1
+        rp = ttk.Frame(t)
+        rp.grid(row=r, column=0, sticky="w", pady=(8, 0))
+        ttk.Label(rp, text="Cuando haya un error:").pack(side="left")
+        self.rep_var = tk.StringVar(value=self.cfg.get("reportes", {}).get("modo", "preguntar"))
+        for val, txt in (("preguntar", "Preguntar"), ("siempre", "Enviar solo"), ("nunca", "No enviar")):
+            ttk.Radiobutton(rp, text=txt, value=val, variable=self.rep_var,
+                            command=lambda: reportes.set_mode(self.rep_var.get())).pack(side="left", padx=(10, 0))
+        r += 1
+        rb = ttk.Frame(t)
+        rb.grid(row=r, column=0, sticky="w", pady=(10, 0))
+        ttk.Button(rb, text="Informar un problema…", command=self._report_problem).pack(side="left")
+        ttk.Button(rb, text="Abrir el registro", command=self._open_log).pack(side="left", padx=(8, 0))
+
+    def _report_problem(self):
+        from .dialogs import ProblemDialog
+        ProblemDialog(self)
+
+    def _open_log(self):
+        path = reportes.log_path()
+        if not os.path.exists(path):
+            open(path, "a").close()
+        import pathlib
+        self._open(pathlib.Path(path).as_uri())
 
     # ---------------------------------------------------------------- pestaña audio
     def _build_audio_tab(self):
@@ -2339,6 +2377,7 @@ class App:
             self._set_status(f"Asignado «{title_of(paths[0])}»; los otros {len(paths) - 1} quedaron en la biblioteca.")
 
     def _assign_file(self, item, rebuild=True):
+        reportes.paso("asignó un sonido a la tecla")
         old = self._current_action() or {}
         keep = old if old.get("type") == "file" else {}
         act = {"type": "file", "path": item["path"], "title": item["title"],
@@ -2414,6 +2453,7 @@ class App:
 
     def _test_action(self):
         """▶ Probar / ■ Detener: si el sonido de esta tecla ya está sonando, lo detiene."""
+        reportes.paso("pulsó Probar/Detener")
         act = self._current_action()
         if not act:
             return
@@ -2933,6 +2973,7 @@ class App:
         return bool(self.cfg.get("phone", {}).get("only"))
 
     def _set_view(self, view):
+        reportes.paso(f"vista {view}")
         if self._phone_only():
             view = "virt"
         self.left_view = view
@@ -3040,6 +3081,10 @@ class App:
         self._update_assign_label()
 
     def _on_tab(self):
+        try:
+            reportes.paso("pestaña «" + self.nb.tab(self.nb.select(), "text") + "»")
+        except tk.TclError:
+            pass
         if self.nb.index("current") == 1:
             self._fill_library()
         self._apply_wide()
@@ -3100,6 +3145,7 @@ class App:
         self._update_assign_label()
 
     def _add_bank(self):
+        reportes.paso("crear banco")
         name = simpledialog.askstring("Nuevo banco", "Nombre del banco:",
                                       initialvalue=f"Banco {len(self.cfg['banks']) + 1}",
                                       parent=self.root)
@@ -3127,6 +3173,7 @@ class App:
             self._load_editor()
 
     def _delete_bank(self):
+        reportes.paso("borrar banco")
         if self.layer == "global":
             return
         if len(self.cfg["banks"]) <= 1:
@@ -3293,6 +3340,7 @@ class App:
         if old.get("type") == t:
             return
         act = {"type": t}
+        reportes.paso(f"cambió la acción de la tecla a «{t}»")
         if t == "keys":
             act["combo"] = self._free_fkey()
         elif t == "bank_go":
@@ -3567,6 +3615,7 @@ class App:
         self.tog_warn.configure(text=txt)
 
     def _toggle_active(self):
+        reportes.paso("pulsó ACTIVO/PAUSADO")
         self.engine.toggle_active()             # repinta con el evento "active"
 
     def _paint_active(self):
@@ -3591,6 +3640,7 @@ class App:
                         self._handle(ev)
                     except Exception:            # un error no debe congelar la ventana
                         traceback.print_exc()
+                        reportes.capture(sys.exc_info(), "eventos")
             except queue.Empty:
                 pass
         self.root.after(30, self._poll)
@@ -3730,6 +3780,7 @@ class App:
     def apply_theme_live(self, theme):
         """Cambia el tema al instante: vuelve a armar la ventana con los colores nuevos sin
         reiniciar el programa (el numpad, el audio y los celulares siguen conectados)."""
+        reportes.paso(f"cambió el tema a «{theme.get('name', '?')}»")
         r = self.root
         keep = dict(selected=self.selected, layer=self.layer, view=self.left_view,
                     tab=self.nb.index("current"), status=getattr(self, "_status_last", None),
@@ -4080,6 +4131,7 @@ class App:
 
     def _install_update(self, path, dialog):
         kind = updater.install_kind()
+        reportes.paso(f"instalar actualización ({kind})")
         try:
             if kind == "installer":
                 updater.install_windows(path)
@@ -4310,6 +4362,7 @@ class App:
 
 
 def main():
+    reportes.setup()
     minimized = "--minimizado" in sys.argv
     ok = sysutil.single_instance()
     if not ok and "--tras-actualizar" in sys.argv:

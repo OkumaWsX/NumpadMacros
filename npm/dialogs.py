@@ -326,3 +326,180 @@ class UpdateDialog(tk.Toplevel):
         self.p_sub.configure(text=msg + " Puedes volver a intentarlo más tarde.", fg=C["bad"])
         self.btn_cancel.configure(text="Cerrar", command=self.destroy)
         self.btn_cancel.grid()
+
+
+# ============================================================================ reportes de errores
+def _report_view(parent, text, height=12):
+    box, txt = _notes_text(parent, height)
+    txt.configure(state="normal", font=("TkFixedFont", BASE - 2), wrap="none")
+    txt.insert("1.0", text)
+    txt.configure(state="disabled")
+    return box
+
+
+def ask_report(app, rep) -> str:
+    """Primer error de la sesión (con «Preguntar» elegido): ¿enviar el reporte al creador?
+    Devuelve 'siempre', 'esta', 'nunca' o '' (no enviar esta vez)."""
+    from . import reportes
+    root = app.root
+    w = tk.Toplevel(root, bg=C["panel"])
+    w.title("Numpad Macros · algo falló")
+    w.transient(root)
+    _center(w, root, 620, 300)
+    w.columnconfigure(0, weight=1)
+    res = {"v": ""}
+    tk.Label(w, text="Algo falló dentro de Numpad Macros", bg=C["panel"], fg=C["text"],
+             font=(FONT, BASE + 5, "bold")).grid(row=0, column=0, sticky="w", padx=22, pady=(18, 2))
+    tk.Label(w, text=("La app sigue funcionando. ¿Enviar un reporte al creador para que lo arregle en una "
+                      "próxima versión? Va el error, la versión, tu sistema y los últimos pasos; nunca tus "
+                      "sonidos, tu nombre de usuario ni tus archivos."),
+             bg=C["panel"], fg=C["muted"], justify="left", wraplength=570).grid(row=1, column=0, sticky="w", padx=22)
+    err = tk.Label(w, text=rep.get("error", ""), bg=C["panel2"], fg=C["warn"], justify="left", anchor="w",
+                   wraplength=560, padx=10, pady=6, font=(FONT, BASE - 1))
+    err.grid(row=2, column=0, sticky="ew", padx=22, pady=(10, 0))
+    view = {"box": None}
+
+    def toggle():
+        if view["box"] is None:
+            view["box"] = _report_view(w, reportes.as_text(rep), 14)
+            view["box"].grid(row=3, column=0, sticky="nsew", padx=22, pady=(10, 0))
+            w.rowconfigure(3, weight=1)
+            _center(w, root, 720, 600)
+            more.configure(text="Ocultar el reporte")
+        else:
+            view["box"].destroy()
+            view["box"] = None
+            w.rowconfigure(3, weight=0)
+            _center(w, root, 620, 300)
+            more.configure(text="Ver qué se envía")
+    more = tk.Label(w, text="Ver qué se envía", bg=C["panel"], fg=C["accent"], cursor="hand2",
+                    font=(FONT, BASE - 1, "underline"))
+    more.grid(row=4, column=0, sticky="w", padx=22, pady=(8, 0))
+    more.bind("<Button-1>", lambda e: toggle())
+    foot = tk.Frame(w, bg=C["panel"])
+    foot.grid(row=5, column=0, sticky="ew", padx=22, pady=16)
+
+    def pick(v):
+        res["v"] = v
+        w.destroy()
+    _button(foot, "Enviar siempre (sin preguntar)", lambda: pick("siempre"), accent=True).pack(side="left")
+    _button(foot, "Solo esta vez", lambda: pick("esta")).pack(side="left", padx=8)
+    _button(foot, "No enviar", lambda: pick("")).pack(side="right")
+    tk.Label(w, text="Puedes cambiarlo cuando quieras en «Numpad y opciones» → «Reportes de errores».",
+             bg=C["panel"], fg=C["muted"], font=(FONT, BASE - 2)).grid(row=6, column=0, sticky="w", padx=22,
+                                                                       pady=(0, 14))
+    w.protocol("WM_DELETE_WINDOW", lambda: pick(""))
+    w.bind("<Escape>", lambda e: pick(""))
+    w.lift()
+    try:
+        w.grab_set()
+    except tk.TclError:
+        pass
+    root.wait_window(w)
+    return res["v"]
+
+
+class ProblemDialog(tk.Toplevel):
+    """«Informar un problema»: el usuario cuenta qué pasó y el reporte se envía al creador
+    (también cuando no hubo un error del programa, por ejemplo algo que se ve mal)."""
+
+    def __init__(self, app):
+        from . import reportes
+        self.r = reportes
+        self.app = app
+        root = app.root
+        super().__init__(root, bg=C["panel"])
+        self.title("Informar un problema")
+        self.transient(root)
+        _center(self, root, 640, 520)
+        self.minsize(520, 440)
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(2, weight=1)
+        tk.Label(self, text="Informar un problema", bg=C["panel"], fg=C["text"],
+                 font=(FONT, BASE + 6, "bold")).grid(row=0, column=0, sticky="w", padx=22, pady=(18, 2))
+        tk.Label(self, text=("Cuenta qué pasó y qué estabas haciendo. Se envía al creador junto con la versión, "
+                             "tu sistema y el registro de la app (sin tu nombre de usuario ni tus archivos)."),
+                 bg=C["panel"], fg=C["muted"], justify="left", wraplength=590).grid(row=1, column=0, sticky="w",
+                                                                                     padx=22)
+        self.txt = tk.Text(self, height=8, wrap="word", bg=C["panel2"], fg=C["text"], insertbackground=C["text"],
+                           relief="flat", highlightthickness=1, highlightbackground=C["line"],
+                           highlightcolor=C["accent"], font=(FONT, BASE), padx=10, pady=8)
+        self.txt.grid(row=2, column=0, sticky="nsew", padx=22, pady=(10, 0))
+        row = tk.Frame(self, bg=C["panel"])
+        row.grid(row=3, column=0, sticky="ew", padx=22, pady=(10, 0))
+        tk.Label(row, text="Tu usuario de Discord (opcional, para responderte):", bg=C["panel"],
+                 fg=C["muted"]).pack(side="left")
+        self.contact = tk.StringVar()
+        ttk.Entry(row, textvariable=self.contact, width=22).pack(side="left", padx=8)
+        self.with_log = tk.BooleanVar(value=True)
+        ttk.Checkbutton(self, text="Incluir el registro de la app (ayuda mucho a encontrar la causa)",
+                        variable=self.with_log).grid(row=4, column=0, sticky="w", padx=22, pady=(8, 0))
+        self.msg = tk.Label(self, text="", bg=C["panel"], fg=C["muted"], justify="left", wraplength=590)
+        self.msg.grid(row=5, column=0, sticky="w", padx=22, pady=(8, 0))
+        foot = tk.Frame(self, bg=C["panel"])
+        foot.grid(row=6, column=0, sticky="ew", padx=22, pady=16)
+        self.btn = _button(foot, "Enviar al creador", self._send, accent=True)
+        self.btn.pack(side="left")
+        _button(foot, "Ver qué se envía", self._preview).pack(side="left", padx=8)
+        _button(foot, "Copiar", self._copy).pack(side="left")
+        _button(foot, "Cerrar", self.destroy).pack(side="right")
+        self.bind("<Escape>", lambda e: self.destroy())
+        self.txt.focus_set()
+        self.lift()
+
+    def _rep(self):
+        return self.r.build("manual", description=self.txt.get("1.0", "end").strip(),
+                            contact=self.contact.get(), with_log=self.with_log.get())
+
+    def _preview(self):
+        w = tk.Toplevel(self, bg=C["panel"])
+        w.title("Lo que se envía")
+        w.transient(self)
+        _center(w, self, 700, 520)
+        w.columnconfigure(0, weight=1)
+        w.rowconfigure(0, weight=1)
+        _report_view(w, self.r.as_text(self._rep()), 20).grid(row=0, column=0, sticky="nsew", padx=16, pady=16)
+        _button(w, "Cerrar", w.destroy).grid(row=1, column=0, sticky="e", padx=16, pady=(0, 16))
+
+    def _copy(self):
+        try:
+            self.clipboard_clear()
+            self.clipboard_append(self.r.as_text(self._rep()))
+            self.msg.configure(text="Copiado: pégalo en el servidor de Discord (canal de soporte).", fg=C["ok"])
+        except tk.TclError:
+            pass
+
+    def _send(self):
+        if not self.txt.get("1.0", "end").strip():
+            self.msg.configure(text="Escribe primero qué pasó.", fg=C["bad"])
+            return
+        rep = self._rep()
+        self.r.paso("informó un problema a mano")
+        self.btn.state(["disabled"])
+        self.msg.configure(text="Enviando…", fg=C["muted"])
+        self.r._save(rep)
+
+        def done(res):
+            sent, left = res
+            try:
+                self.after(0, lambda: self._done(sent, left))
+            except (tk.TclError, RuntimeError):
+                pass
+        self.r.flush_async(done)
+
+    def _done(self, sent, left):
+        try:
+            if sent:
+                self.msg.configure(text="✓ Enviado. ¡Gracias! El creador lo revisará para una próxima versión.",
+                                   fg=C["ok"])
+                self.txt.delete("1.0", "end")
+            elif not self.r.endpoint():
+                self.msg.configure(text=("Quedó guardado y se enviará solo en cuanto el envío automático esté "
+                                         "activo. Si es urgente, pulsa «Copiar» y pégalo en el Discord."),
+                                   fg=C["warn"])
+            else:
+                self.msg.configure(text=("Sin conexión por ahora: quedó en cola y se enviará solo más tarde. "
+                                         "Si es urgente, pulsa «Copiar» y pégalo en el Discord."), fg=C["warn"])
+            self.btn.state(["!disabled"])
+        except tk.TclError:
+            pass

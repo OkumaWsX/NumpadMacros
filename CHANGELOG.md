@@ -3,6 +3,9 @@
 Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
+### Añadido
+- **Reportes de errores**: si algo falla, la app lo anota en un registro y puede enviar un reporte al creador para arreglarlo en una próxima versión: el error, la versión, tu sistema y los últimos pasos antes del fallo. Nunca tus sonidos, tu nombre de usuario ni el nombre de tus archivos. Al primer error pregunta («Enviar siempre», «Solo esta vez» o «No enviar», con «Ver qué se envía»); se cambia en *Numpad y opciones* → *Reportes de errores*. El mismo error se envía como mucho una vez al día y, sin internet, queda en cola hasta que haya conexión.
+- **Informar un problema…** (en *Numpad y opciones* y en *Creador y soporte*): cuenta qué pasó, aunque no haya un error del programa (por ejemplo, algo que se ve mal), y se envía con el registro. También se puede copiar para pegarlo en el Discord.
 
 ## [3.5.1] - 2026-10-25
 ### Cambiado
