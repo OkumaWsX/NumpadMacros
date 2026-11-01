@@ -4,7 +4,8 @@
 # Cómo usarlo: pestaña Actions → «Publicar Estudio de Temas» → «Run workflow».
 #
 # 1. preparar:  toma el número de tools/estudio/estudio.py (VERSION) y las novedades de
-#               tools/estudio/CHANGELOG.md («Sin publicar» o la sección de esa versión).
+#               tools/estudio/CHANGELOG.md («Sin publicar» o la sección de esa versión), y agrega
+#               las capturas de tools/estudio/capturas/<versión>/ (obligatorias: sin ellas se detiene).
 # 2. compilar:  pruebas + Windows (instalador y portátil), Linux y macOS.
 # 3. publicar:  solo si todo salió bien: crea la etiqueta estudio-vX.Y.Z y la Release
 #               «Estudio de Temas X.Y.Z» con sus huellas SHA256. No se marca como «la última»
@@ -54,6 +55,8 @@ jobs:
       - name: Número y novedades
         id: prep
         shell: python
+        env:
+          PRIVADO: ${{ inputs.privado }}
         run: |
           import datetime, os, re, subprocess, sys
           src = open("tools/estudio/estudio.py", encoding="utf-8").read()
@@ -79,10 +82,20 @@ jobs:
               log = log.replace("## [Sin publicar]\n", f"## [Sin publicar]\n\n## [{ver}] - {today}\n", 1)
           log = re.sub(rf"^## \[{re.escape(ver)}\] - pendiente$", f"## [{ver}] - {today}", log, flags=re.M)
           open("tools/estudio/CHANGELOG.md", "w", encoding="utf-8").write(log)
-          open("notas.md", "w", encoding="utf-8").write(
+          # cada versión lleva capturas de esa versión (tools/estudio/capturar.py); sin ellas no se publica
+          sys.path.insert(0, "tools/estudio")
+          import capturas_release
+          # en el borrador todavía no existe la etiqueta: las imágenes se enlazan a este commit
+          ref = os.environ["GITHUB_SHA"] if os.environ["PRIVADO"] == "true" else f"estudio-v{ver}"
+          caps = capturas_release.seccion(ver, ref)
+          if not caps:
+              print(f"::error::Faltan las capturas de esta versión en tools/estudio/capturas/{ver}/. "
+                    "Sácalas con tools/estudio/capturar.py (ver docs/TRASPASO_ESTUDIO.md).")
+              sys.exit(1)
+          open("notas.md", "w", encoding="utf-8").write(capturas_release.poner(
               notes + "\n\n---\nPrograma aparte de Numpad Macros para crear temas `.npt`. "
               "[Historial completo](https://github.com/" + os.environ["GITHUB_REPOSITORY"]
-              + "/blob/main/tools/estudio/CHANGELOG.md)\n")
+              + "/blob/main/tools/estudio/CHANGELOG.md)\n", caps))
           readme = open("README.md", encoding="utf-8").read()
           readme = re.sub(r"releases/download/estudio-v[0-9.]+/", f"releases/download/estudio-v{ver}/", readme)
           open("README.md", "w", encoding="utf-8").write(readme)
@@ -152,6 +165,10 @@ jobs:
             sleep 5
           done
           if [ -z "$ok" ]; then echo "::error::No pude guardar las novedades en main."; exit 1; fi
+          # la etiqueta tiene que llevar las capturas que enlazan las notas
+          if ! git cat-file -e "HEAD:tools/estudio/capturas/$VERSION/capturas.txt"; then
+            echo "::error::La etiqueta no tendría las capturas de tools/estudio/capturas/$VERSION/."; exit 1
+          fi
           git tag -a "estudio-v$VERSION" -m "Estudio de Temas $VERSION"
           git push origin "estudio-v$VERSION"
 

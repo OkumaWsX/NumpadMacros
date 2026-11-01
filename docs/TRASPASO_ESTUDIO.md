@@ -39,6 +39,7 @@ lea este documento.
 | Todas las pruebas | `python -m unittest discover -s tests` |
 | Solo formato y Estudio | `python -m unittest tests.test_npt tests.test_npt_zonas tests.test_estudio` |
 | Prueba automática de la ventana (abre todas las pantallas, exporta un tema, se cierra sola) | `python tools/estudio/estudio.py --probar` |
+| Capturas de la versión para su Release (como usuario común, sin tus claves; ver §6) | `xvfb-run -a -s "-screen 0 1600x1000x24" python tools/estudio/capturar.py` |
 | Revisar errores de código | `python -m pyflakes tools/estudio/*.py npm/npt.py` |
 | Compilar el programa | `cd tools/estudio && pyinstaller --noconfirm Estudio.spec` → `dist/` |
 | Probar el compilado | `tools/estudio/dist/EstudioTemas-NumpadMacros --probar` |
@@ -57,6 +58,8 @@ lea este documento.
 | `tools/estudio/respaldo.py` | Linux: pide al servidor X que guarde cada pestaña ya dibujada («backing store»), ver §8. |
 | `tools/estudio/anunciar_discord.py` | Anuncio de una versión nueva en Discord (lo usa «Publicar Estudio de Temas»). Ver §6. |
 | `tools/estudio/actualizar.py` | Actualizaciones (sin Tk): busca versiones nuevas en GitHub, descarga y verifica, instala. Ver §6. |
+| `tools/estudio/capturar.py` | Saca las capturas de la versión para su Release (`capturas/<versión>/`). Ver §6. |
+| `tools/estudio/capturas_release.py` | Arma la sección «Capturas» de las notas de una Release. Ver §6. |
 | `tools/estudio/claves.py` | Firma de autor / clave oficial, modo creador o comunidad, ajustes (`ajustes.json`). |
 | `tools/estudio/Estudio.spec` | PyInstaller (incluye la letra Inter, el icono y `PIL._tkinter_finder`; excluye numpy). |
 | `tools/estudio/CHANGELOG.md` | Historial propio del Estudio. Las novedades nuevas van en «Sin publicar». |
@@ -97,6 +100,22 @@ lea este documento.
   - Sin marcar: crea la etiqueta `estudio-vX.Y.Z` y la Release «Estudio de Temas X.Y.Z» (sin marcarla
     como «la última»: esa es siempre la de Numpad Macros), pone la fecha en el historial y actualiza
     el enlace de descarga del README.
+- **Capturas en cada Release** (regla de Jona, 2026-11-01): toda versión publicada lleva capturas de ESA
+  versión, aunque solo traiga correcciones, para que las Releases se vean atractivas y se noten los cambios.
+  - Van en `tools/estudio/capturas/<versión>/` con `capturas.txt` (`archivo | descripción`). No entran al
+    programa compilado. Si falta la carpeta de la versión, «Publicar Estudio de Temas» **se detiene**.
+  - Se sacan con `xvfb-run -a -s "-screen 0 1600x1000x24" python tools/estudio/capturar.py` (desde la
+    raíz, con el código de esa versión). Se ven como en el PC de un **usuario común**: modo comunidad,
+    firma de autor de ejemplo «Ana» y tema de ejemplo «Atardecer».
+  - **Nunca con las claves reales**: el script corre en una carpeta temporal aislada (HOME, configuración,
+    envíos), se detiene si ve una clave oficial y borra la firma desechable al terminar. No sacar
+    capturas para la Release a mano desde el Estudio de uso diario (saldría «Oficial · OkumaWsX»).
+  - La sección «Capturas (versión X.Y.Z)» va antes del pie `---`, con enlaces fijos a la etiqueta
+    (o al commit, en el borrador). El aviso de versión nueva y el anuncio de Discord solo leen las
+    viñetas, así que no les afecta.
+  - Para agregar o cambiar las capturas de una versión ya publicada: subir la carpeta a `main` y
+    `python tools/estudio/capturas_release.py --version X.Y.Z --ref <commit> --notas actuales.md`, y
+    con eso `gh release edit estudio-vX.Y.Z --notes-file …` (solo cambia las notas). Así se hizo con la 1.1.0.
 - **Anuncio en Discord**: casilla «Anunciar en mi Discord» (marcada por defecto; solo al publicar de verdad).
   `tools/estudio/anunciar_discord.py` manda la versión, hasta 5 novedades y el enlace al canal del webhook
   del secreto `DISCORD_WEBHOOK_ESTUDIO` (Settings → Secrets and variables → Actions). Es aparte de

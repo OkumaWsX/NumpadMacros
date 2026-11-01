@@ -527,5 +527,65 @@ class EnvioComunidadTest(unittest.TestCase):
             self.assertFalse(L.mostrar_archivo("/tmp/no-existe/tema.npt"))
 
 
+class CapturasReleaseTest(unittest.TestCase):
+    """Sección «Capturas» de las notas de una Release del Estudio (no necesita Pillow)."""
+
+    def setUp(self):
+        import capturas_release
+        self.C = capturas_release
+        self.dir = tempfile.mkdtemp()
+        d = os.path.join(self.dir, "2.0.0")
+        os.makedirs(d)
+        for n in ("b.png", "a.png", "nota.txt"):
+            open(os.path.join(d, n), "wb").close()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def test_lista_sin_manifiesto_ordena_imagenes(self):
+        self.assertEqual(self.C.lista("2.0.0", self.dir), [("a.png", ""), ("b.png", "")])
+        self.assertEqual(self.C.lista("9.9.9", self.dir), [])
+
+    def test_lista_con_manifiesto_respeta_orden_y_omite_faltantes(self):
+        with open(os.path.join(self.dir, "2.0.0", "capturas.txt"), "w", encoding="utf-8") as f:
+            f.write("# comentario\nb.png | La B\nfalta.png | No está\na.png\n")
+        self.assertEqual(self.C.lista("2.0.0", self.dir), [("b.png", "La B"), ("a.png", "")])
+
+    def test_seccion_enlaza_a_la_ref(self):
+        sec = self.C.seccion("2.0.0", "estudio-v2.0.0", self.dir)
+        self.assertTrue(sec.startswith(self.C.INICIO) and sec.endswith(self.C.FIN))
+        self.assertIn("### Capturas (versión 2.0.0)", sec)
+        self.assertIn("/raw/estudio-v2.0.0/tools/estudio/capturas/2.0.0/a.png", sec)
+        self.assertEqual(self.C.seccion("9.9.9", "x", self.dir), "")
+
+    def test_poner_antes_del_pie_y_reemplazar(self):
+        notas = "### Añadido\n- **Algo**: nuevo.\n\n---\nPie del Estudio.\n"
+        sec = self.C.seccion("2.0.0", "abc", self.dir)
+        out = self.C.poner(notas, sec)
+        self.assertLess(out.index("### Añadido"), out.index(self.C.INICIO))
+        self.assertLess(out.index(self.C.FIN), out.index("---\nPie"))
+        otra = self.C.seccion("2.0.0", "def", self.dir)
+        out2 = self.C.poner(out, otra)
+        self.assertEqual(out2.count(self.C.INICIO), 1)
+        self.assertIn("/raw/def/", out2)
+        self.assertNotIn("/raw/abc/", out2)
+
+    def test_las_imagenes_no_llegan_al_aviso_ni_a_discord(self):
+        import anunciar_discord
+        notas = self.C.poner("### Añadido\n- **Algo**: nuevo.\n\n---\nPie.\n",
+                             self.C.seccion("2.0.0", "abc", self.dir))
+        self.assertEqual(anunciar_discord.items(notas), ["Algo"])
+        if L is not None:
+            import actualizar
+            rel = actualizar.Release({"tag_name": "estudio-v2.0.0", "body": notas, "assets": []})
+            self.assertEqual([t for _s, t in rel.notes_lines()], ["Algo: nuevo."])
+
+    def test_version_publicada_tiene_capturas(self):
+        # versiones ya publicadas con sus capturas: si se borran, su Release queda con imágenes rotas
+        for ver in ("1.0.0", "1.1.0"):
+            self.assertTrue(self.C.lista(ver), ver)
+
+
 if __name__ == "__main__":
     unittest.main()

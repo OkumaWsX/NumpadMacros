@@ -1,0 +1,8 @@
+# Capturas del Estudio de Temas 1.0.0 (archivo | descripción).
+# Se agregan a las notas de su Release. Hechas con tools/estudio/capturar.py.
+editar.png | Editar tema: las 22 capas de color, la vista previa igual a Numpad Macros y los colores desde una imagen
+secciones.png | Transparencia por sección, con estilos rápidos y la legibilidad de cada sección
+imagenes.png | Imágenes y plantillas: 9 espacios para imágenes y GIF animados
+exportar.png | Exportar: revisión del tema antes de guardarlo firmado
+firma.png | Mi firma de autor: así apareces en Numpad Macros como «Comunidad · tu nombre»
+acerca.png | Acerca de: avisos de versión nueva y novedades de la versión instalada
