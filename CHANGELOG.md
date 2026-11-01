@@ -3,6 +3,9 @@
 Todas las versiones de Numpad Macros. El formato sigue [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/) y el proyecto usa [versionado semántico](https://semver.org/lang/es/).
 
 ## [Sin publicar]
+### Corregido
+- **Windows · cerrar con la ventana minimizada**: al cerrar Numpad Macros desde la barra de tareas (con clic derecho o con la «X» de la vista previa) mientras estaba minimizado, el aviso «¿Qué hago al cerrar la ventana?» quedaba escondido y la app ya no se podía abrir ni cerrar: había que terminarla desde el Administrador de tareas. Ahora la ventana vuelve a aparecer con el aviso para elegir «Dejar en la bandeja» o «Salir del programa», y un clic en el botón de la barra de tareas la despliega de nuevo.
+- **App Android 1.3.1 · se cerraba en tablets**: en tablets (y otros equipos con Android 12 o más nuevo) la app se cerraba sola justo después de conectarse al PC, con el tema normal o con AMOLED / OLED. La causa era el efecto de vidrio: dos píldoras se dibujaban dentro de su propio desenfoque, una y otra vez, hasta agotar la memoria. Ahora la barra de Detener + volumen y la píldora de pantalla completa son translúcidas sin desenfoque; la barra inferior y las hojas siguen esmeriladas.
 
 ## [3.5.1] - 2026-10-25
 ### Cambiado

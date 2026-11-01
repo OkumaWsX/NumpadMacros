@@ -4240,9 +4240,16 @@ class App:
 
     def _ask_close(self):
         """Primera vez que se cierra la ventana: ¿salir o dejarla en la bandeja?"""
+        # Cerrada desde la barra de tareas con la ventana minimizada: Windows esconde el aviso
+        # junto con su ventana dueña y su grab_set dejaba la app sin poder abrirse ni cerrarse.
+        if self.root.state() == "iconic":
+            self._show_window()
+            self.root.update_idletasks()
         w = getattr(self, "close_win", None)
         if w is not None and w.winfo_exists():
+            w.deiconify()
             w.lift()
+            w.focus_force()
             return
         w = tk.Toplevel(self.root)
         self.close_win = w
@@ -4282,7 +4289,12 @@ class App:
         w.update_idletasks()
         x = self.root.winfo_rootx() + (self.root.winfo_width() - w.winfo_width()) // 2
         y = self.root.winfo_rooty() + (self.root.winfo_height() - w.winfo_height()) // 3
+        if x < -1000 or y < -1000:      # Windows aún no termina de restaurar (-32000): al centro de la pantalla
+            x = (w.winfo_screenwidth() - w.winfo_width()) // 2
+            y = (w.winfo_screenheight() - w.winfo_height()) // 3
         w.geometry(f"+{max(0, x)}+{max(0, y)}")
+        w.lift()
+        w.focus_force()
         w.grab_set()
 
     def _on_close_opt(self):
