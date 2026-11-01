@@ -101,7 +101,9 @@ fun Root(vm: AppVm) {
     Box(Modifier.fillMaxSize().background(C.bg).systemBarsPadding().imePadding()) {
         // todo lo que pasa por debajo de las píldoras de vidrio
         Box(Modifier.fillMaxSize().glassSource(glass).background(C.bg)) {
-            CompositionLocalProvider(LocalNavSpace provides if (showNav) NAV_SPACE else 0.dp) {
+            // Sin vidrio aquí dentro: una píldora dentro de la capa que desenfoca se dibujaría a sí
+            // misma (capa → desenfoque → capa) y el RenderThread se cae por desbordamiento de pila.
+            CompositionLocalProvider(LocalNavSpace provides if (showNav) NAV_SPACE else 0.dp, LocalGlass provides null) {
                 when (vm.screen) {
                     Screen.Welcome -> WelcomeScreen(vm)
                     Screen.Pin -> PinScreen(vm)
