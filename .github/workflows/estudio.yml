@@ -24,7 +24,7 @@ jobs:
             name: EstudioTemas-Windows
           - os: ubuntu-22.04          # glibc antiguo: funciona en más distribuciones
             name: EstudioTemas-Linux
-          - os: macos-14              # Apple Silicon
+          - os: macos-15              # Apple Silicon (macos-14 se retira el 2026-11-02)
             name: EstudioTemas-macOS
     runs-on: ${{ matrix.os }}
     steps:
