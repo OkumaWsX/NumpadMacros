@@ -828,6 +828,9 @@ def problemas_previos(nombre: str, version: str, modo: str, autor: str) -> list[
         out.append(f"La versión «{version}» no es válida: usa números separados por puntos (1.0, 1.2.3).")
     if modo != "creador" and npt.is_reserved_name(autor or ""):
         out.append("Ese nombre de autor está reservado para el creador oficial: cámbialo en «Mi firma de autor».")
+    if modo != "creador" and (not (autor or "").strip() or not ID_TEMA_OK.match(slug(autor))
+                              or sum(c.isalnum() for c in autor) < 2):    # slug() inventa «tema» si no queda nada
+        out.append("Pon tu nombre de creador (al menos 2 letras o números) en «5 · Mi firma de autor» antes de enviar.")
     return out
 
 
@@ -849,6 +852,23 @@ def problemas_archivo(data: bytes, version: str) -> list[str]:
     if r.theme.version != (version or "").strip():
         out.append(f"La versión del archivo ({r.theme.version}) no coincide con la del tema ({version}).")
     return out
+
+
+def carpeta_comunidad(datos: dict) -> str:
+    """Carpeta del tema en el repositorio de la comunidad: ``comunidad/<autor>/<tema>/``."""
+    return f"comunidad/{datos.get('autor_slug', '')}/{datos.get('tema_id', '')}/"
+
+
+def formatear_huella(huella: str) -> str:
+    """Huella de la firma en grupos de 4 («7C1A 09E2 44B0 D1F3 · 2B9C 61AA 0F7E 93D5»). Si ya viene así
+    (npt.fingerprint, datos.huella) se deja igual; si son 32 hexadecimales seguidos, se agrupan."""
+    h = (huella or "").strip()
+    limpio = h.replace(" ", "").replace("·", "")
+    if "·" not in h and len(limpio) == 32 and re.fullmatch(r"[0-9a-fA-F]+", limpio):
+        limpio = limpio.upper()
+        g = [limpio[i:i + 4] for i in range(0, 32, 4)]
+        return " ".join(g[:4]) + " · " + " ".join(g[4:])
+    return h
 
 
 def armar_envio(nombre: str, version: str, autor: str, descripcion: str, huella: str,

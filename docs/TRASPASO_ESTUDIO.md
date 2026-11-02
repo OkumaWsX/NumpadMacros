@@ -60,6 +60,7 @@ lea este documento.
 | `tools/estudio/actualizar.py` | Actualizaciones (sin Tk): busca versiones nuevas en GitHub, descarga y verifica, instala. Ver §6. |
 | `tools/estudio/capturar.py` | Saca las capturas de la versión para su Release (`capturas/<versión>/`). Ver §6. |
 | `tools/estudio/capturas_release.py` | Arma la sección «Capturas» de las notas de una Release. Ver §6. |
+| `tools/estudio/revision_comunidad.py` y `tools/estudio/reglas.json` | Revisión «comunidad» (la misma del bot Centinela), corre en un hilo al exportar y al enviar. **No se edita aquí**: viene de `revision automatica de bot/revision` (`npt.py` y `reglas.json`); si cambia, se vuelve a copiar. Una prueba comprueba que sigan idénticos al origen. |
 | `tools/estudio/claves.py` | Firma de autor / clave oficial, modo creador o comunidad, ajustes (`ajustes.json`). |
 | `tools/estudio/Estudio.spec` | PyInstaller (incluye la letra Inter, el icono y `PIL._tkinter_finder`; excluye numpy). |
 | `tools/estudio/CHANGELOG.md` | Historial propio del Estudio. Las novedades nuevas van en «Sin publicar». |

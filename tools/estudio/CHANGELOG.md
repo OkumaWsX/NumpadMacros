@@ -5,6 +5,15 @@ temas `.npt` que Numpad Macros importa. Formato: [Keep a Changelog](https://keep
 
 ## [Sin publicar]
 
+## [1.2.0] - 2026-11-02
+### Añadido
+- **Revisión para la comunidad** en «4 · Exportar»: el Estudio hace la misma revisión que el bot Centinela antes de dejarte enviar el tema. Si algo falla sale en rojo, con lo que tienes que cambiar. «Exportar .npt» sigue funcionando.
+- «Enviar a la comunidad…» vuelve a revisar el archivo final antes de guardarlo y no se congela mientras revisa.
+
+### Cambiado
+- El envío ya no se hace en el foro: ahora se usa el comando `/tema subir` en el canal #subir-temas de Discord.
+- La ventana de envío tiene tres pasos nuevos: revisar tu nombre de creador (queda unido a tu firma para siempre), copiar el comando y abrir Discord con el archivo a mano.
+
 ## [1.1.0] - 2026-10-25
 ### Añadido
 - **Enviar a la comunidad**: en «4 · Exportar», el botón «Enviar a la comunidad…» revisa tu tema, lo guarda firmado en `Documentos/Temas para enviar` y te guía en tres pasos (copiar el texto, abrir el foro de Discord y crear la publicación con el archivo). OkumaWsX revisa cada tema antes de que aparezca en Numpad Macros.

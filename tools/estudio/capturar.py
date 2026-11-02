@@ -14,6 +14,7 @@ import os
 import shutil
 import sys
 import tempfile
+import time
 
 # --- aislamiento: antes de cargar el Estudio ---------------------------------------------------------
 _CASA = tempfile.mkdtemp(prefix="capturas-estudio-")
@@ -39,7 +40,7 @@ CAPTURAS = [  # (pantalla, archivo, descripción para la Release)
     ("edit", "editar.png", "Editar tema: las 22 capas de color, la vista previa igual a Numpad Macros y los colores desde una imagen"),
     ("sec", "secciones.png", "Transparencia por sección, con estilos rápidos y la legibilidad de cada sección"),
     ("img", "imagenes.png", "Imágenes y plantillas: 9 espacios para imágenes y GIF animados"),
-    ("exp", "exportar.png", "Exportar: revisión del tema antes de guardarlo firmado"),
+    ("exp", "exportar.png", "Exportar: la revisión «comunidad» (la misma que usa el bot) antes de enviar tu tema a Discord"),
     ("key", "firma.png", "Mi firma de autor: así apareces en Numpad Macros como «Comunidad · tu nombre»"),
     ("about", "acerca.png", "Acerca de: avisos de versión nueva y novedades de la versión instalada"),
 ]
@@ -80,6 +81,12 @@ def main():
     pasos = [(lambda: (app.apply_palette(), app.apply_template("todo"), app.bg_generate(),
                        app.onep_var.set(True), app.on_one_piece()), 600)]
     for sid, nombre, _t in CAPTURAS:
+        if sid == "exp":              # la revisión «comunidad» corre en otro hilo: se espera a que termine
+            pasos.append((lambda: app._show_now("exp"), 600))
+            pasos.append((lambda: [root.update() or time.sleep(0.05) for _ in range(600)
+                                   if app._rev["result"] is None], 100))
+            pasos.append((lambda nombre=nombre: grab(nombre), 300))
+            continue
         pasos.append((lambda sid=sid, nombre=nombre: (app._show_now(sid), grab(nombre)), 900))
 
     def run(i=0):

@@ -70,6 +70,7 @@ try:
     import claves as K  # noqa: E402
     import vista as V  # noqa: E402
     import actualizar as U  # noqa: E402
+    import revision_comunidad as RC  # noqa: E402
     from respaldo import guardar_contenido  # noqa: E402
     from logica import npt  # noqa: E402
     from PIL import Image, ImageTk  # noqa: E402
@@ -82,10 +83,13 @@ try:
 except Exception:          # sin la librería se elige la imagen con un botón
     TkinterDnD = None
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 # Foro de Discord (canal de tipo foro) donde la comunidad manda sus temas. Vacío = aún sin configurar.
 # Debe ser https://discord.com/channels/<id>/<id> o https://discord.gg/<código>.
 FORO_TEMAS_URL = "https://discord.com/channels/411199717708398622/1563795767494189056"
+# Canal #subir-temas, donde se usa /tema subir. Si queda vacía, «Abrir Discord» usa FORO_TEMAS_URL.
+# Mismo formato que FORO_TEMAS_URL.
+SUBIR_TEMAS_URL = "https://discord.com/channels/411199717708398622/1564476602568675349"
 APP = "Estudio de Temas"
 PROBE = "--probar" in sys.argv       # prueba automática: jamás toca la red
 if _IMPORT_ERROR:
@@ -361,6 +365,11 @@ class App:
         self._upd_busy = False
         self._upd_dialog_open = False
         self._upd_q: queue.Queue = queue.Queue()      # resultados de los hilos de red (se leen en el hilo de Tk)
+        # revisión «comunidad» de la pestaña Exportar (ver _rev_schedule): gen descarta resultados viejos
+        self._rev = {"gen": 0, "sig": None, "result": None, "job": None, "pending": 0, "polling": False,
+                     "shown": None, "status": False, "enviando": False, "inflight": False,
+                     "queued": None}
+        self._rev_q: queue.Queue = queue.Queue()
         self._style()
         self.new_theme(initial=True)
         self._build()
@@ -526,7 +535,17 @@ class App:
         self.status.configure(text=msg, fg=C.get(kind, C["muted"]))
         if self._toast_job:
             self.root.after_cancel(self._toast_job)
-        self._toast_job = self.root.after(6000, lambda: self.status.configure(text="Listo.", fg=C["muted"]))
+        self._toast_job = self.root.after(6000, self._status_idle)
+
+    def _status_idle(self):
+        """Fin de un aviso del pie: «Listo.», o de nuevo «N cosas por arreglar» si se está viendo Exportar."""
+        self.status.configure(text="Listo.", fg=C["muted"])
+        st = getattr(self, "_rev", None)
+        if st:
+            st["status"] = False
+            res = st["result"]
+            if self.screen == "exp" and self.mode != "creador" and res and res.get("errores"):
+                self._rev_status(len(res["errores"]))
 
     # ================================================================ armado
     def _build(self):
@@ -726,6 +745,8 @@ class App:
             b.configure(style="NavOn.TButton" if k == sid else "Nav.TButton")
         if sid == "exp":
             self.exp_done.pack_forget()
+        else:
+            self._rev_status(0)                  # el aviso del pie «N cosas por arreglar» solo vive en Exportar
         if sid in ("edit", "sec", "img"):
             if not self.switch_box.winfo_manager():
                 self.switch_box.pack(side="right")
@@ -1396,6 +1417,11 @@ class App:
         self.exp_mini.bind("<Configure>", lambda e: self._paint_mini())
         self.exp_checks = tk.Frame(a, bg=C["panel"])
         self.exp_checks.pack(fill="x", pady=(10, 6))
+        # «Revisión para la comunidad»: la misma que hace el bot Centinela (solo en modo comunidad)
+        self.exp_rev_box = tk.Frame(a, bg=C["panel"])
+        self.caps(self.exp_rev_box, "Revisión para la comunidad").pack(fill="x", pady=(0, 4))
+        self.exp_rev = tk.Frame(self.exp_rev_box, bg=C["panel"])
+        self.exp_rev.pack(fill="x")
         self.lbl(a, "Nombre del archivo", -1, color="muted").pack(anchor="w")
         self.file_var = tk.StringVar()
         self.entry(a, self.file_var).pack(fill="x", ipady=3)
@@ -2195,6 +2221,9 @@ class App:
             for c in self.exp_checks.winfo_children():
                 c.destroy()
             self._paint_checks(checks)
+        res = self._rev_update()                  # None = revisando (o modo creador)
+        n_err = len(res["errores"]) if res else 0
+        running = self.mode != "creador" and (res is None or self._rev["enviando"])
         blocked = bool(bad) or reserved or kb > npt.MAX_FILE
         cfg(self.exp_btn, state="disabled" if blocked else "normal")
         # «Enviar a la comunidad…»: solo con firma de autor; el motivo se dice debajo del botón
@@ -2207,14 +2236,21 @@ class App:
             why = f"El tema pesa {kb // 1024} KB y el máximo es 5 MB."
         elif pre:
             why = pre[0]
+        elif n_err and not self._rev["enviando"]:
+            why = f"Arregla {'el punto' if n_err == 1 else f'los {n_err} puntos'} en rojo para poder enviar."
+        elif running:
+            why = "Revisando el tema antes de enviar…"
         elif not K.has_author_key():
             why = "Aún no tienes firma de autor: se creará al enviar."
         else:
-            why = "Guarda el tema firmado y te guía para mandarlo al foro de la comunidad; OkumaWsX lo revisa antes de publicarlo."
-        cfg(self.send_btn, state="disabled" if (self.mode == "creador" or bad or kb > npt.MAX_FILE or pre)
+            why = "Guarda el tema firmado y te guía para subirlo con el bot Centinela en Discord; OkumaWsX lo revisa antes de publicarlo."
+        cfg(self.send_btn, text="Revisando…" if running and not (bad or pre or kb > npt.MAX_FILE)
+            else "Enviar a la comunidad…",
+            state="disabled" if (self.mode == "creador" or bad or kb > npt.MAX_FILE or pre or running or n_err)
             else "normal")
-        cfg(self.send_hint, text=why, fg=C["warn_text"] if (bad or pre or kb > npt.MAX_FILE) and self.mode != "creador"
-            else C["muted"])
+        cfg(self.send_hint, text=why, fg=C["bad_text"] if n_err and not (bad or pre or kb > npt.MAX_FILE)
+            and self.mode != "creador" else C["warn_text"] if (bad or pre or kb > npt.MAX_FILE)
+            and self.mode != "creador" else C["muted"])
         if not self.file_var.get() or self.file_var.get() == getattr(self, "_auto_file", ""):
             self._auto_file = L.slug(name) + npt.EXTENSION
             self.file_var.set(self._auto_file)
@@ -2803,6 +2839,171 @@ class App:
             messagebox.showerror(APP, str(e), parent=self.root)
             return None
 
+    # ---------------------------------------------------------------- revisión «comunidad»
+    def _rev_sig(self, theme):
+        """Firma barata del estado del tema (sin las imágenes completas): si no cambia, no se vuelve a revisar."""
+        meta = {k: v for k, v in vars(theme).items() if k != "images"}
+        imgs = tuple(sorted((k, hashlib.md5(v).hexdigest()) for k, v in theme.images.items()))
+        return repr((meta, imgs))
+
+    def _rev_update(self):
+        """Pide (con espera) la revisión si hace falta, pinta el bloque y devuelve el resultado vigente
+        (None = revisando o modo creador)."""
+        st = self._rev
+        if self.mode == "creador":
+            self.exp_rev_box.pack_forget()
+            self._rev_status(0)
+            return None
+        if not self.exp_rev_box.winfo_manager():
+            self.exp_rev_box.pack(fill="x", pady=(0, 6), after=self.exp_checks)
+        if self.screen == "exp":
+            theme = self.build_theme_meta()
+            theme.images = self.final_images()
+            sig = self._rev_sig(theme)
+            if sig != st["sig"]:
+                st.update(sig=sig, result=None, gen=st["gen"] + 1)
+                if st["job"]:
+                    self.root.after_cancel(st["job"])
+                gen = st["gen"]
+                st["job"] = self.root.after(600, lambda: self._rev_launch(gen))
+        self._paint_review(st["result"])
+        return st["result"]
+
+    def _rev_launch(self, gen):
+        """Genera el .npt (firmado con una clave efímera solo para revisar: no se guarda) y lo revisa en un hilo."""
+        st = self._rev
+        st["job"] = None
+        if gen != st["gen"]:
+            return
+        if self.screen != "exp" or self.mode == "creador":
+            st["sig"] = None                      # al volver a Exportar se revisa de nuevo
+            return
+        if st["inflight"]:                        # una sola revisión de la pestaña a la vez: se guarda la última
+            st["queued"] = gen
+            return
+        try:
+            theme = self.build_theme_meta()
+            theme.images = self.final_images()
+            data = npt.write(theme, npt.SigningKey.generate("autor", self.author or "Anónimo"))
+        except Exception as e:
+            st["result"] = {"ok": False, "datos": {}, "avisos": [], "errores": [
+                {"codigo": "contenido", "mensaje": str(e) or "No se pudo armar el tema.", "que_hacer": ""}]}
+            self._paint_export()
+            return
+        st["inflight"] = True
+        self._rev_run(data, lambda r, g=gen: self._rev_done(g, r))
+
+    def _rev_run(self, data, done):
+        """Revisa ``data`` en otro hilo (el revisor es lento: ~2 s por MB) y llama a ``done(resultado)``
+        en el hilo de Tk. El hilo solo toca la cola."""
+        q = self._rev_q
+        self._rev["pending"] += 1
+
+        def job():
+            try:
+                r = RC.revisar(data)
+            except Exception as e:                # revisar() no lanza, pero un hilo caído dejaría esperando
+                r = {"ok": False, "datos": {}, "avisos": [], "errores": [
+                    {"codigo": "contenido", "mensaje": f"La revisión falló: {e}", "que_hacer": ""}]}
+            q.put((done, r))
+        threading.Thread(target=job, daemon=True).start()
+        if not self._rev["polling"]:
+            self._rev["polling"] = True
+            self.root.after(100, self._rev_poll)
+
+    def _rev_poll(self):
+        st = self._rev
+        try:
+            while True:
+                done, r = self._rev_q.get_nowait()
+                st["pending"] = max(0, st["pending"] - 1)
+                try:
+                    done(r)
+                except tk.TclError:
+                    raise
+                except Exception:
+                    self.root.report_callback_exception(*sys.exc_info())
+        except queue.Empty:
+            pass
+        except tk.TclError:
+            st["polling"] = False
+            return
+        if st["pending"] > 0:
+            try:
+                self.root.after(100, self._rev_poll)
+            except tk.TclError:
+                pass
+        else:
+            st["polling"] = False
+
+    def _rev_done(self, gen, r):
+        st = self._rev
+        st["inflight"] = False
+        queued, st["queued"] = st["queued"], None
+        if queued is not None and queued == st["gen"] and gen != st["gen"]:
+            self._rev_launch(queued)              # lo último que se pidió mientras corría esta
+            return
+        if gen != st["gen"]:                      # el tema cambió mientras se revisaba
+            return
+        st["result"] = r
+        if self.screen == "exp":
+            self._paint_export()
+
+    def _rev_status(self, n):
+        """Pie de la ventana: «N cosas por arreglar antes de enviar.» (n = 0 lo quita si lo puso esto)."""
+        st = self._rev
+        if n:
+            st["status"] = True
+            self.status.configure(text=f"{n} {'cosa' if n == 1 else 'cosas'} por arreglar antes de enviar.",
+                                  fg=C["bad_text"])
+        elif st["status"]:
+            st["status"] = False
+            self.status.configure(text="Listo.", fg=C["muted"])
+
+    def _paint_review(self, res):
+        """Dibuja el bloque «Revisión para la comunidad» (solo si cambió)."""
+        st = self._rev
+        if st["shown"] is not None and st["shown"][0] is res and st["shown"][1] == self.screen:
+            return
+        st["shown"] = (res, self.screen)
+        for c in self.exp_rev.winfo_children():
+            c.destroy()
+
+        def row(mark, text, color):
+            r = tk.Frame(self.exp_rev, bg=C["panel"])
+            r.pack(fill="x", pady=1)
+            tk.Label(r, text=mark, bg=C["panel"], fg=C[color], font=fnt(-1, True), width=2).pack(
+                side="left", anchor="n")
+            self.lbl(r, text, -1, color=color, wrap=470).pack(side="left", fill="x", expand=True)
+
+        def hint(text):
+            self.lbl(self.exp_rev, text, -1, color="muted", wrap=450).pack(fill="x", padx=(26, 0), pady=(0, 3))
+
+        if res is None:
+            row("…", "Revisando el tema…", "muted")
+            self._rev_status(0)
+            return
+        errs, datos = res.get("errores", []), res.get("datos", {})
+        cods = {e.get("codigo") for e in errs}
+        if not cods & {"nombre_invalido", "version_invalida", "campos_faltantes", "campo_invalido"}:
+            row("✔", "Nombre y versión válidos", "ok_text")
+        if datos.get("imagenes") and not cods & {"no_png", "png_bloque_raro", "png_datos_extra", "imagen_rota",
+                                                 "imagen_tamano", "imagen_animada"}:
+            row("✔", "Imágenes guardadas por el Estudio (PNG sin datos extra)", "ok_text")
+        if "archivo_grande" not in cods and datos.get("tamano"):
+            row("✔", f"Pesa {max(1, datos['tamano'] // 1024)} KB de 5 MB", "ok_text")
+        for e in errs:
+            row("✗", e.get("mensaje", ""), "bad_text")
+            if e.get("que_hacer"):
+                hint(e["que_hacer"])
+        for a in res.get("avisos", []):
+            row("!", a.get("mensaje", ""), "warn_text")
+            if a.get("que_hacer"):
+                hint(a["que_hacer"])
+        if res.get("ok"):
+            row("✔", "Lista la revisión de la comunidad: todo bien", "ok_text")
+        self._rev_status(len(errs) if self.screen == "exp" else 0)
+
     def export(self):
         made = self._make_npt()
         if made is None:
@@ -2832,22 +3033,62 @@ class App:
     # ---------------------------------------------------------------- enviar a la comunidad
     def send_community(self):
         """Revisa lo que exige el catálogo, guarda el .npt firmado en la carpeta de envíos y abre la guía."""
+        st = self._rev
+        if st["enviando"]:
+            return
+        st["enviando"] = True                     # hasta que termine la revisión final (ver _send_revisado)
+        started = False
+        try:
+            started = self._send_start()
+        finally:
+            if not started:
+                st["enviando"] = False
+                if self.screen == "exp":
+                    self._paint_export()
+
+    def _send_start(self) -> bool:
+        """Chequeos y revisión final. True si quedó una revisión en vuelo (ella baja la bandera «enviando»)."""
         if self.mode == "creador":
             messagebox.showinfo(APP, "Los temas oficiales se publican con el Publicador.", parent=self.root)
-            return
+            return False
         pre = L.problemas_previos(self.meta["nombre"], self.meta["version"], self.mode, self.author)
         if pre:
             messagebox.showwarning(APP, "Todavía no se puede enviar:\n\n• " + "\n• ".join(pre), parent=self.root)
-            return
+            return False
         made = self._make_npt()
         if made is None:
-            return
+            return False
         theme, data = made
         ver = self.meta["version"].strip()
         bad = L.problemas_archivo(data, ver)
         if bad:
             messagebox.showwarning(APP, "El catálogo de la comunidad no aceptaría este tema:\n\n• "
                                    + "\n• ".join(bad), parent=self.root)
+            return False
+        # revisión «comunidad» de los bytes finales (los que se guardan), en otro hilo: la UI no se congela
+        cfg(self.send_btn, text="Revisando…", state="disabled")
+        self.toast("Revisando el tema antes de enviarlo…")
+        self._rev_run(data, lambda r: self._send_revisado(theme, ver, data, r))
+        return True
+
+    def _send_revisado(self, theme, ver, data, r):
+        """Sigue de send_community cuando termina la revisión; baja la bandera «enviando» pase lo que pase."""
+        try:
+            self._send_revisado_(theme, ver, data, r)
+        finally:
+            self._rev["enviando"] = False
+            try:
+                self._paint_export()                  # devuelve el botón a su estado
+            except tk.TclError:
+                pass
+
+    def _send_revisado_(self, theme, ver, data, r):
+        """Con errores avisa y no guarda nada; si está bien, guarda y abre el diálogo."""
+        if not r.get("ok"):
+            lines = [f"• {e['mensaje']}" + (f"\n  {e['que_hacer']}" if e.get("que_hacer") else "")
+                     for e in r.get("errores", [])]
+            messagebox.showwarning(APP, "La revisión de la comunidad no aceptaría este tema:\n\n"
+                                   + "\n\n".join(lines), parent=self.root)
             return
         path = os.path.join(L.carpeta_envios(), L.nombre_envio(theme.name, ver))
         try:
@@ -2858,18 +3099,15 @@ class App:
             messagebox.showerror(APP, f"No se pudo guardar el tema en\n{os.path.dirname(path)}\n\n{e}",
                                  parent=self.root)
             return
-        res = npt.read(data)
-        title, msg = L.armar_envio(theme.name, ver, theme.author, theme.description,
-                                   npt.fingerprint(res.author_key), VERSION)
         self.toast(f"Tema listo para enviar: {path}", "ok")
-        self.send_dialog(title, msg, path)
+        self.send_dialog(theme.name, ver, path, r.get("datos", {}))
 
-    def send_dialog(self, title, msg, path):
-        """Los 3 pasos: copiar el texto, abrir el foro y crear la publicación con el archivo."""
+    def send_dialog(self, name, version, path, datos):
+        """Los 3 pasos: revisar el nombre de creador, copiar «/tema subir» y abrir Discord con el archivo a mano."""
         d = Dialog(self.root, "Enviar a la comunidad")
         self.lbl(d.body, "Enviar a la comunidad", 4, True).pack(anchor="w")
-        self.lbl(d.body, "Tu tema ya está firmado y guardado. Faltan tres pasos para mandarlo al foro.", -1,
-                 color="muted", wrap=520).pack(anchor="w", pady=(2, 10))
+        self.lbl(d.body, f"Tu tema «{name} {version}» ya está firmado y guardado. Faltan tres pasos para "
+                         "mandarlo.", -1, color="muted", wrap=520).pack(anchor="w", pady=(2, 10))
 
         def step(n, head):
             row = tk.Frame(d.body, bg=C["panel"])
@@ -2881,55 +3119,61 @@ class App:
             self.lbl(col, head, 1, True).pack(anchor="w")
             return col
 
-        def copy(text, what):
+        def mono(parent, text, **kw):
+            return tk.Label(parent, text=text, bg=C["panel2"], fg=C["text"], font=fnt(-1, mono=True),
+                            anchor="w", justify="left", padx=8, pady=5, **kw)
+
+        # 1 · nombre de creador
+        c = step(1, "Revisa tu nombre de creador")
+        box = tk.Frame(c, bg=C["panel2"], highlightthickness=1, highlightbackground=C["line"], padx=12, pady=8)
+        box.pack(fill="x", pady=(4, 0))
+        for i, (k, v, m) in enumerate((("Nombre de creador", datos.get("autor") or self.author, False),
+                                       ("Carpeta", L.carpeta_comunidad(datos), True),
+                                       ("Huella de tu firma", L.formatear_huella(datos.get("huella", "")), True))):
+            self.lbl(box, k, -1, color="muted", bg="panel2").grid(row=i, column=0, sticky="w", pady=2)
+            tk.Label(box, text=v, bg=C["panel2"], fg=C["text"], font=fnt(-1, not m, mono=m), anchor="w",
+                     justify="left").grid(row=i, column=1, sticky="w", padx=(18, 0), pady=2)
+        warn = tk.Frame(c, bg=C["warn_bg"], highlightthickness=1, highlightbackground="#6e5a22", padx=10, pady=6)
+        warn.pack(fill="x", pady=(8, 0))
+        self.lbl(warn, "Es definitivo: al aceptar el aviso del bot, este nombre queda unido a tu firma para siempre.",
+                 -1, color="warn_text", bg="warn_bg", wrap=480).pack(fill="x")
+        self.lbl(c, "Si no te gusta, cierra y cámbialo en «5 · Mi firma de autor» antes de enviar.", -1,
+                 color="muted", wrap=500).pack(anchor="w", pady=(4, 0))
+
+        # 2 · comando
+        COMANDO = "/tema subir"
+        c = step(2, "Copia el comando")
+        r2 = tk.Frame(c, bg=C["panel"])
+        r2.pack(anchor="w", pady=(4, 0))
+        mono(r2, COMANDO).pack(side="left")
+
+        def copiar():
             self.root.clipboard_clear()
-            self.root.clipboard_append(text)
-            self.toast(f"{what} copiado.", "ok")
+            self.root.clipboard_append(COMANDO)
+            self.toast("Comando copiado. Pégalo en Discord con "
+                       f"{'⌘V' if sys.platform == 'darwin' else 'Ctrl+V'}.", "ok")
+        ttk.Button(r2, text="Copiar comando", style="Accent.TButton", command=copiar).pack(side="left", padx=10)
 
-        def readonly(parent, text, height):
-            t = tk.Text(parent, width=64, height=height, wrap="word", bg=C["panel2"], fg=C["text"],
-                        relief="flat", highlightthickness=1, highlightbackground=C["line"], font=fnt(-1),
-                        padx=8, pady=6, insertbackground=C["text"])
-            t.insert("1.0", text)
-            t.configure(state="disabled")           # solo lectura (se puede seleccionar y copiar)
-            t.pack(fill="x", pady=(4, 0))
-            return t
-
-        c = step(1, "Copia el texto")
-        self.lbl(c, "Título y mensaje de la publicación, ya listos:", -1, color="muted").pack(anchor="w")
-        readonly(c, title, 1)
-        readonly(c, msg, min(9, msg.count("\n") + 2))
-        bl = tk.Frame(c, bg=C["panel"])
-        bl.pack(anchor="w", pady=(6, 0))
-        ttk.Button(bl, text="Copiar texto", style="Accent.TButton", command=lambda: copy(msg, "Texto")).pack(side="left")
-        ttk.Button(bl, text="Copiar título", command=lambda: copy(title, "Título")).pack(side="left", padx=8)
-
-        c = step(2, "Abre el foro")
-        url = FORO_TEMAS_URL.strip()
+        # 3 · Discord y el archivo
+        c = step(3, "Abre Discord y ten a mano el archivo")
+        mono(c, path, wraplength=500).pack(fill="x", pady=(4, 0))
+        url = SUBIR_TEMAS_URL.strip() or FORO_TEMAS_URL.strip()      # sin #subir-temas configurado, el foro
         ok_url = L.foro_url_valida(url)
-        if ok_url:
-            self.lbl(c, "Se abre en tu navegador, en el foro de temas del Discord de OkumaWsX.", -1, color="muted",
-                     wrap=500).pack(anchor="w")
-        else:
-            self.lbl(c, "El foro todavía no está configurado en esta versión." if not url else
-                     "El enlace del foro configurado en esta versión no es válido.", -1, color="warn_text",
-                     wrap=500).pack(anchor="w")
-        b = ttk.Button(c, text="Abrir el foro de Discord", command=lambda: self._open_url(url))
-        b.pack(anchor="w", pady=(6, 0))
+        r3 = tk.Frame(c, bg=C["panel"])
+        r3.pack(anchor="w", pady=(8, 0))
+        b = ttk.Button(r3, text="Abrir Discord", command=lambda: self._open_url(url))
+        b.pack(side="left")
         if not ok_url:
             b.configure(state="disabled")
+        ttk.Button(r3, text="Mostrar el archivo", command=lambda: self.show_file(path)).pack(side="left", padx=8)
+        if not ok_url:
+            self.lbl(c, "El enlace de Discord todavía no está configurado en esta versión." if not url else
+                     "El enlace de Discord configurado en esta versión no es válido.", -1, color="warn_text",
+                     wrap=500).pack(anchor="w", pady=(4, 0))
 
-        c = step(3, "Crea la publicación")
-        self.lbl(c, "Pulsa «Nueva publicación», pega el título y el texto, y arrastra el archivo.", -1,
-                 color="muted", wrap=500).pack(anchor="w")
-        pl = tk.Label(c, text=path, bg=C["panel"], fg=C["text"], font=fnt(-1, mono=True), anchor="w",
-                      justify="left", wraplength=500)
-        pl.pack(anchor="w", pady=(4, 0))
-        ttk.Button(c, text="Mostrar el archivo", command=lambda: self.show_file(path)).pack(anchor="w", pady=(6, 0))
-
-        self.lbl(d.body, "OkumaWsX revisa cada tema antes de que aparezca en Numpad Macros.", -1, color="muted",
-                 wrap=520).pack(anchor="w", pady=(14, 0))
-        d.button("Cerrar", d.close, accent=True)
+        self.lbl(d.btns, "Puedes dejar esta ventana abierta mientras subes el tema.", -1, color="muted").pack(
+            side="left")
+        d.button("Cerrar", d.close)
         self.send_dlg = d
         d.wait()
 
@@ -3586,6 +3830,8 @@ def main():
     _integrate_linux(icon)
     if probe:
         App.startup = lambda self: None
+    if probe:                                   # solo en memoria: la revisión «comunidad» exige un nombre de autor
+        K.load_settings = lambda: {"nombre": "Ana"}
     app = App(root)
     root.protocol("WM_DELETE_WINDOW", app.on_close)
     if probe:
@@ -3627,12 +3873,27 @@ def main():
                 root.update()
                 theme = app.build_theme_meta()     # se exporta y se vuelve a leer, como Numpad Macros
                 theme.images = app.final_images()
-                res = npt.read(npt.write(theme, npt.SigningKey.generate()))
+                data = npt.write(theme, npt.SigningKey.generate("autor", "Ana"))
+                res = npt.read(data)
                 if not (res.theme.gradient and res.theme.animated and res.theme.sections):
                     errors.append("el tema exportado no trae degradado, secciones o animaciones")
+                rv = RC.revisar(data)               # la revisión «comunidad» acepta lo que exporta el Estudio
+                if not rv["ok"]:
+                    errors.append("la revisión de la comunidad rechaza el tema exportado: "
+                                  + ", ".join(e["codigo"] for e in rv["errores"]))
+                app._show_now("exp")                # y la de la pestaña (en su hilo) termina sin bloquear
+                t0 = time.time()
+                while app._rev["result"] is None and time.time() - t0 < 30:
+                    root.update()
+                    time.sleep(0.05)
+                if app._rev["result"] is None or not app._rev["result"]["ok"]:
+                    errors.append("la revisión de la pestaña Exportar no terminó bien: " + str(
+                        [e["codigo"] for e in (app._rev["result"] or {}).get("errores", [])] or "sin resultado"))
                 root.update()
                 root.destroy()
                 if errors:
+                    for e in errors:
+                        print("Estudio de Temas: prueba con errores:", e, file=sys.stderr)
                     sys.exit(1)
                 print("Estudio de Temas: prueba OK")
         root.after(800, run)

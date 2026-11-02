@@ -513,6 +513,10 @@ class EnvioComunidadTest(unittest.TestCase):
             self.assertTrue(L.problemas_previos("Mi Tema", v, "comunidad", "Ana"), v)
         self.assertTrue(L.problemas_previos("Mi Tema", "1.0", "comunidad", "OkumaWsX"))
         self.assertTrue(L.problemas_previos("Mi Tema", "1.0", "comunidad", "0kuma W5X"))
+        for autor in ("", "   ", "A", "!!"):                        # sin nombre de creador válido
+            p = L.problemas_previos("Mi Tema", "1.0", "comunidad", autor)
+            self.assertTrue(any("nombre de creador" in x for x in p), autor)
+        self.assertFalse(any("nombre de creador" in x for x in L.problemas_previos("Mi Tema", "1.0", "comunidad", "Ana")))
 
     def test_problemas_archivo(self):
         self.assertEqual(L.problemas_archivo(self._tema(), "1.0"), [])
@@ -525,6 +529,76 @@ class EnvioComunidadTest(unittest.TestCase):
         from unittest import mock
         with mock.patch("shutil.which", return_value=None), mock.patch.object(L.sys, "platform", "linux"):
             self.assertFalse(L.mostrar_archivo("/tmp/no-existe/tema.npt"))
+
+
+@unittest.skipIf(L is None, "Pillow no está instalado")
+class RevisionComunidadTest(unittest.TestCase):
+    """La revisión «comunidad» (la del bot Centinela) copiada en el Estudio."""
+    ORIGEN = "/home/okuma/Documentos/Proyectos/revision automatica de bot/revision"
+
+    @classmethod
+    def setUpClass(cls):
+        import revision_comunidad
+        cls.RC = revision_comunidad
+
+    def _tema(self, **kw):
+        npt = L.npt
+        t = npt.Theme(name=kw.pop("name", "Aurora Neón"), author=kw.pop("author", "nico-gamer"),
+                      colors=L.builtin_themes()[0]["colores"], version=kw.pop("version", "1.0"), **kw)
+        return npt.write(t, npt.SigningKey.generate("autor", t.author))
+
+    def _copia(self, destino, origen):
+        ruta = os.path.join(self.ORIGEN, origen)
+        if not os.path.isfile(ruta):
+            self.skipTest("no está la carpeta de origen de la revisión")
+        with open(ruta, "rb") as a, open(os.path.join(EST, destino), "rb") as b:
+            self.assertEqual(a.read(), b.read(), f"{destino} ya no coincide con revision/{origen}: vuelve a copiarlo")
+
+    def test_copias_iguales_al_origen(self):
+        self._copia("reglas.json", "reglas.json")
+        self._copia("revision_comunidad.py", "npt.py")
+
+    def test_tema_del_estudio_pasa_la_revision(self):
+        r = self.RC.revisar(self._tema(description="Un tema azul con acentos: ñandú."))
+        self.assertTrue(r["ok"], r["errores"])
+        self.assertEqual(r["datos"]["autor_slug"], "nico-gamer")
+        self.assertEqual(r["datos"]["tema_id"], "aurora-neon")
+
+    def test_tema_con_imagen_pasa_la_revision(self):
+        from PIL import Image
+        import io
+        buf = io.BytesIO()
+        Image.new("RGBA", (1200, 106), (20, 30, 60, 255)).save(buf, "PNG")
+        t = L.npt.Theme(name="Con Banner", author="Ana", colors=L.builtin_themes()[0]["colores"], version="1.0",
+                        images={"banner": buf.getvalue()})
+        r = self.RC.revisar(L.npt.write(t, L.npt.SigningKey.generate("autor", "Ana")))
+        self.assertTrue(r["ok"], r["errores"])
+
+    def test_descripcion_con_enlace(self):
+        r = self.RC.revisar(self._tema(description="Inspirado en auroras. Más en bit.ly/x"))
+        self.assertFalse(r["ok"])
+        self.assertIn("texto_enlace", [e["codigo"] for e in r["errores"]])
+        for e in r["errores"]:
+            self.assertTrue(e["mensaje"])
+
+    def test_no_es_un_tema(self):
+        r = self.RC.revisar(b"esto no es un tema")        # nunca lanza
+        self.assertFalse(r["ok"])
+        self.assertTrue(r["errores"])
+
+    def test_nombre_de_archivo_y_carpeta_del_dialogo(self):
+        r = self.RC.revisar(self._tema())
+        self.assertEqual(L.nombre_envio("Aurora Neón", "1.0"), "aurora-neon-1.0.npt")
+        self.assertEqual(L.carpeta_comunidad(r["datos"]), "comunidad/nico-gamer/aurora-neon/")
+
+    def test_formatear_huella(self):
+        ya = "7C1A 09E2 44B0 D1F3 · 2B9C 61AA 0F7E 93D5"
+        self.assertEqual(L.formatear_huella(ya), ya)
+        self.assertEqual(L.formatear_huella("7c1a09e244b0d1f32b9c61aa0f7e93d5"), ya)
+        self.assertEqual(L.formatear_huella(""), "")
+        self.assertEqual(L.formatear_huella("raro"), "raro")
+        r = self.RC.revisar(self._tema())
+        self.assertEqual(L.formatear_huella(r["datos"]["huella"]), r["datos"]["huella"])
 
 
 class CapturasReleaseTest(unittest.TestCase):

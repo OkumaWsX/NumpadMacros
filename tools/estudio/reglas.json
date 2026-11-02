@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "limites": {
+    "max_bytes": 5242880,
+    "max_descomprimido": 25165824,
+    "max_nombre": 32,
+    "max_autor": 24,
+    "max_version": 8,
+    "max_descripcion": 80,
+    "max_cuadros": 120,
+    "max_profundidad": 20,
+    "max_pixeles": 160000000,
+    "id_ok": "^[a-z0-9][a-z0-9-]{1,40}$",
+    "version_ok": "^\\d+(\\.\\d+){0,2}$",
+    "opacidad_ventana_min": 50,
+    "tinte_max": 90
+  },
+  "ranuras": {
+    "banner": [1200, 120], "keys": [600, 520], "logo": [64, 64], "headmid": [360, 48],
+    "tabsend": [240, 28], "leftbot": [360, 160], "corner": [600, 200], "footband": [1200, 40],
+    "foot": [420, 28], "fondo": [1920, 1200]
+  },
+  "ranuras_animadas": ["headmid", "tabsend", "leftbot", "foot"],
+  "colores": ["bg", "panel", "panel2", "line", "text", "muted", "acc", "on_acc", "acc_hover", "acc_dim", "acc_bg",
+              "key", "key_set", "key_set_line", "key_set_text", "key_global", "key_global_line", "key_global_text",
+              "ok", "on_ok", "bad", "warn"],
+  "secciones": ["head", "left", "keys", "tabs", "body", "foot"],
+  "degradado_desde": ["tl", "t", "tr", "l", "c", "r", "bl", "b", "br"],
+  "degradado_colores": [2, 5],
+  "esquema": {
+    "obligatorios": ["formato", "nombre", "autor", "version", "descripcion", "tipo", "creado", "colores", "alfa",
+                     "ventana", "admite_transparencia", "imagenes"],
+    "opcionales": ["fondo", "secciones", "pausar_animaciones"],
+    "ventana": ["opacidad", "sin_usar"],
+    "imagen": ["inicio", "largo", "formato", "cuadros"],
+    "fondo": ["tipo", "colores", "desde", "una_pieza", "tinte"],
+    "seccion": ["fondo", "contenido", "realce"]
+  },
+  "png": {
+    "bloques_permitidos": ["IHDR", "PLTE", "tRNS", "IDAT", "IEND", "acTL", "fcTL", "fdAT"]
+  },
+  "texto": {
+    "enlace": "https?:|ftp:|www\\.|[a-z0-9-]+\\.[a-z]{2,}/",
+    "mencion": "@(everyone|here)|<[@#]",
+    "invisibles": [[0, 31], [127, 159], [173, 173], [1564, 1564], [6158, 6158], [8203, 8207], [8232, 8238],
+                   [8288, 8303], [65279, 65279]]
+  },
+  "reservado": {
+    "nombre": "OkumaWsX",
+    "parecidas_de": "аеорсухкмтвнѕіјԁԝωυսµ×０１２３４５６７８９",
+    "parecidas_a": "aeopcyxkmtbhsijdwwuuux0123456789",
+    "numeros_de": "0135@",
+    "numeros_a": "oiesa"
+  },
+  "campos": {
+    "nombre": {"campo": "El nombre", "donde": "1 · Editar tema"},
+    "autor": {"campo": "El nombre de autor", "donde": "5 · Mi firma de autor"},
+    "descripcion": {"campo": "La descripción", "donde": "1 · Editar tema"}
+  },
+  "reexportar": "Abre tu proyecto en el Estudio de Temas, expórtalo de nuevo con «4 · Exportar» y súbelo sin pasarlo por otros programas.",
+  "motivos": {
+    "archivo_ilegible": ["No pude leer el archivo.", "Súbelo de nuevo."],
+    "archivo_grande": ["El tema pesa {kb} KB y el máximo es {max_kb} KB.", "Usa imágenes más livianas o menos imágenes y exporta de nuevo con «4 · Exportar»."],
+    "formato": ["El archivo no es un tema de Numpad Macros (.npt).", "Exporta el tema con «4 · Exportar» en el Estudio de Temas y súbelo sin pasarlo por otros programas."],
+    "proyecto_editable": ["Este archivo es un proyecto editable del Estudio, no un tema.", "Expórtalo como .npt con «4 · Exportar» y sube ese archivo."],
+    "version_formato": ["El tema no usa el formato del Estudio de Temas actual (versión 2).", "{reexportar}"],
+    "danado": ["El archivo está dañado o fue modificado después de crearlo.", "{reexportar}"],
+    "firma_oficial": ["El tema salió con la firma oficial.", "Los temas oficiales no se envían a la comunidad. Usa tu firma de autor en «5 · Mi firma de autor» y exporta de nuevo."],
+    "contenido": ["El contenido del tema no se puede leer.", "{reexportar}"],
+    "campos_faltantes": ["Al tema le faltan datos: {detalle}.", "{reexportar}"],
+    "campo_extra": ["El tema tiene un campo que el Estudio no escribe ({campo}).", "{reexportar}"],
+    "campo_invalido": ["Un dato del tema no es válido: {detalle}", "{reexportar}"],
+    "nombre_invalido": ["{campo} debe tener al menos 2 letras o números (el catálogo lo usa como nombre de carpeta).", "Cámbialo en «{donde}»."],
+    "version_invalida": ["La versión «{version}» no es válida: usa números separados por puntos (1.0, 1.2.3).", "Cámbiala en «1 · Editar tema»."],
+    "bloques": ["Las imágenes del archivo no ocupan el bloque completo: hay bytes sueltos, huecos o solapes.", "{reexportar}"],
+    "no_png": ["La imagen del espacio {espacio} no es PNG.", "{reexportar}"],
+    "png_bloque_raro": ["La imagen del espacio {espacio} trae un bloque que el Estudio no escribe ({detalle}).", "{reexportar}"],
+    "png_datos_extra": ["La imagen del espacio {espacio} trae datos escondidos después del final del PNG.", "{reexportar}"],
+    "imagen_rota": ["La imagen del espacio {espacio} está rota o no coincide con su encabezado ({detalle}).", "{reexportar}"],
+    "imagen_tamano": ["La imagen del espacio {espacio} es demasiado grande ({detalle}).", "Usa una imagen más pequeña en «3 · Imágenes y plantillas»."],
+    "imagen_animada": ["La imagen del espacio {espacio} es animada, pero ese espacio solo admite imágenes fijas.", "Usa una imagen fija en «3 · Imágenes y plantillas»."],
+    "texto_enlace": ["{campo} tiene un enlace.", "Quita el enlace en «{donde}»."],
+    "texto_mencion": ["{campo} tiene una mención (@everyone, @here, <@…> o <#…>).", "Quítala en «{donde}»."],
+    "texto_invisible": ["{campo} tiene un carácter invisible.", "Escríbelo de nuevo en «{donde}»."],
+    "nombre_reservado": ["El nombre de autor está reservado para el creador oficial.", "Cámbialo en «5 · Mi firma de autor»."],
+    "duplicado": ["Este tema es idéntico a uno ya publicado ({otro}).", "Haz un diseño propio o pide permiso al autor original."],
+    "version_existe": ["La versión {version} de «{nombre}» ya está publicada.", "Sube una versión nueva (por ejemplo 1.1) en «1 · Editar tema»."],
+    "nombre_repetido": ["Ya hay un tema llamado «{nombre}» ({otro}).", "Ponle otro nombre en «1 · Editar tema»."],
+    "nombre_ocupado": ["El nombre «{autor}» ya lo usa otra persona.", "Elige otro nombre de creador en «5 · Mi firma de autor» y exporta de nuevo."],
+    "nombre_cambiado": ["Tu firma ya tiene un nombre: «{registrado}». Este tema trae «{autor}».", "En «5 · Mi firma de autor» vuelve a poner {registrado} y exporta de nuevo. El nombre no se puede cambiar; si necesitas otro, pídeselo a OkumaWsX."]
+  },
+  "avisos": {
+    "imagenes_a_mano": ["Las imágenes igual las revisa OkumaWsX a mano.", ""]
+  }
+}
