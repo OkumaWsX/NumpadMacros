@@ -576,7 +576,9 @@ def revisar(origen):
     datos.update(nombre=nombre, autor=autor, version=version, descripcion=meta.get("descripcion"), tipo=meta.get("tipo"),
                  colores=colores if isinstance(colores, dict) else {}, imagenes=imagenes,
                  autor_slug=slug(autor) if isinstance(autor, str) else "",
-                 tema_id=slug(nombre) if isinstance(nombre, str) else "")
+                 tema_id=slug(nombre) if isinstance(nombre, str) else "",
+                 # solo es fiable con ok=True: las mismas reglas de arriba ya revisaron su forma y sus límites
+                 estilo={k: meta[k] for k in ("fondo", "secciones", "alfa", "ventana", "pausar_animaciones") if k in meta})
     res["ok"] = not errores
     return res
 

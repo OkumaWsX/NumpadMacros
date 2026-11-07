@@ -220,6 +220,390 @@ class LogicTest(unittest.TestCase):
         self.assertEqual(L.slug("¡¡!!"), "tema")
 
 
+def _estudio():
+    """El módulo de la ventana (sin abrirla), o None si este Python no tiene Tk."""
+    try:
+        import estudio
+        return estudio
+    except Exception:
+        return None
+
+
+class _FakeCanvas:
+    def after(self, *a):
+        return 1
+
+    def after_cancel(self, *a):
+        pass
+
+
+@unittest.skipIf(L is None, "Pillow no está instalado")
+class AvisosTest(unittest.TestCase):
+    """Avisos de legibilidad con «Ir» (1.3.0): a qué control lleva cada uno, orden y repetidos."""
+
+    def setUp(self):
+        self.base = dict(L.builtin_themes()[0]["colores"])
+        E = _estudio()
+        self.labels = E.LABELS if E else {k: k for k in L.npt.TOKENS}
+
+    def probs(self, colors, sections=None, window=None, auto=False):
+        return L.problems(colors, {}, window or {"opacidad": 100}, sections or {}, {}, {}, auto, self.labels)
+
+    def test_cada_pareja_lleva_a_su_control(self):
+        import vista as V
+        pv = V.Preview(_FakeCanvas())
+        pv._put = lambda im: None
+        pv.draw(L.effective(self.base, {}))
+        E = _estudio()
+        for name, f, b, _mn in L.PAIRS:
+            c = dict(self.base)
+            c[f] = c[b]                              # el texto igual a su fondo: no se lee
+            ps = {p["nombre"]: p for p in self.probs(c)}
+            self.assertIn(name, ps, name)
+            p = ps[name]
+            self.assertEqual(p["pestana"], "edit")
+            self.assertTrue(p["capas"] and set(p["capas"]) <= set(L.npt.TOKENS), name)
+            self.assertTrue({f, b} & set(p["capas"]), name)
+            if E:
+                self.assertIn(p["capas"][0], E.LABELS, name)        # hay una fila con ese color
+            self.assertTrue(pv.rects(L.PAIR_MARKS[name]), f"{name}: nada que marcar en la vista previa")
+            self.assertTrue(p["frase"].endswith(".") and "«" in p["frase"], name)
+        # «Selección en listas» con los tonos derivados: se arregla con el acento
+        c = dict(self.base, acc_dim=self.base["text"])
+        p = next(p for p in self.probs(c, auto=True) if p["nombre"] == "Selección en listas")
+        self.assertEqual(p["capas"][0], "acc")
+        # opacidad y secciones también llevan a su control
+        p = self.probs(self.base, window={"opacidad": 50})[0]
+        self.assertEqual((p["nombre"], p["control"], p["st"]), ("Opacidad de la ventana", "ventana", "bad"))
+        p = self.probs(self.base, {"tabs": {"fondo": 100, "contenido": 30, "realce": False}})[0]
+        self.assertEqual((p["pestana"], p["seccion"]), ("sec", "tabs"))
+        self.assertIn("ahora 30 %", p["frase"])
+
+    def test_orden_por_gravedad(self):
+        c = dict(self.base, key_set_text="#4a4638", key_set="#3d3a30", muted="#5d626d", panel="#1c1f26")
+        secs = {"tabs": {"fondo": 100, "contenido": 30, "realce": False},
+                "body": {"fondo": 100, "contenido": 55, "realce": False}}
+        ps = self.probs(c, secs)
+        sts = [p["st"] for p in ps]
+        self.assertEqual(sts, sorted(sts, key=lambda s: s != "bad"))       # primero ✗, luego ⚠
+        self.assertEqual(ps[0]["nombre"], "Tecla con acción")
+        warns = [p["r"] / p["mn"] for p in ps if p["st"] == "warn"]
+        self.assertEqual(warns, sorted(warns))                               # lo más lejos del mínimo, antes
+        self.assertTrue(any(p["st"] == "warn" and p["r"] / p["mn"] < .75 for p in ps))   # una sección muy atenuada
+
+    def test_seccion_repetida_no_se_duplica(self):
+        c = dict(self.base, key_set_text="#4a4638", key_set="#3d3a30")
+        ps = self.probs(c)
+        names = [p["nombre"] for p in ps]
+        self.assertNotIn("Sección · Teclas", names)
+        self.assertEqual(next(p for p in ps if p["nombre"] == "Tecla con acción")["secciones"], ["keys"])
+        # si la sección se atenuó a propósito, es otro aviso (y lleva a la pestaña de secciones)
+        ps = self.probs(c, {"keys": {"fondo": 100, "contenido": 50, "realce": False}})
+        self.assertIn("Sección · Teclas", [p["nombre"] for p in ps])
+        # sin problema de colores, una sección atenuada avisa sola
+        ps = self.probs(self.base, {"keys": {"fondo": 100, "contenido": 30, "realce": False}})
+        self.assertEqual([p["nombre"] for p in ps], ["Sección · Teclas"])
+
+
+def _imagen_luna():
+    """Noche oscura con una luna brillante en un hueco del encabezado donde no hay texto."""
+    from PIL import Image, ImageDraw, ImageFilter
+    import vista as V
+    w, h = 1600, 1000
+    im = Image.new("RGB", (w, h), (20, 26, 56))
+    k = max(V.WW / w, V.WH / h)
+    cx, cy = (400 + (w * k - V.WW) / 2) / k, 24 / k
+    m = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(m).ellipse([cx - 80, cy - 70, cx + 80, cy + 70], fill=255)
+    im.paste((255, 250, 235), (0, 0), m.filter(ImageFilter.GaussianBlur(6)))
+    return im
+
+
+def _imagen_brillo():
+    """Doce franjas oscuras (llenan la paleta) y un brillo claro y chico justo bajo el título."""
+    from PIL import Image, ImageDraw, ImageFilter
+    import vista as V
+    w, h = 1600, 1000
+    im = Image.new("RGB", (w, h))
+    d = ImageDraw.Draw(im)
+    for i, c in enumerate([(40, 20, 70), (80, 25, 50), (20, 50, 90), (15, 80, 70), (90, 40, 20), (30, 20, 50),
+                           (20, 90, 30), (70, 70, 15), (15, 40, 40), (60, 15, 90), (95, 20, 20), (25, 60, 60)]):
+        d.rectangle([0, i * h // 12, w, (i + 1) * h // 12], fill=c)
+    k = max(V.WW / w, V.WH / h)
+    ox = (w * k - V.WW) / 2
+    m = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(m).rounded_rectangle([(8 + ox) / k, 4 / k, (170 + ox) / k, 40 / k], radius=20, fill=255)
+    im.paste((250, 240, 215), (0, 0), m.filter(ImageFilter.GaussianBlur(4)))
+    return im
+
+
+@unittest.skipIf(L is None, "Pillow no está instalado")
+class MedicionPorZonaTest(unittest.TestCase):
+    """Texto sobre la imagen de fondo, medido zona por zona (1.3.0)."""
+
+    def setUp(self):
+        import vista as V
+        self.V = V
+        self.colors = dict(L.builtin_themes()[0]["colores"])
+        self.e = L.effective(self.colors, {})
+
+    def medir(self, im, dark=0, one_piece=False, tint=35):
+        return self.V.measure_image(L.to_png(im), self.colors["bg"], self.e, dark, tint, one_piece, {})
+
+    def antes(self, im):
+        """Lo que hacía el Estudio hasta la 1.2: los 5 colores principales y el peor."""
+        return L.colors_check(self.e, L.background_colors(im))
+
+    def test_luna_en_un_hueco_sin_texto_no_bloquea(self):
+        im = _imagen_luna()
+        self.assertEqual(self.antes(im)[2], "bad")              # el método viejo bloqueaba sin motivo
+        res = self.medir(im)
+        self.assertEqual(res["st"], "ok", res["peor"])
+        self.assertEqual(res["malas"], [])
+
+    def test_brillo_bajo_el_titulo_si_bloquea(self):
+        im = _imagen_brillo()
+        self.assertEqual(self.antes(im)[2], "ok")               # el método viejo no lo veía
+        res = self.medir(im)
+        self.assertEqual(res["st"], "bad")
+        self.assertIn("título", res["peor"]["nombre"])
+        self.assertEqual(res["peor"]["rect"][:2], (12, 8))      # y marca esa zona
+        self.assertIn("«Oscurecer la imagen»", L.image_advice(res))
+
+    def test_sugerencia_del_minimo(self):
+        res = self.medir(_imagen_brillo())
+        d = res["sug_oscurecer"]
+        self.assertIsNotNone(d)
+        self.assertEqual(d % 5, 0)
+        self.assertLessEqual(d, L.DARK_MAX)
+        self.assertEqual(self.medir(_imagen_brillo(), dark=d)["st"], "ok")
+        self.assertNotEqual(self.medir(_imagen_brillo(), dark=d - 5)["st"], "ok")      # es el mínimo
+        self.assertIn(f"a {d} %", L.image_advice(res))
+
+    def test_sugerencia_con_tope_y_tinte_solo_en_paneles(self):
+        from PIL import Image
+        # fondo de prueba: gris que se oscurece con «Oscurecer»; los paneles, con el tinte
+        zones = [{"rect": (0, 0, 10, 10), "tag": "t:text", "nombre": "el título", "panel": False},
+                 {"rect": (20, 0, 30, 10), "tag": "t:text", "nombre": "un texto del panel", "panel": True}]
+        e = {"text": "#ffffff", "muted": "#aaaaaa"}
+
+        def backdrop(level_head, level_panel):
+            def f(d, t):
+                im = Image.new("RGB", (40, 10), (level_head(d),) * 3)
+                im.paste((level_panel(d, t),) * 3, (20, 0, 40, 10))
+                return im
+            return f
+        def minimo(level):           # el primer valor (de 5 en 5) con que el blanco se lee sobre ese gris
+            return next(v for v in range(5, 95, 5) if L.ratio("#ffffff", L.rgb2hex((level(v),) * 3)) >= 4.5)
+        # el encabezado se arregla oscureciendo: el mínimo exacto, de 5 en 5
+        bd = backdrop(lambda d: 255 - d * 4, lambda d, t: 40)
+        res = L.image_check(bd, zones, e, 0, 35, True)
+        self.assertEqual((res["st"], res["peor"]["nombre"], res["sug_oscurecer"], res["sug_tinte"]),
+                         ("bad", "el título", minimo(lambda d: 255 - d * 4), None))   # no está en un panel: sin tinte
+        # nada lo arregla: sin sugerencia (el control no pasa de DARK_MAX)
+        res = L.image_check(backdrop(lambda d: 255, lambda d, t: 40), zones, e, 0, 35, True)
+        self.assertIsNone(res["sug_oscurecer"])
+        self.assertIn("ni oscureciéndola al máximo", L.image_advice(res))
+        # la peor está en un panel de una pieza: también se sugiere el tinte
+        res = L.image_check(backdrop(lambda d: 40, lambda d, t: 255 - t * 3), zones, e, 0, 35, True)
+        t = minimo(lambda t: 255 - t * 3)
+        self.assertEqual((res["peor"]["nombre"], res["sug_tinte"]), ("un texto del panel", t))
+        self.assertIn(f"«Tinte de los paneles» (ahora 35 %) a {t} %", L.image_advice(res))
+        self.assertIsNone(L.image_check(bd, [], e, 0, 35, True))           # sin texto sobre la imagen
+
+    def test_contenido_atenuado_cuenta(self):
+        # el «Contenido» de la sección mezcla el texto con la imagen: a medias se lee peor
+        from PIL import Image
+        im = Image.new("RGB", (1600, 1000), (40, 40, 40))
+        lleno = self.medir(im)
+        src, bg = L.to_png(im), self.colors["bg"]
+        atenuado = self.V.measure_image(src, bg, self.e, 0, 35, False,
+                                        {"head": {"fondo": 0, "contenido": 40, "realce": False}})
+        cab = [z for z in atenuado["zonas"] if z["seccion"] == "head"]
+        self.assertTrue(cab and all(z["r"] < min(y["r"] for y in lleno["zonas"] if y["seccion"] == "head")
+                                    for z in cab))
+        # las pestañas y «Novedades» del pie también son texto que puede ir sobre la imagen
+        nombres = {z["nombre"] for z in self.V.text_zones()}
+        self.assertIn("los nombres de las pestañas", nombres)
+        self.assertIn("«Novedades» del pie", nombres)
+
+    def test_paneles_opacos_no_cuentan(self):
+        # sin «fondo de una pieza», los paneles tapan la imagen: solo se mide el encabezado y el pie
+        res = self.medir(_imagen_luna())
+        self.assertEqual({z["seccion"] for z in res["zonas"]}, {"head", "foot"})
+        res = self.medir(_imagen_luna(), one_piece=True)
+        self.assertTrue({"left", "body"} <= {z["seccion"] for z in res["zonas"]})
+
+
+@unittest.skipIf(L is None, "Pillow no está instalado")
+class AppAvisosTest(unittest.TestCase):
+    """La ventana de verdad (sin mostrar diálogos ni usar la red): «Ir», bloqueo al exportar y el hilo de la
+    medición por zona."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.E = _estudio()
+        if cls.E is None:
+            raise unittest.SkipTest("este Python no tiene Tk")
+        cls.tmp = tempfile.mkdtemp()
+        cls.env = {k: os.environ.get(k) for k in ("NPT_ESTUDIO_DIR", "NPT_ENVIOS_DIR", "ESTUDIO_API")}
+        api = os.path.join(cls.tmp, "releases.json")
+        with open(api, "w", encoding="utf-8") as f:
+            f.write("[]")
+        os.environ.update(NPT_ESTUDIO_DIR=os.path.join(cls.tmp, "estudio"),
+                          NPT_ENVIOS_DIR=os.path.join(cls.tmp, "envios"), ESTUDIO_API="file://" + api)
+        try:
+            cls.root = cls.E._make_root("EstudioPrueba")
+        except Exception:
+            cls._restore()
+            raise unittest.SkipTest("sin pantalla")
+        cls.root.withdraw()
+        cls._startup = cls.E.App.startup
+        cls.E.App.startup = lambda self: None                 # sin el asistente de la primera vez
+        cls.app = cls.E.App(cls.root)
+        cls.root.update()
+
+    @classmethod
+    def _restore(cls):
+        for k, v in cls.env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.E.App.startup = cls._startup
+        try:
+            cls.root.destroy()
+        except Exception:
+            pass
+        cls._restore()
+        import shutil
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def setUp(self):
+        self.app.new_theme()
+        self.app._zone.update(key=None, res=None, last=None, want=None, inflight=None)
+        self.app._show_now("about")
+        self.root.update()
+
+    def poner_imagen(self, im, dark=0):
+        app = self.app
+        app._set_bg_image(L.to_png(im.convert("RGB")), "Fondo de prueba.")
+        app.images["fondo"]["dark"] = dark
+        app._render_now()
+
+    def test_ir_a_cada_control(self):
+        app = self.app
+        casos = {"ventana": lambda: None, "grad": lambda: app.bg_mode("degradado"),
+                 "tinte": lambda: (app.bg_mode("degradado"), app.grad.update(una_pieza=True)),
+                 "imagen": lambda: self.poner_imagen(_imagen_brillo())}
+        destino = {"ventana": lambda: app.win_box, "grad": lambda: app.grad_ed, "tinte": lambda: app.tint_scale,
+                   "imagen": lambda: app.bgdark_scale}
+        for control, preparar in casos.items():
+            with self.subTest(control=control):
+                app._show_now("about")
+                preparar()
+                app._render_now()
+                p = {"nombre": "Prueba", "r": 1.0, "mn": 4.5, "st": "bad", "pestana": "edit", "capas": ["text"],
+                     "control": control, "marcas": (("t:text", "fondo"),), "secciones": [], "frase": "Haz algo."}
+                app.go(p)
+                self.root.update()
+                w = destino[control]()
+                self.assertEqual(app.screen, "edit")
+                self.assertTrue(w.winfo_exists() and w.winfo_manager(), control)
+                # el resaltado: cuatro marcos encima del control, que se van solos
+                self.assertTrue([c for c in w.master.place_slaves() if c.cget("bg") == self.E.C["acc"]], control)
+                self.assertEqual(app.status.cget("text"), "Haz algo.")
+
+    def test_exportar_bloquea_sin_esperar_al_hilo(self):
+        from tkinter import messagebox
+        app = self.app
+        self.poner_imagen(_imagen_brillo())
+        self.assertIsNone(app._zone["key"])                   # el hilo todavía no midió
+        self.assertIn("Texto sobre la imagen de fondo", app.blocking_rows())
+        avisos = []
+        old = messagebox.showwarning
+        messagebox.showwarning = lambda *a, **kw: avisos.append(a)
+        try:
+            self.assertTrue(app._blocked_by_legibility())
+        finally:
+            messagebox.showwarning = old
+        self.assertIn("«1 · Editar tema»", avisos[0][1])
+        self.assertNotIn("Transparencia por sección", avisos[0][1])
+        self.poner_imagen(_imagen_brillo(), dark=90)           # bien oscurecida: se puede exportar
+        self.assertEqual(app.blocking_rows(), [])
+
+    def test_medicion_con_error_no_reintenta(self):
+        app, E = self.app, self.E
+        llamadas = []
+
+        def falla(params):
+            llamadas.append(params)
+            try:
+                raise RuntimeError("falla de prueba")
+            except RuntimeError:
+                return {"done": True, "err": sys.exc_info()}
+        old_async, old_log = E._measure_async, E._log_error
+        E._measure_async, E._log_error = falla, lambda *a: None
+        try:
+            self.poner_imagen(_imagen_luna())
+            res, fresh = app.image_check()
+            self.assertFalse(fresh)                              # pedida al hilo
+            app._zone_launch()
+            for _ in range(100):
+                self.root.update()
+                if app._zone["key"] is not None:
+                    break
+                time.sleep(.02)
+            res, fresh = app.image_check()
+            self.assertTrue(fresh and res["respaldo"])           # la revisión de antes, no «midiendo…»
+            self.assertEqual(res["st"], L.colors_check(app.eff(), app.bg_colors())[2])
+            app._render_now()
+            app._zone_launch()
+            self.root.update()
+            self.assertEqual(len(llamadas), 1)                   # con la misma clave no se vuelve a intentar
+            self.assertNotIn("midiendo", app.leg_img.cget("text"))
+            self.assertIn("colores principales", app.leg_img.cget("text"))
+        finally:
+            E._measure_async, E._log_error = old_async, old_log
+
+    def test_resultado_viejo_se_descarta(self):
+        app = self.app
+        self.poner_imagen(_imagen_luna())
+        viejo = {"r": 99.0, "mn": 4.5, "st": "ok"}
+        app._zone_poll(("otra clave",), {"done": True, "res": viejo})
+        self.assertIsNone(app._zone["key"])                   # no queda como vigente
+        self.assertIs(app._zone["last"], viejo)               # solo como «la última», mientras se mide
+        res, fresh = app.image_check(sync=True)
+        self.assertTrue(fresh)
+        self.assertIsNot(res, viejo)
+
+
+class NotaBetaTest(unittest.TestCase):
+    def test_version_y_nota_beta(self):
+        import re
+        E = _estudio()
+        if E is None:
+            self.skipTest("este Python no tiene Tk o Pillow")
+        self.assertRegex(E.VERSION, r"^\d+\.\d+\.\d+$")         # el Publicador solo entiende X.Y.Z
+        if E.PRUEBA:
+            self.assertRegex(E.PRUEBA, r"^beta\.\d+$")
+            nota = E.beta_note()
+            self.assertIn(f"Versión de prueba ({E.VERSION}-{E.PRUEBA})", nota)
+            self.assertIn("avísale a OkumaWsX", nota)
+            self.assertEqual(E.app_title(), f"Estudio de Temas {E.VERSION} (beta)")
+        old = E.PRUEBA
+        try:
+            E.PRUEBA = ""                                        # una versión estable: sin nota
+            self.assertEqual(E.beta_note(), "")
+            self.assertEqual(E.app_title(), "Estudio de Temas")
+        finally:
+            E.PRUEBA = old
+        self.assertTrue(re.match(r"^\d+\.\d+\.\d+$", E.VERSION))
+
+
 @unittest.skipIf(L is None, "Pillow no está instalado")
 class KeysTest(unittest.TestCase):
     def setUp(self):
@@ -401,6 +785,10 @@ class ActualizarTest(unittest.TestCase):
         self.assertEqual(U.changelog_for(e, "9.9.9")["version"], "1.1.0")      # no existe: la primera
         self.assertEqual(e[0]["groups"], [("Corregido", ["Arreglo uno"])])
         self.assertEqual(U.read_changelog(str(ruta) + ".no"), [])
+        con = U.read_changelog(str(ruta), unreleased=True)          # una beta en local: «Sin publicar» también
+        self.assertTrue(con[0]["unreleased"])
+        self.assertEqual(con[0]["groups"], [("Añadido", ["No va"])])
+        self.assertEqual([x["version"] for x in con[1:]], ["1.1.0", "1.0.0"])
 
     def test_changelog_real_tiene_la_version_actual(self):
         ruta = os.path.join(EST, "CHANGELOG.md")

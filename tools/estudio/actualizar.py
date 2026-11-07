@@ -315,8 +315,9 @@ def relaunch(exe: str) -> None:
 
 
 # ---------------------------------------------------------------- novedades
-def read_changelog(path: str) -> list[dict]:
-    """Lee CHANGELOG.md -> [{'version','date','groups':[(sección,[líneas])]}], sin «Sin publicar»."""
+def read_changelog(path: str, unreleased: bool = False) -> list[dict]:
+    """Lee CHANGELOG.md -> [{'version','date','groups':[(sección,[líneas])]}], sin «Sin publicar» (con
+    unreleased=True la incluye, marcada con 'unreleased': True)."""
     try:
         with open(path, encoding="utf-8") as f:
             text = f.read()
@@ -327,7 +328,10 @@ def read_changelog(path: str) -> list[dict]:
         m = re.match(r"^##\s+\[([^\]]+)\](?:\s*-\s*(.+))?", line)
         if m:
             if m.group(1).lower().startswith("sin publicar"):
-                cur = None
+                cur = {"version": m.group(1), "date": "", "groups": [], "unreleased": True} if unreleased else None
+                if cur:
+                    out.append(cur)
+                group = None
                 continue
             cur = {"version": m.group(1), "date": (m.group(2) or "").strip(), "groups": []}
             out.append(cur)

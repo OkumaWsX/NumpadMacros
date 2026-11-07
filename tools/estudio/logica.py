@@ -586,10 +586,136 @@ def one_piece_check(e: dict, colors: list, under: str, tint: int):
 
 
 def colors_check(e: dict, colors: list):
-    """Texto directamente sobre el fondo (encabezado, pie y bordes): (contraste, color, estado)."""
+    """Texto directamente sobre el fondo (encabezado, pie y bordes): (contraste, color, estado).
+    Solo para el degradado: con imagen de fondo se mide zona por zona (image_check)."""
     worst = min(((ratio(e["text"], c), c) for c in colors), key=lambda x: x[0])
     r = worst[0]
     return r, worst[1], "ok" if r >= 4.5 else ("warn" if r >= 3.4 else "bad")
+
+
+def one_piece_tint(e: dict, colors: list, under: str, tint: int, mn: float = 4.5):
+    """El «Tinte de los paneles» mínimo (de 5 en 5, hasta TINT_MAX) con que se leen los paneles de una
+    pieza sobre el degradado, o None si ni al máximo se leen."""
+    for t in range(tint - tint % 5 + 5, TINT_MAX + 1, 5):
+        if one_piece_check(e, colors, under, t)[0] >= mn:
+            return t
+    return None
+
+
+# ---------------------------------------------------------------- texto sobre la imagen de fondo, por zona
+# Con una imagen no basta con sus colores principales: una luna en un rincón sin texto bloqueaba sin motivo,
+# y un brillo chico justo bajo el título no se veía en la paleta. Se mide cada zona con texto contra lo que
+# de verdad queda debajo (la imagen ya oscurecida y, en los paneles de una pieza, suavizada y teñida; eso lo
+# arma vista.text_backdrop). Solo usa Pillow (sin recorrer píxeles en Python): corre en otro hilo sin
+# trabar la ventana.
+DARK_MAX = 90                         # tope de «Oscurecer la imagen»
+TINT_MAX = 90                         # tope del «Tinte de los paneles»
+ZONE_PCT = .9                         # se mide el percentil 90: un 10 % de píxeles sueltos no cuenta
+
+
+def _state(q: float) -> str:
+    """Estado según cuánto del mínimo se alcanza (igual que legibility: justo desde el 75 %)."""
+    return "ok" if q >= 1 else ("warn" if q >= .75 else "bad")
+
+
+def lum_map(im):
+    """Luminancia relativa de cada píxel (la de lum()) en una imagen «L», guardada con gamma 1/2.4 para
+    que lo oscuro no pierda detalle. La parte lineal de sRGB (los 10 tonos más oscuros) se toma como curva
+    y se redondea a 256 niveles: la diferencia con lum() es menor a 0,002."""
+    from PIL import ImageMath
+    r, g, b = (c.convert("F") for c in im.convert("RGB").split())
+
+    def y(a):
+        lin = [((a[c] / 255 + .055) / 1.055) ** 2.4 for c in ("r", "g", "b")]
+        return a["convert"]((lin[0] * .2126 + lin[1] * .7152 + lin[2] * .0722) ** (1 / 2.4) * 255 + .5, "L")
+    return ImageMath.lambda_eval(y, r=r, g=g, b=b)
+
+
+def zone_contrast(im, rect, text: str, content: int = 100) -> float:
+    """Contraste del texto con lo que tiene debajo en el rectángulo rect de im. Texto claro: contra el 10 %
+    más claro de la zona (percentil 90); texto oscuro: contra el 10 % más oscuro. ``content``: el «Contenido»
+    de la sección (%): el texto se mezcla con lo de abajo, como en la vista previa."""
+    x1, y1, x2, y2 = (round(v) for v in rect)
+    x1, y1 = max(0, x1), max(0, y1)
+    x2, y2 = max(x1 + 1, min(im.width, x2)), max(y1 + 1, min(im.height, y2))
+    hist = lum_map(im.crop((x1, y1, x2, y2))).histogram()
+    n = sum(hist)
+
+    def pct(p):
+        acc = 0
+        for v, c in enumerate(hist):
+            acc += c
+            if acc >= p * n:
+                return (v / 255) ** 2.4
+        return 1.0
+    lt = lum(text)
+    lp = pct(ZONE_PCT) if lt > pct(.5) else pct(1 - ZONE_PCT)
+    if content < 100:                       # el texto a medias deja ver el fondo (gris de esa luminancia)
+        gray = rgb2hex((255 * lp ** (1 / 2.4),) * 3)
+        lt = lum(mix(gray, text, content / 100))
+    return (max(lt, lp) + .05) / (min(lt, lp) + .05)
+
+
+def zone_contrasts(im, zones: list, e: dict) -> list:
+    """Cada zona con su contraste: texto 4.5:1, texto secundario («t:muted») 3:1."""
+    out = []
+    for z in zones:
+        muted = z["tag"] == "t:muted"
+        out.append(dict(z, r=zone_contrast(im, z["rect"], e["muted" if muted else "text"], z.get("contenido", 100)),
+                        mn=3.0 if muted else 4.5))
+    return out
+
+
+def _all_ok(rs) -> bool:
+    return all(z["r"] >= z["mn"] for z in rs)
+
+
+def image_check(backdrop, zones: list, e: dict, dark: int, tint: int, one_piece: bool):
+    """Texto sobre la imagen de fondo, zona por zona. ``backdrop(oscurecer, tinte)`` da lo que queda debajo
+    del texto (imagen del tamaño de la ventana); ``zones``: [{rect, tag, nombre, panel}].
+    Devuelve None si no hay texto sobre la imagen, o {r, mn, st, peor, zonas, malas, oscurecer, tinte,
+    sug_oscurecer, sug_tinte}: la peor zona y, si no se lee, el oscurecido mínimo que lo arregla (de 5 en 5,
+    hasta DARK_MAX) y, si la peor está en un panel de una pieza, el tinte mínimo de los paneles."""
+    if not zones:
+        return None
+    rs = zone_contrasts(backdrop(dark, tint), zones, e)
+    peor = min(rs, key=lambda z: z["r"] / z["mn"])
+    q = peor["r"] / peor["mn"]
+    out = {"r": peor["r"], "mn": peor["mn"], "st": _state(q), "peor": peor, "zonas": rs,
+           "malas": [z for z in rs if z["r"] < z["mn"]], "oscurecer": dark, "tinte": tint,
+           "sug_oscurecer": None, "sug_tinte": None}
+    if q >= 1:
+        return out
+    for d in range(dark - dark % 5 + 5, DARK_MAX + 1, 5):
+        if _all_ok(zone_contrasts(backdrop(d, tint), zones, e)):
+            out["sug_oscurecer"] = d
+            break
+    if one_piece and peor.get("panel"):
+        pz = [z for z in zones if z.get("panel")]
+        for t in range(tint - tint % 5 + 5, TINT_MAX + 1, 5):
+            if _all_ok(zone_contrasts(backdrop(dark, t), pz, e)):
+                out["sug_tinte"] = t
+                break
+    return out
+
+
+def image_advice(res: dict) -> str:
+    """Qué hacer cuando el texto no se lee sobre la imagen (frase corta para el aviso)."""
+    pe = res["peor"]
+    who = pe["nombre"][0].upper() + pe["nombre"][1:]
+    verb = "se leen" if pe["nombre"].startswith(("las ", "los ")) else "se lee"
+    if res["sug_oscurecer"] is not None:
+        s = (f"{who} no {verb} sobre la parte clara de la imagen: sube «Oscurecer la imagen» "
+             f"(ahora {res['oscurecer']} %) a {res['sug_oscurecer']} % o más")
+    else:
+        s = f"{who} no {verb} sobre la imagen ni oscureciéndola al máximo: cambia «Texto» o la imagen"
+    if res["sug_tinte"] is not None:
+        s += f", o el «Tinte de los paneles» (ahora {res['tinte']} %) a {res['sug_tinte']} %"
+    s += "."
+    otras = len(res["malas"]) - 1
+    if otras > 0:
+        s += f" (Y {otras} {'zona' if otras == 1 else 'zonas'} más.)"
+    return s
 
 
 # ---------------------------------------------------------------- transparencia por sección
@@ -661,6 +787,100 @@ def section_rows(colors: dict, alpha: dict, sections: dict, g: dict, images: dic
         r = ratio(te, pe)
         img = (k == "keys" and "keys" in images) or (k == "head" and "banner" in images)
         out.append((k, name, r, pe, te, "ok" if r >= 4.5 else "warn", s != npt.SECTION_DEFAULTS[k], bool(img)))
+    return out
+
+
+# ---------------------------------------------------------------- avisos con «Ir»
+# Cada aviso de legibilidad lleva a la pestaña y al control que lo arregla, y marca en la vista previa lo que
+# no se lee. Marcas: (etiqueta de vista.Preview, dónde) con dónde = None (en toda la ventana), «fondo» (fuera
+# de los paneles: encabezado y pie) o «paneles» (dentro de los paneles, sin las teclas).
+PAIR_MARKS = {
+    "Texto sobre fondo": (("t:text", "fondo"),),
+    "Texto sobre paneles": (("t:text", "paneles"),),
+    "Secundario sobre paneles": (("t:muted", "paneles"),),
+    "Botón con acento": (("t:acc", None), ("t:on_acc", None)),
+    "Tecla con acción": (("t:key_set", None),),
+    "Tecla global": (("t:key_global", None),),
+    "Botón ACTIVO": (("t:ok", None),),
+    "Selección en listas": (("t:acc_dim", None), ("t:acc_bg", None)),
+}
+# la pareja de colores de la que sale el texto de cada sección cuando la sección no se tocó
+SECTION_PAIR = {"head": "Texto sobre fondo", "left": "Texto sobre paneles", "keys": "Tecla con acción",
+                "tabs": "Secundario sobre paneles", "body": "Texto sobre paneles", "foot": "Texto sobre fondo"}
+AUTO_NOTE = "Derivar tonos del acento (A)"
+
+
+def pair_advice(name: str, f: str, b: str, e: dict, auto: bool, labels: dict) -> tuple[str, list]:
+    """Qué hacer con una pareja que no se lee: (frase, capas que se marcan; la primera es la que se elige).
+    Hacia dónde mover el texto se decide como en fix_legibility: sobre un fondo oscuro, más claro."""
+    light = lum(e[b]) <= .18
+    if b == "acc_dim":                      # se arregla con el atenuado, no con el texto
+        light = lum(e[f]) >= lum(e[b])
+        if auto:
+            return (f"«{labels['acc_dim']}» sale del acento: cambia «{labels['acc']}» o apaga «{AUTO_NOTE}».",
+                    ["acc", "acc_dim"])
+        return (f"{'Oscurece' if light else 'Aclara'} «{labels['acc_dim']}»; el texto se queda como está.",
+                ["acc_dim", f])
+    if light:
+        return f"Aclara «{labels[f]}» u oscurece «{labels[b]}».", [f, b]
+    return f"Oscurece «{labels[f]}» o aclara «{labels[b]}».", [f, b]
+
+
+def section_advice(k: str, name: str, s: dict, labels: dict) -> str:
+    """Qué hacer con una sección que no se lee."""
+    if s["contenido"] < 100:
+        return f"Sube «Contenido» de «{name}» (ahora {s['contenido']} %) o su «Fondo»."
+    if s["fondo"] < 100 and k not in ("head", "foot"):
+        return f"Sube «Fondo» de «{name}» (ahora {s['fondo']} %)."
+    if k == "keys":
+        return (f"El texto de «{name}» viene de los colores de las teclas: corrige «{labels['key_set_text']}» o "
+                f"«{labels['key_set']}» en «1 · Editar tema».")
+    return f"Corrige «{labels['text']}» o «{labels['panel']}» en «1 · Editar tema», o sube el «Fondo» de «{name}»."
+
+
+def problem_order(p: dict) -> tuple:
+    """Orden de gravedad: primero lo ilegible (✗), luego lo justo (⚠); dentro, lo que más lejos queda del
+    mínimo."""
+    return (0 if p["st"] == "bad" else 1, p["r"] / p["mn"])
+
+
+def problems(colors: dict, alpha: dict, window: dict, sections: dict, g: dict, images: dict, auto: bool,
+             labels: dict, extra=()) -> list[dict]:
+    """Avisos de legibilidad, del más grave al más leve. Cada uno: {nombre, r, mn, st, frase, pestana
+    («edit» o «sec»), capas, marcas, seccion, control, pct, secciones}. ``extra``: avisos del fondo
+    (degradado o imagen) que arma la ventana. Solo avisan las secciones que se cambiaron (como en el panel de
+    siempre); una sin tocar que falla por su pareja de colores queda dentro del aviso de la pareja
+    («secciones»)."""
+    e = effective(colors, alpha)
+    out, by_name = [], {}
+    for name, f, b, mn in PAIRS:
+        r = ratio(e[f], e[b])
+        if r >= mn:
+            continue
+        frase, capas = pair_advice(name, f, b, e, auto, labels)
+        p = {"nombre": name, "r": r, "mn": mn, "st": _state(r / mn), "frase": frase, "pestana": "edit",
+             "capas": capas, "marcas": PAIR_MARKS[name], "secciones": []}
+        by_name[name] = p
+        out.append(p)
+    op = window.get("opacidad", 100)
+    if op < WINDOW_WARN:
+        out.append({"nombre": "Opacidad de la ventana", "r": float(op), "mn": float(WINDOW_WARN),
+                    "st": "bad" if op < WINDOW_BAD else "warn", "pct": True, "pestana": "edit", "capas": [],
+                    "control": "ventana", "marcas": (("ventana", None),), "secciones": [],
+                    "frase": f"Sube «Opacidad de la ventana» a {WINDOW_WARN} % o más."})
+    for k, name, r, _pe, _te, st, changed, img in section_rows(colors, alpha, sections, g, images):
+        if st == "ok":
+            continue
+        root = by_name.get(SECTION_PAIR[k])
+        if not changed:                     # sin tocar: es el mismo problema que la pareja (no se repite)
+            if root is not None:
+                root["secciones"].append(k)
+            continue
+        out.append({"nombre": f"Sección · {name}{' (con imagen)' if img else ''}", "r": r, "mn": 4.5, "st": st,
+                    "frase": section_advice(k, name, section(sections, k), labels), "pestana": "sec",
+                    "seccion": k, "capas": [], "marcas": (("s:" + k, None),), "secciones": [k]})
+    out.extend(extra)
+    out.sort(key=problem_order)
     return out
 
 

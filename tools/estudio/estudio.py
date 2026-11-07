@@ -83,7 +83,9 @@ try:
 except Exception:          # sin la librería se elige la imagen con un botón
     TkinterDnD = None
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"                    # siempre X.Y.Z: es lo que entienden el Publicador y los avisos de versión
+# Versión de prueba: «beta.1», «beta.2»… (vacía en una versión estable). Solo se muestra (título y «Acerca de»).
+PRUEBA = ""
 # Foro de Discord (canal de tipo foro) donde la comunidad manda sus temas. Vacío = aún sin configurar.
 # Debe ser https://discord.com/channels/<id>/<id> o https://discord.gg/<código>.
 FORO_TEMAS_URL = "https://discord.com/channels/411199717708398622/1563795767494189056"
@@ -94,6 +96,18 @@ APP = "Estudio de Temas"
 PROBE = "--probar" in sys.argv       # prueba automática: jamás toca la red
 if _IMPORT_ERROR:
     _fatal(_IMPORT_ERROR)
+
+
+def app_title() -> str:
+    """Nombre de la ventana: «Estudio de Temas», o «Estudio de Temas 1.3.0 (beta)» en una versión de prueba."""
+    return f"{APP} {VERSION} (beta)" if PRUEBA else APP
+
+
+def beta_note() -> str:
+    """Aviso de «Acerca de» en una versión de prueba (vacío en una estable)."""
+    if not PRUEBA:
+        return ""
+    return f"Versión de prueba ({VERSION}-{PRUEBA}): puede tener errores. Si algo falla, avísale a OkumaWsX."
 FONT = V.FONT
 BASE = 13 if sys.platform == "darwin" else 10
 MONO = "Menlo" if sys.platform == "darwin" else ("Consolas" if sys.platform == "win32" else "DejaVu Sans Mono")
@@ -142,6 +156,21 @@ def cfg(w, **kw):
         w.configure(**new)
 
 
+def _measure_async(params) -> dict:
+    """Mide el texto sobre la imagen de fondo en otro hilo (ver App.image_check). Devuelve una caja que se
+    llena al terminar: {"done", "res"} o {"done", "err"}. El hilo es «daemon»: nunca demora el cierre."""
+    box: dict = {}
+
+    def job():
+        try:
+            box["res"] = V.measure_image(**params)
+        except Exception:
+            box["err"] = sys.exc_info()
+        box["done"] = True
+    threading.Thread(target=job, daemon=True, name="medir-fondo").start()
+    return box
+
+
 class Scrollable(tk.Frame):
     """Columna con barra de desplazamiento (rueda del mouse en los 3 sistemas)."""
 
@@ -158,9 +187,10 @@ class Scrollable(tk.Frame):
         self.cv.bind("<Configure>", self._on_width)
         self.bind("<Enter>", self._wheel_on)
         self.bind("<Leave>", self._wheel_off)
+        self.bind("<Destroy>", lambda e: e.widget is self and self in Scrollable.all and Scrollable.all.remove(self))
         Scrollable.all.append(self)
 
-    all: list = []
+    all: list = []                     # las columnas vivas (la de la lista de avisos se va al cerrarla)
 
     def _region(self):
         """Zona que se puede desplazar: nunca más baja que la columna. Si todo cabe, la rueda no mueve
@@ -370,6 +400,11 @@ class App:
                      "shown": None, "status": False, "enviando": False, "inflight": False,
                      "queued": None}
         self._rev_q: queue.Queue = queue.Queue()
+        # medición del texto sobre la imagen de fondo (zona por zona) en otro hilo, ver image_check
+        self._zone = {"key": None, "res": None, "last": None, "want": None, "inflight": None, "job": None,
+                      "src": (None, None)}
+        self._probs: list = []                 # avisos de legibilidad vigentes (ver problems)
+        self._plist = None                     # la lista de avisos abierta (ver open_problems)
         self._style()
         self.new_theme(initial=True)
         self._build()
@@ -459,7 +494,7 @@ class App:
 
     def _title(self):
         name = os.path.basename(self.project_path) if self.project_path else L.slug(self.meta["nombre"]) + L.PROJECT_EXT
-        self.root.title(f"{APP} — {name}{' •' if self.dirty else ''}")
+        self.root.title(f"{app_title()} — {name}{' •' if self.dirty else ''}")
 
     # ================================================================ estilo
     def _style(self):
@@ -582,7 +617,8 @@ class App:
         self.nav = {}
         key_title = "5 · Clave de firma" if self.mode == "creador" else "5 · Mi firma de autor"
         for sid, text in (("edit", "1 · Editar tema"), ("sec", "2 · Transparencia por sección"),
-                          ("img", "3 · Imágenes y plantillas"), ("exp", "4 · Exportar"), ("key", key_title), ("about", "6 · Acerca de")):
+                          ("img", "3 · Imágenes y plantillas"), ("exp", "4 · Exportar"), ("key", key_title),
+                          ("about", "6 · Acerca de")):
             b = ttk.Button(nav, text=text, style="Nav.TButton", command=lambda s=sid: self.show(s))
             b.pack(side="left", padx=(0, 6))
             self.nav[sid] = b
@@ -805,6 +841,7 @@ class App:
         wf = tk.Frame(L_, bg=C["panel"])
         wf.grid(row=row, column=0, pady=(14, 14), **pad)
         wf.columnconfigure(0, weight=1)
+        self.win_box = wf
         top = tk.Frame(wf, bg=C["panel"])
         top.grid(row=0, column=0, sticky="ew")
         self.lbl(top, "Ventana", 0, True).pack(side="left")
@@ -917,10 +954,15 @@ class App:
         self.caps(R, "Legibilidad").grid(row=4, column=0, padx=12, pady=(16, 4), sticky="ew")
         lc = self.card(R)
         lc.grid(row=5, column=0, padx=12, pady=(0, 14), sticky="ew")
-        self.leg_rows = tk.Frame(lc, bg=C["panel"])
+        self.leg_card = lc
+        self.leg_rows = tk.Frame(lc, bg=C["panel"])         # un aviso por cosa que no se lee, con «Ir»
         self.leg_rows.pack(fill="x")
+        self.leg_ok = self.lbl(lc, "", -2, color="ok_text", wrap=255)
+        self.leg_ok.pack(fill="x", pady=(4, 0))
+        self.leg_img = self.lbl(lc, "", -2, color="ok_text", wrap=255)
         self.leg_sum = self.lbl(lc, "", -1, wrap=255)
         self.leg_sum.pack(fill="x", pady=(8, 0))
+        self.leg_sum.bind("<Button-1>", lambda e: self.open_problems() if self._probs else None)
         self._paint_palette()
         self._panels(f, left, mid, right)
         return f
@@ -1266,6 +1308,8 @@ class App:
         self.sec_checks.pack(fill="x")
         self.sec_sum = self.lbl(c2, "", -1, wrap=250)
         self.sec_sum.pack(fill="x", pady=(8, 0))
+        self.sec_cards = tk.Frame(c2, bg=C["panel"])        # avisos de las secciones, con «Ir»
+        self.sec_cards.pack(fill="x")
         self.lbl(R, "En Numpad Macros, el encabezado y las teclas dejan ver su imagen (si tienen una) a través del "
                     "fondo. Las demás secciones se mezclan con el fondo de la ventana. El escritorio se ve con la "
                     "opacidad de la ventana (pantalla 1).", -2, color="muted", wrap=260).grid(
@@ -1797,43 +1841,493 @@ class App:
                 fr.pack(fill="x", pady=1)
 
     def _paint_legibility(self):
-        e = self.eff()
-        rows = self.legibility_rows()
-        bad = sum(1 for r in rows if r[3] == "bad")
-        warn = sum(1 for r in rows if r[3] == "warn")
-        pairs = {p[0]: (e[p[2]], e[p[1]]) for p in L.PAIRS}
-        self._check_rows(self.leg_rows, [(n, rv, pairs.get(n) or demo, st) for n, rv, demo, st in rows])
-        if bad:
-            cfg(self.leg_sum, text=f"{bad} combinación{'es' if bad > 1 else ''} ilegible{'s' if bad > 1 else ''}. "
-                                        "No se puede exportar hasta corregirla.", fg=C["bad_text"])
+        """Panel «Legibilidad»: un aviso por cosa que no se lee (con «Ir»), cuántas comprobaciones están bien
+        y el resumen, que abre la lista completa de avisos."""
+        ps = self.problems()
+        self._probs = ps
+        self._problem_cards(self.leg_rows, ps, 215)
+        g = self.gradient()
+        checks = len(L.PAIRS) + 1 + ((2 if self.one_piece() else 1) if g else 0)
+        fails = sum(1 for p in ps if p["pestana"] == "edit" and p.get("control") != "imagen")
+        n_ok = checks - fails
+        ok_txt = ("" if n_ok <= 0 else
+                  f"✓ {n_ok} {'comprobación' if n_ok == 1 else 'comprobaciones'} más se lee{'' if n_ok == 1 else 'n'} "
+                  "bien." if ps else
+                  "✓ La comprobación de colores se lee bien." if n_ok == 1 else
+                  f"✓ Las {n_ok} comprobaciones de colores se leen bien.")
+        cfg(self.leg_ok, text=ok_txt)
+        if ok_txt and not self.leg_ok.winfo_manager():
+            self.leg_ok.pack(fill="x", pady=(4, 0), after=self.leg_rows)
+        elif not ok_txt and self.leg_ok.winfo_manager():
+            self.leg_ok.pack_forget()
+        res, fresh = self.image_check()
+        img_txt, img_col = "", C["ok_text"]
+        if self.grad["modo"] == "imagen" and self.images.get("fondo"):
+            if res is None and not fresh:
+                img_txt, img_col = "Texto sobre la imagen de fondo: midiendo…", C["muted"]
+            elif res is not None and res.get("respaldo"):
+                img_txt, img_col = ("No se pudo medir el texto sobre la imagen zona por zona (el detalle quedó en "
+                                    "error.log): se revisa con sus colores principales"
+                                    + (f", y queda en {res['r']:.1f}:1." if res["st"] == "ok" else "."), C["warn_text"])
+            elif res is not None and res["st"] == "ok":
+                img_txt = (f"✓ Texto sobre la imagen de fondo: la zona más justa queda en {res['r']:.1f}:1 "
+                           f"({res['peor']['nombre']}){'' if fresh else ' · midiendo…'}.")
+        cfg(self.leg_img, text=img_txt, fg=img_col)
+        if img_txt and not self.leg_img.winfo_manager():
+            self.leg_img.pack(fill="x", pady=(2, 0), before=self.leg_sum)
+        elif not img_txt and self.leg_img.winfo_manager():
+            self.leg_img.pack_forget()
+        bad = sum(1 for p in ps if p["st"] == "bad")
+        warn = sum(1 for p in ps if p["st"] == "warn")
+        n = len(ps)
+        more = ("" if not n else "  Ver qué mejorar ›" if n == 1 else f"  Ver las {n} cosas que mejorar ›")
+        if bad:                         # «cosa»: puede ser una pareja de colores, la opacidad o el fondo
+            cfg(self.leg_sum, text=("1 cosa no se lee. No se puede exportar hasta corregirla." if bad == 1 else
+                                    f"{bad} cosas no se leen. No se puede exportar hasta corregirlas.") + more,
+                fg=C["bad_text"])
         elif warn:
-            cfg(self.leg_sum, text=f"Se puede exportar, pero {warn} combinación{'es' if warn > 1 else ''} "
-                                        f"queda{'n' if warn > 1 else ''} justa{'s' if warn > 1 else ''}.",
-                                   fg=C["warn_text"])
+            cfg(self.leg_sum, text=("Se puede exportar, pero 1 cosa queda justa." if warn == 1 else
+                                    f"Se puede exportar, pero {warn} cosas quedan justas.") + more,
+                fg=C["warn_text"])
         else:
             cfg(self.leg_sum, text="Todo legible. Mínimo 4.5:1 para texto y 3:1 para texto secundario, ya con la "
-                                        "transparencia aplicada.", fg=C["ok_text"])
+                                   "transparencia aplicada.", fg=C["ok_text"])
+        cfg(self.leg_sum, cursor="hand2" if n else "", font=fnt(-1, bool(n)))
         self.leg_bad = bad
+        if self._plist is not None:
+            self._fill_problems()
+        went = getattr(self, "_went", None)     # la frase de «Ir» en el pie se va si ese aviso ya se arregló
+        if went and not any(p["nombre"] == went[0] for p in ps):
+            self._went = None
+            if self.status.cget("text") == went[1]:
+                self._status_idle()
 
-    def legibility_rows(self):
-        """Filas de legibilidad: (nombre, valor, (fondo, texto) o None, estado). Incluye el degradado y las
-        secciones que cambiaron (estas solo avisan: atenuar una sección es a propósito)."""
+    def legibility_rows(self, sync=False):
+        """Filas de legibilidad: (nombre, valor, (fondo, texto) o None, estado). Incluye el fondo (degradado o
+        imagen) y las secciones que cambiaron (estas solo avisan: atenuar una sección es a propósito). Con
+        ``sync``, si la medición sobre la imagen no está al día se hace ahí mismo (al exportar)."""
         rows = [(n, r, None, st) for n, r, _mn, st in L.legibility(self.colors, self.alpha, self.window)]
         e = self.eff()
-        cols = self.bg_colors()
-        if cols:
+        if self.gradient():
+            cols = self.bg_colors()
             r, c, st = L.colors_check(e, cols)
-            what = "el degradado" if self.gradient() else "la imagen de fondo"
-            rows.append((f"Texto sobre {what}", r, (c, e["text"]), st))
+            rows.append(("Texto sobre el degradado", r, (c, e["text"]), st))
             if self.one_piece():
-                under = L.gradient_avg(self.gradient(), e["bg"]) if self.gradient() else L.image_avg(self.bg_image())
+                under = L.gradient_avg(self.gradient(), e["bg"])
                 r, c, st = L.one_piece_check(e, cols, under, self.grad["tinte"])
                 rows.append(("Texto en los paneles (de una pieza)", r, (c, e["text"]), st))
+        else:
+            res, fresh = self.image_check(sync)
+            if res is not None:
+                rows.append(("Texto sobre la imagen de fondo", res["r"], (e["bg"], e["text"]), res["st"]))
+            elif not fresh:
+                rows.append(("Texto sobre la imagen de fondo (midiendo…)", 0.0, None, "wait"))
         for k, name, r, pe, te, st, changed, img in L.section_rows(self.colors, self.alpha, self.sections,
                                                                     self.gradient(), self.images):
             if changed:
                 rows.append((f"Sección · {name}{' (con imagen)' if img else ''}", r, (pe, te), st))
         return rows
+
+    # ---------------------------------------------------------------- texto sobre la imagen, por zona
+    def _zone_params(self):
+        """(clave, parámetros) de la medición sobre la imagen de fondo, o None si el fondo no es una imagen."""
+        s = self.images.get("fondo")
+        if self.grad["modo"] != "imagen" or not s:
+            return None
+        src = s["src"]
+        memo = self._zone["src"]
+        if memo[0] is not src:                       # la huella de la imagen, una vez por imagen
+            memo = self._zone["src"] = (src, hashlib.md5(src).digest())
+        e = self.eff()
+        one = self.one_piece()
+        secs = L.sections_clean(self.sections)
+        logo = "logo" in self.images
+        # las zonas y los anchos de las pestañas usan las letras (FreeType): se calculan aquí, en el hilo de Tk
+        # (una vez, quedan guardados), y el hilo de medición solo trabaja con la imagen
+        params = dict(src=src, bg=self.colors["bg"], e=dict(e), dark=int(s.get("dark", 0)),
+                      tint=int(self.grad["tinte"]), one_piece=one, sections=secs,
+                      zones=V.text_zones(logo), tabs=V.tab_boxes())
+        key = (memo[1], params["bg"], e["text"], e["muted"], e["panel"], params["dark"], params["tint"], one,
+               repr(secs), logo)
+        return key, params
+
+    def image_check(self, sync=False):
+        """Medición del texto sobre la imagen de fondo: (resultado, al día). El resultado es el de
+        logica.image_check (o None si no hay imagen o ningún texto queda sobre ella). Se mide en otro hilo
+        (como la vista previa): mientras tanto se devuelve la última medición con al día = False. Con
+        ``sync`` se mide ahí mismo si hace falta (exportar no depende de que el hilo haya terminado)."""
+        pr = self._zone_params()
+        z = self._zone
+        if pr is None:
+            return None, True
+        key, params = pr
+        if z["key"] == key:
+            return z["res"], True
+        if sync:
+            try:
+                self._zone_store(key, V.measure_image(**params))
+            except Exception:
+                self._zone_failed(key, sys.exc_info())
+            return z["res"], True
+        if (z["want"] or (None,))[0] != key:
+            z["want"] = (key, params)
+            if z["job"]:
+                self.root.after_cancel(z["job"])
+            z["job"] = self.root.after(120, self._zone_launch)      # se espera a que se suelte el control
+        return z["last"], False
+
+    def _zone_store(self, key, res):
+        z = self._zone
+        z["key"], z["res"], z["last"] = key, res, res
+
+    def _zone_failed(self, key, exc_info):
+        """La medición por zona falló: se anota el error y, para esta clave, se usa la revisión de antes (los
+        colores principales de la imagen, logica.colors_check). Queda guardada como la de esta clave, así que
+        no se reintenta hasta que algo cambie, y el panel no se queda en «midiendo…»."""
+        _log_error(*exc_info)
+        self._zone_store(key, self._zone_fallback())
+
+    def _zone_fallback(self) -> dict:
+        """Resultado con la forma del de logica.image_check, hecho con los colores principales de la imagen
+        (y, en los paneles de una pieza, one_piece_check): el peor de los dos."""
+        e = self.eff()
+        cols = self.bg_colors() or [e["bg"]]
+        r, _c, st = L.colors_check(e, cols)
+        if self.one_piece():
+            r2, _c2, st2 = L.one_piece_check(e, cols, L.image_avg(self.bg_image()), self.grad["tinte"])
+            if r2 < r:
+                r, st = r2, st2
+        peor = {"rect": (0, 0, V.WW, 60), "tag": "t:text", "nombre": "el texto", "seccion": "head", "r": r,
+                "mn": 4.5}
+        s = self.images.get("fondo") or {}
+        return {"r": r, "mn": 4.5, "st": st, "peor": peor, "zonas": [peor], "malas": [peor] if r < 4.5 else [],
+                "oscurecer": int(s.get("dark", 0)), "tinte": int(self.grad["tinte"]), "sug_oscurecer": None,
+                "sug_tinte": None, "respaldo": True}
+
+    def _zone_launch(self):
+        """Lanza la medición pedida (la última). Una a la vez: si hay una en curso, sigue al terminar."""
+        z = self._zone
+        z["job"] = None
+        if z["inflight"] is not None or z["want"] is None:
+            return
+        key, params = z["want"]
+        z["want"] = None
+        if z["key"] == key:
+            return
+        z["inflight"] = key
+        box = _measure_async(params)
+        self.root.after(30, lambda: self._zone_poll(key, box))
+
+    def _zone_poll(self, key, box):
+        if not box.get("done"):
+            self.root.after(30, lambda: self._zone_poll(key, box))
+            return
+        z = self._zone
+        z["inflight"] = None
+        if z["want"] is not None:
+            z["job"] = self.root.after(1, self._zone_launch)
+        cur = self._zone_params()
+        if cur is None or cur[0] != key:          # ya cambió algo: un resultado viejo no se usa como vigente
+            if "res" in box:
+                z["last"] = box["res"]
+            return
+        if "err" in box:
+            self._zone_failed(key, box["err"])
+        else:
+            self._zone_store(key, box["res"])
+        self._paint_legibility()                 # sigue vigente: se pintan los avisos con la medición nueva
+        if self.screen == "sec":
+            self._paint_secs()
+        elif self.screen == "exp":
+            self._paint_export()
+
+    # ---------------------------------------------------------------- avisos con «Ir»
+    def problems(self, sync=False) -> list:
+        """Avisos de legibilidad del más grave al más leve (ver logica.problems), con los del fondo."""
+        e = self.eff()
+        extra = []
+        g = self.gradient()
+        if g:
+            cols = self.bg_colors()
+            r, _c, st = L.colors_check(e, cols)
+            if st != "ok":
+                light = L.lum(e["text"]) > .18
+                extra.append({"nombre": "Texto sobre el degradado", "r": r, "mn": 4.5, "st": st, "pestana": "edit",
+                              "capas": ["text"], "control": "grad", "marcas": (("t:text", "fondo"),),
+                              "secciones": [],
+                              "frase": "Oscurece los colores claros del degradado o aclara «Texto»." if light else
+                              "Aclara los colores oscuros del degradado u oscurece «Texto»."})
+            if self.one_piece():
+                under = L.gradient_avg(g, e["bg"])
+                r, _c, st = L.one_piece_check(e, cols, under, self.grad["tinte"])
+                if st != "ok":
+                    t = L.one_piece_tint(e, cols, under, self.grad["tinte"])
+                    extra.append({"nombre": "Texto en los paneles (de una pieza)", "r": r, "mn": 4.5, "st": st,
+                                  "pestana": "edit", "capas": ["text"], "control": "tinte", "secciones": [],
+                                  "marcas": (("t:text", "paneles"), ("t:muted", "paneles")),
+                                  "frase": f"Sube «Tinte de los paneles» (ahora {self.grad['tinte']} %) a {t} % o "
+                                           "más." if t is not None else "Ni con el tinte de los paneles al máximo se "
+                                           "lee: cambia los colores del degradado o «Texto»."})
+        else:
+            res, _fresh = self.image_check(sync)
+            if res is not None and res["st"] != "ok" and res.get("respaldo"):
+                extra.append({"nombre": "Texto sobre la imagen de fondo", "r": res["r"], "mn": res["mn"],
+                              "st": res["st"], "pestana": "edit", "capas": ["text"], "control": "imagen",
+                              "secciones": [], "marcas": (("t:text", "fondo"), ("t:text", "paneles")),
+                              "frase": "No se pudo medir texto por texto; con los colores principales de la imagen, "
+                                       f"el texto no se lee: sube «Oscurecer la imagen» (ahora {res['oscurecer']} %) "
+                                       "o cambia «Texto»."})
+            elif res is not None and res["st"] != "ok":
+                pe = res["peor"]
+                extra.append({"nombre": "Texto sobre la imagen de fondo", "r": res["r"], "mn": res["mn"],
+                              "st": res["st"], "pestana": "edit", "capas": ["text"], "control": "imagen",
+                              "secciones": [], "frase": L.image_advice(res), "tinte": res["sug_tinte"] is not None,
+                              "rects": [z["rect"] for z in res["malas"]] or [pe["rect"]], "peor": pe["rect"],
+                              "etiqueta": f"no se lee aquí · {res['r']:.1f}:1"})
+        return L.problems(self.colors, self.alpha, self.window, self.sections, g, self.images, self.auto, LABELS,
+                          extra)
+
+    def _problem_cards(self, box, ps, wrap):
+        """Tarjetas de aviso (✗ o ⚠, qué falla, qué hacer, valor y «Ir ›»), reutilizando las que ya existen."""
+        pool = box.__dict__.setdefault("_cards", [])
+        while len(pool) < len(ps):
+            c = {}
+            fr = c["frame"] = tk.Frame(box, bg=C["panel"], highlightthickness=1, padx=6, pady=5, cursor="hand2")
+            fr.columnconfigure(1, weight=1)
+            c["mark"] = tk.Label(fr, font=fnt(-1, True), width=2)
+            c["mark"].grid(row=0, column=0, sticky="n")
+            c["name"] = tk.Label(fr, bg=C["panel"], fg=C["text"], font=fnt(-1, True), anchor="w", justify="left",
+                                 wraplength=wrap, cursor="hand2")
+            c["name"].grid(row=0, column=1, sticky="w", padx=6)
+            c["text"] = tk.Label(fr, bg=C["panel"], fg=C["muted"], font=fnt(-2), anchor="w", justify="left",
+                                 wraplength=wrap + 20, cursor="hand2")
+            c["text"].grid(row=1, column=0, columnspan=2, sticky="w", pady=(3, 4))
+            foot = tk.Frame(fr, bg=C["panel"])
+            foot.grid(row=2, column=0, columnspan=2, sticky="ew")
+            c["val"] = tk.Label(foot, font=fnt(-2, mono=True), padx=5)
+            c["val"].pack(side="left")
+            ttk.Button(foot, text="Ir ›", style="Link.TButton", cursor="hand2",
+                       command=lambda c=c: self.go(c["p"])).pack(side="right")
+            for w in (fr, c["name"], c["text"]):
+                w.bind("<Button-1>", lambda e, c=c: self.go(c["p"]))
+            pool.append(c)
+            sc = self._scrollable(box)
+            if sc is not None and hasattr(sc, "_last_w"):          # textos al ancho actual del panel
+                sc._rewrap()
+        for i, c in enumerate(pool):
+            if i >= len(ps):
+                if c["frame"].winfo_manager():
+                    c["frame"].pack_forget()
+                continue
+            p = c["p"] = ps[i]
+            bad = p["st"] == "bad"
+            fg, bg = (C["bad_text"], C["bad_bg"]) if bad else (C["warn_text"], C["warn_bg"])
+            cfg(c["frame"], highlightbackground=bg)
+            cfg(c["mark"], text="✗" if bad else "⚠", bg=bg, fg=fg)
+            cfg(c["name"], text=p["nombre"])
+            cfg(c["text"], text=p["frase"])
+            cfg(c["val"], text=self._problem_value(p), bg=bg, fg=fg)
+            if not c["frame"].winfo_manager():
+                c["frame"].pack(fill="x", pady=3)
+        # un marco sin nada empacado se queda con su último tamaño: al vaciarse se achica a mano (configure y no
+        # cfg: con el mismo valor, cfg no haría nada y Tk no volvería a pedir el tamaño)
+        if not ps and getattr(box, "_full", True):
+            box.configure(height=1)
+        box._full = bool(ps)
+
+    @staticmethod
+    def _problem_value(p, long=False) -> str:
+        mn = "mínimo" if long else "mín."
+        if p.get("pct"):
+            return f"{int(p['r'])} % · {mn} {int(p['mn'])} %"
+        return f"{p['r']:.1f}:1 · {mn} {p['mn']:.1f}:1"
+
+    def open_problems(self):
+        """Lista de todos los avisos, del más grave al más leve, cada uno con su «Ir»."""
+        self.close_problems()
+        box = tk.Frame(self.root, bg=C["panel2"], highlightthickness=2, highlightbackground=C["acc"], padx=18,
+                       pady=14)
+        self._plist = box
+        hd = tk.Frame(box, bg=C["panel2"])
+        hd.pack(fill="x")
+        box.title = tk.Label(hd, bg=C["panel2"], fg=C["text"], font=fnt(4, True))
+        box.title.pack(side="left")
+        ttk.Button(hd, text="Cerrar ✕", style="Link.TButton", command=self.close_problems).pack(side="right")
+        tk.Label(box, text="Ordenadas de la más grave a la más leve, según cuánto les falta para el mínimo.",
+                 bg=C["panel2"], fg=C["muted"], font=fnt(-1), anchor="w").pack(fill="x", pady=(2, 10))
+        box.sc = Scrollable(box, C["panel2"])
+        box.sc.pack(fill="both", expand=True)
+        box.sig = None
+        if not getattr(self, "_esc_bound", False):           # una sola vez (si no, se acumulan)
+            self.root.bind("<Escape>", lambda e: self.close_problems(), add="+")
+            self._esc_bound = True
+        self._fill_problems()
+        box.lift()
+
+    def _fill_problems(self):
+        box = self._plist
+        ps = self._probs
+        sig = [(p["nombre"], round(p["r"], 1), p["st"], p["frase"]) for p in ps]
+        if sig == box.sig:
+            return
+        box.sig = sig
+        n = len(ps)
+        box.title.configure(text=f"{n} {'cosa' if n == 1 else 'cosas'} que mejorar" if n else "Todo se lee bien")
+        inner = box.sc.inner
+        for w in inner.winfo_children():
+            w.destroy()
+        tabs = {"edit": "1 · Editar tema", "sec": "2 · Transparencia por sección"}
+        for p in ps:
+            bad = p["st"] == "bad"
+            fg, bg = (C["bad_text"], C["bad_bg"]) if bad else (C["warn_text"], C["warn_bg"])
+            fr = tk.Frame(inner, bg=C["panel"], highlightthickness=1, highlightbackground=C["line"], padx=10, pady=8)
+            fr.pack(fill="x", pady=3, padx=(0, 6))
+            fr.columnconfigure(1, weight=1)
+            tk.Label(fr, text="✗" if bad else "⚠", bg=bg, fg=fg, font=fnt(2, True), width=3).grid(
+                row=0, column=0, rowspan=3, sticky="n", padx=(0, 10))
+            head = tk.Frame(fr, bg=C["panel"])
+            head.grid(row=0, column=1, sticky="ew")
+            tk.Label(head, text=p["nombre"], bg=C["panel"], fg=C["text"], font=fnt(0, True)).pack(side="left")
+            tk.Label(head, text=self._problem_value(p, True), bg=bg, fg=fg, font=fnt(-1, mono=True), padx=6).pack(
+                side="left", padx=10)
+            tk.Label(fr, text=f"{p['frase']}  → {tabs[p['pestana']]}", wraplength=470, justify="left", bg=C["panel"],
+                     fg=C["muted"], font=fnt(-1), anchor="w").grid(row=1, column=1, sticky="w", pady=(2, 0))
+            bar = tk.Canvas(fr, height=5, width=40, bg=C["line"], highlightthickness=0)   # cuánto del mínimo se alcanza
+            bar.grid(row=2, column=1, sticky="ew", pady=(6, 0))
+            frac = max(.03, min(1.0, p["r"] / p["mn"]))
+            bar.bind("<Configure>", lambda ev, b=bar, f=frac, c=fg: (b.delete("all"), b.create_rectangle(
+                0, 0, ev.width * f, 5, fill=c, width=0)))
+            ttk.Button(fr, text="Ir ›", style="Accent.TButton", command=lambda p=p: self.go(p)).grid(
+                row=0, column=2, rowspan=3, padx=(10, 0))
+        self.root.update_idletasks()
+        need = inner.winfo_reqheight()
+        h = min(need, max(200, self.root.winfo_height() - 220))
+        box.sc.cv.configure(height=h)
+        if need <= h:                            # cabe entero: sin barra de desplazamiento
+            box.sc.sb.pack_forget()
+        elif not box.sc.sb.winfo_manager():
+            box.sc.sb.pack(side="right", fill="y")
+        box.place(relx=.5, rely=.5, anchor="center", width=min(760, self.root.winfo_width() - 80))
+
+    def close_problems(self):
+        if self._plist is not None:
+            self._plist.destroy()
+            self._plist = None
+
+    def go(self, p):
+        """«Ir»: cambia a la pestaña del aviso, baja hasta el control que lo arregla y lo resalta un momento,
+        marca en la vista previa lo que no se lee y deja en el pie la frase de qué hacer."""
+        self.close_problems()
+        if p["pestana"] == "sec":
+            k = p["seccion"]
+            self.sec_sel = k
+            self._show_now("sec")
+            self._render_now()
+            self.root.update_idletasks()
+            fr = self.sec_rows[k]["frame"]
+            self._scroll_to(fr)
+            self.flash([fr])
+            s = L.section(self.sections, k)
+            line = self.sec_rows[k]["vars"]["contenido" if s["contenido"] < 100 else "fondo"][2]
+            self.flash([line, line.master.grid_slaves(row=line.grid_info()["row"] + 1)[0]], C["acc_dim"], 2)
+            self.pv_sec.flash(self.pv_sec.rects(p["marcas"]), C["acc"], font=fnt(-1, True))
+            self.toast(p["frase"], "acc")
+            self._went = (p["nombre"], p["frase"])
+            return
+        self._show_now("edit")
+        capas = p.get("capas") or []
+        if capas and capas[0] in self.rows:
+            self.sel = capas[0]
+        self._render_now()
+        self.root.update_idletasks()
+        control = p.get("control")
+        if control == "ventana":
+            target = [self.win_box]
+        elif control == "grad":
+            target = [self.grad_ed]
+        elif control == "tinte":
+            target = [self.tint_lbl.master, self.tint_scale]
+        elif control == "imagen":
+            target = [self.bgdark_out.master, self.bgdark_scale]
+        else:
+            target = [self.rows[capas[0]]["frame"]]
+        self._scroll_to(target[0], 170 if control == "imagen" else 90)
+        self.flash(target)
+        if control == "imagen" and p.get("tinte"):
+            self.flash([self.tint_lbl.master, self.tint_scale], C["acc_dim"], 2)
+        for tok in capas[1:]:
+            if tok in self.rows:
+                self.flash([self.rows[tok]["frame"]], C["acc_dim"], 2)
+        if control in ("grad", "imagen", "tinte") and "text" in self.rows:
+            self.flash([self.rows["text"]["frame"]], C["acc_dim"], 2)
+        if p.get("rects"):
+            self.pv_edit.flash(p["rects"], C["acc"], C["acc_dim"], worst=p.get("peor"), label=p.get("etiqueta"),
+                               font=fnt(-1, True), ms=6000)
+        else:
+            self.pv_edit.flash(self.pv_edit.rects(p["marcas"]), C["acc"], font=fnt(-1, True))
+        self._scroll_to(self.leg_card, 150)        # el panel «Legibilidad» también queda a la vista
+        self.toast(p["frase"], "acc")
+        self._went = (p["nombre"], p["frase"])
+
+    @staticmethod
+    def _scrollable(w):
+        while w is not None and not isinstance(w, Scrollable):
+            w = w.master
+        return w
+
+    def _scroll_to(self, w, off=90):
+        """Baja (o sube) la columna desplazable donde está w hasta dejarlo a off píxeles de arriba."""
+        sc = self._scrollable(w)
+        if sc is None:
+            return
+        try:
+            sc.update_idletasks()
+            y, x = 0, w
+            while x is not sc.inner:
+                y += x.winfo_y()
+                x = x.master
+            total = max(sc.inner.winfo_height(), 1)
+            if total > sc.cv.winfo_height():
+                sc.cv.yview_moveto(max(0.0, (y - off) / total))
+        except tk.TclError:
+            pass
+
+    def flash(self, widgets, color=None, width=3, ms=2600, steps=13):
+        """Resalta uno o más controles (del mismo contenedor) con un borde de color que se desvanece solo.
+        El borde son cuatro marcos puestos encima (place): no toca la configuración de los controles, que
+        cada dibujo vuelve a poner (cfg)."""
+        color = color or C["acc"]
+        parent = widgets[0].master
+        try:
+            parent.update_idletasks()
+            x1 = min(w.winfo_x() for w in widgets) - width - 1
+            y1 = min(w.winfo_y() for w in widgets) - width - 1
+            x2 = max(w.winfo_x() + w.winfo_width() for w in widgets) + width + 1
+            y2 = max(w.winfo_y() + w.winfo_height() for w in widgets) + width + 1
+            bg = parent.cget("bg")
+        except tk.TclError:
+            return
+        x1, y1 = max(0, x1), max(0, y1)
+        x2, y2 = min(parent.winfo_width(), x2), min(parent.winfo_height(), y2)
+        sides = []
+        for x, y, w, h in ((x1, y1, x2 - x1, width), (x1, y2 - width, x2 - x1, width), (x1, y1, width, y2 - y1),
+                           (x2 - width, y1, width, y2 - y1)):
+            f = tk.Frame(parent, bg=color, bd=0, highlightthickness=0)
+            f.place(x=x, y=y, width=w, height=h)
+            sides.append(f)
+
+        def step(i):
+            try:
+                if i >= steps:
+                    for f in sides:
+                        f.destroy()
+                    return
+                for f in sides:
+                    f.configure(bg=L.mix(color, bg, i / steps))
+                parent.after(ms // 2 // steps, lambda: step(i + 1))
+            except tk.TclError:
+                pass
+        parent.after(ms // 2, lambda: step(1))
 
     def _paint_author(self):
         if self.mode == "creador":
@@ -2141,6 +2635,8 @@ class App:
                                    fg=C["warn_text"])
         else:
             cfg(self.sec_sum, text="Todas las secciones se leen bien.", fg=C["ok_text"])
+        # avisos con «Ir»: los de las secciones y los de una pareja de colores que también afecta a una sección
+        self._problem_cards(self.sec_cards, [p for p in self.problems() if p["secciones"]], 215)
 
     def _paint_mini(self):
         cv = self.exp_mini
@@ -2171,15 +2667,16 @@ class App:
                                     f"{'oscuro' if L.is_dark(self.colors) else 'claro'}")
         e = self.eff()
         self._paint_mini()
-        rows = self.legibility_rows()
+        rows = self.legibility_rows()             # exportar y enviar miden al día (_blocked_by_legibility)
         bad = sum(1 for r in rows if r[3] == "bad")
         warn = sum(1 for r in rows if r[3] == "warn")
         reserved = self.mode != "creador" and npt.is_reserved_name(self.author)
         n = len([s for s in self.images if s in L.SLOT_NAMES])
         anim = [s for s in self.images if self.is_animated(s)]
         checks = [("ok", "Los 22 colores están completos")]
-        checks.append(("bad", f"{bad} combinación ilegible: vuelve a «Editar tema»") if bad else
-                      ("warn", f"Legible, con {warn} combinación justa") if warn else
+        checks.append(("bad", f"{bad} {'cosa no se lee' if bad == 1 else 'cosas no se leen'}: vuelve a «Editar "
+                              "tema»") if bad else
+                      ("warn", f"Legible, con {warn} {'cosa justa' if warn == 1 else 'cosas justas'}") if warn else
                       ("ok", "Texto legible en todas las capas"))
         t = self.build_theme_meta()
         nl = sum(1 for v in self.alpha.values() if v < 100)
@@ -3004,7 +3501,31 @@ class App:
             row("✔", "Lista la revisión de la comunidad: todo bien", "ok_text")
         self._rev_status(len(errs) if self.screen == "exp" else 0)
 
+    def blocking_rows(self) -> list:
+        """Nombres de lo ilegible, con la medición sobre la imagen al día (medida ahí mismo si hace falta)."""
+        return [r[0] for r in self.legibility_rows(sync=True) if r[3] == "bad"]
+
+    def _blocked_by_legibility(self) -> bool:
+        """Antes de exportar o enviar: si algo es ilegible (con la medición sobre la imagen al día, aunque
+        el hilo no haya terminado), avisa y devuelve True."""
+        bad = self.blocking_rows()
+        if not bad:
+            return False
+        tabs = []
+        if any(not n.startswith("Sección ·") for n in bad):
+            tabs.append("«1 · Editar tema» (panel «Legibilidad»)")
+        if any(n.startswith("Sección ·") for n in bad):
+            tabs.append("«2 · Transparencia por sección»")
+        messagebox.showwarning(APP, "Todavía no se puede exportar ni enviar el tema: hay texto que no se lee.\n\n• "
+                               + "\n• ".join(bad) + f"\n\nEn {' y en '.join(tabs)}, «Ir» te lleva a cada ajuste.",
+                               parent=self.root)
+        if self.screen == "exp":
+            self._paint_export()
+        return True
+
     def export(self):
+        if self._blocked_by_legibility():
+            return
         made = self._make_npt()
         if made is None:
             return
@@ -3054,6 +3575,8 @@ class App:
         pre = L.problemas_previos(self.meta["nombre"], self.meta["version"], self.mode, self.author)
         if pre:
             messagebox.showwarning(APP, "Todavía no se puede enviar:\n\n• " + "\n• ".join(pre), parent=self.root)
+            return False
+        if self._blocked_by_legibility():
             return False
         made = self._make_npt()
         if made is None:
@@ -3412,7 +3935,11 @@ class App:
         sc.grid(row=0, column=0, sticky="nsew")
         box = sc.inner
         self.lbl(box, APP, 8, True).pack(anchor="w")
-        self.lbl(box, f"Versión {VERSION} · para Numpad Macros", 0, color="muted").pack(anchor="w", pady=(2, 14))
+        self.lbl(box, f"Versión {VERSION}{f'-{PRUEBA}' if PRUEBA else ''} · para Numpad Macros", 0,
+                 color="muted").pack(anchor="w", pady=(2, 14 if not PRUEBA else 8))
+        if PRUEBA:
+            self.beta_lbl = self.lbl(box, beta_note(), -1, color="warn_text", bg="warn_bg", wrap=520, padx=10, pady=6)
+            self.beta_lbl.pack(anchor="w", pady=(0, 14))
 
         self.caps(box, "Actualizaciones").pack(fill="x", pady=(0, 6))
         row = tk.Frame(box, bg=C["panel"])
@@ -3436,7 +3963,7 @@ class App:
         self.lbl(box, "Solo se consulta la lista pública de versiones de GitHub; no se envía ningún dato tuyo.",
                  -2, color="muted", wrap=460).pack(anchor="w", pady=(6, 0))
 
-        entry = U.changelog_for(U.read_changelog(self._changelog_path() or ""), VERSION)
+        entry = self._own_notes()
         self.caps(box, f"Novedades de esta versión ({entry['version']})" if entry else
                   "Novedades de esta versión").pack(fill="x", pady=(18, 6))
         if entry:
@@ -3445,6 +3972,18 @@ class App:
             self.lbl(box, "No encontré el historial de cambios en este equipo.", -1, color="muted").pack(anchor="w")
         self._paint_upd()
         return f
+
+    def _own_notes(self):
+        """Las novedades de esta versión. Antes de publicarla (una beta probada en local) todavía están
+        en «Sin publicar»: se muestran esas y no las de la versión anterior."""
+        entries = U.read_changelog(self._changelog_path() or "", unreleased=True)
+        released = [e for e in entries if not e.get("unreleased")]
+        if any(e["version"] == VERSION for e in released):
+            return U.changelog_for(released, VERSION)
+        pending = next((e for e in entries if e.get("unreleased") and e["groups"]), None)
+        if pending:
+            return dict(pending, version=VERSION + (f"-{PRUEBA}" if PRUEBA else "") + ", sin publicar")
+        return U.changelog_for(released, VERSION)
 
     def _changelog_path(self):
         for base in (getattr(sys, "_MEIPASS", ""), HERE):
@@ -3795,8 +4334,8 @@ def _make_root(cls):
     return tk.Tk(className=cls)
 
 
-def _callback_error(exc, val, tb):
-    """Un error dentro de la ventana: se anota y se avisa, pero el programa sigue abierto."""
+def _log_error(exc, val, tb):
+    """Anota un error en error.log (y en la consola), sin avisar con una ventana."""
     import traceback
     text = "".join(traceback.format_exception(exc, val, tb))
     try:
@@ -3806,6 +4345,11 @@ def _callback_error(exc, val, tb):
             f.write(text + "\n")
     except Exception:
         pass
+
+
+def _callback_error(exc, val, tb):
+    """Un error dentro de la ventana: se anota y se avisa, pero el programa sigue abierto."""
+    _log_error(exc, val, tb)
     if "--probar" in sys.argv:
         return
     try:
@@ -3820,7 +4364,7 @@ def main():
     cls = "EstudioTemasNumpadMacros"
     root = _make_root(cls)
     root.report_callback_exception = _callback_error
-    root.title(APP)
+    root.title(app_title())
     icon = _icon_path()
     try:
         if icon:
@@ -3846,11 +4390,31 @@ def main():
                     errors.append("el cambio de pantalla no quedó en la pantalla elegida")
                 if "about" not in app.views or not app.upd_btn.winfo_exists():
                     errors.append("falta la pestaña Acerca de")
+                # avisos con «Ir»: una tecla ilegible lleva a su color; la lista se abre y «Ir» la cierra
+                app.colors["key_set_text"] = app.colors["key_set"]
+                app.sections = {"tabs": {"fondo": 100, "contenido": 40, "realce": False}}
+                app._render_now()
+                ps = app.problems()
+                if [p["nombre"] for p in ps][:1] != ["Tecla con acción"] or not any(p["pestana"] == "sec" for p in ps):
+                    errors.append("los avisos de legibilidad no salen en orden: " + str([p["nombre"] for p in ps]))
+                app.open_problems()
+                root.update()
+                app.go(ps[0])
+                if app.screen != "edit" or app.sel != "key_set_text" or app._plist is not None:
+                    errors.append("«Ir» no llevó al color de la tecla")
+                app.go(next(p for p in ps if p["pestana"] == "sec"))
+                if app.screen != "sec" or app.sec_sel != "tabs":
+                    errors.append("«Ir» no llevó a la sección")
+                app.new_theme()
+                app._show_now("edit")
                 app.apply_palette()
                 app.apply_template("todo")          # 8 espacios, con GIF animados
                 app.bg_generate()                   # fondo de imagen de una pieza
                 app.onep_var.set(True)
                 app.on_one_piece()
+                res, fresh = app.image_check(sync=True)    # la medición por zona, sin esperar al hilo
+                if not fresh or res is None or not res["zonas"]:
+                    errors.append("la medición del texto sobre la imagen de fondo no dio resultado")
                 app._show_now("img")
                 root.update()
                 theme = app.build_theme_meta()

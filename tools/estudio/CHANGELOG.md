@@ -5,6 +5,16 @@ temas `.npt` que Numpad Macros importa. Formato: [Keep a Changelog](https://keep
 
 ## [Sin publicar]
 
+## [1.3.0] - 2026-11-06
+### Añadido
+- **«Ir» en cada aviso de legibilidad**: el aviso te lleva a la pestaña y al ajuste que lo arregla, lo resalta un momento y marca en la vista previa lo que no se lee. Cada aviso dice qué hacer, por ejemplo «Sube «Oscurecer la imagen» a 65 % o más».
+- **Lista de lo que conviene mejorar**: toca el resumen del panel «Legibilidad» y ves todos los avisos juntos, primero lo ilegible (✗) y luego lo justo (⚠), cada uno con su «Ir».
+- Los avisos de las secciones también salen en «2 · Transparencia por sección», con su «Ir».
+
+### Cambiado
+- **El texto sobre una imagen de fondo se revisa zona por zona**: cada texto se compara con la parte de la imagen que tiene debajo (ya oscurecida y, en los paneles de una pieza, teñida). Una luna en un rincón sin texto ya no bloquea la exportación, y un brillo chico justo bajo el título sí se detecta. El aviso dice qué texto no se lee y cuánto oscurecer la imagen (o teñir los paneles) para arreglarlo.
+- Si una sección falla solo porque sus colores no se leen (por ejemplo, «Teclas» con «Tecla con acción»), sale un solo aviso en vez de dos.
+
 ## [1.2.0] - 2026-11-02
 ### Añadido
 - **Revisión para la comunidad** en «4 · Exportar»: el Estudio hace la misma revisión que el bot Centinela antes de dejarte enviar el tema. Si algo falla sale en rojo, con lo que tienes que cambiar. «Exportar .npt» sigue funcionando.

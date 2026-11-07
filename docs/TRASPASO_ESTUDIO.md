@@ -1,7 +1,7 @@
 # Traspaso: Estudio de Temas (para seguir en local con Claude Code)
 
 Este documento junta todo lo del **Estudio de Temas**: qué es, cómo se trabaja, dónde está cada cosa,
-cómo se prueba y publica, y qué queda pendiente. Fecha: 2026-10-23. Versión del Estudio: **1.0.0**
+cómo se prueba y publica, y qué queda pendiente. Fecha: 2026-11-06. Versión del Estudio: **1.3.0**
 (lista para publicar).
 
 ## 1. Quién y cómo trabajamos
@@ -53,8 +53,8 @@ lea este documento.
 | Archivo | Qué hace |
 |---|---|
 | `tools/estudio/estudio.py` | La ventana (Tkinter): 6 pantallas, paneles laterales, exportar, claves. `VERSION` está arriba. |
-| `tools/estudio/vista.py` | Vista previa de la ventana de Numpad Macros, dibujada con Pillow (al doble y reducida), con transparencia real, degradado, imagen de fondo, «fondo de una pieza», secciones, 9 zonas y GIF. Escala 0,4×–2×. `export_size()` decide con qué forma se guarda cada imagen. |
-| `tools/estudio/logica.py` | Lógica sin ventana: colores, legibilidad, paleta desde imagen, imágenes y GIF (APNG), degradado, fondo de imagen, secciones, proyecto `.nptproj`. |
+| `tools/estudio/vista.py` | Vista previa de la ventana de Numpad Macros, dibujada con Pillow (al doble y reducida), con transparencia real, degradado, imagen de fondo, «fondo de una pieza», secciones, 9 zonas y GIF. Escala 0,4×–2×. `export_size()` decide con qué forma se guarda cada imagen. Los textos que van sobre el fondo tienen nombre (`text_zones`); `measure_image` arma lo que queda debajo (`text_backdrop`) y mide; `Preview.rects`/`flash` marcan lo que no se lee. |
+| `tools/estudio/logica.py` | Lógica sin ventana: colores, legibilidad, paleta desde imagen, imágenes y GIF (APNG), degradado, fondo de imagen, secciones, proyecto `.nptproj`. También los avisos con «Ir» (`problems`, `PAIR_MARKS`, frases, orden y repetidos) y la medición por zona del texto sobre la imagen de fondo (`image_check`, `image_advice`). |
 | `tools/estudio/respaldo.py` | Linux: pide al servidor X que guarde cada pestaña ya dibujada («backing store»), ver §8. |
 | `tools/estudio/anunciar_discord.py` | Anuncio de una versión nueva en Discord (lo usa «Publicar Estudio de Temas»). Ver §6. |
 | `tools/estudio/actualizar.py` | Actualizaciones (sin Tk): busca versiones nuevas en GitHub, descarga y verifica, instala. Ver §6. |
@@ -93,6 +93,14 @@ lea este documento.
 
 ## 6. Versiones y publicación
 - Número: `VERSION` en `tools/estudio/estudio.py`. Se sube a mano (1.0.1 arreglos, 1.1.0 novedades).
+  Siempre `X.Y.Z`, sin sufijo: es lo que entienden el Publicador y los avisos de versión.
+- **Versión de prueba (beta)**: `PRUEBA = "beta.N"` junto a `VERSION` (vacía, `""`, en una estable). Solo se
+  muestra: el título de la ventana dice «Estudio de Temas X.Y.Z (beta)» y «6 · Acerca de» lleva la nota
+  «Versión de prueba (X.Y.Z-beta.N): puede tener errores…». No cambia cómo se buscan las actualizaciones.
+  Con el Publicador, una carpeta con «-beta» en el nombre marca sola la casilla «Versión de prueba (beta)».
+  - **Ojo con la etiqueta**: publicar una beta (sin «Privado») crea la etiqueta `estudio-vX.Y.Z`, porque la
+    etiqueta sale solo de `VERSION`. Después ya no se puede publicar otra vez ese número: la estable (o una
+    segunda beta) tiene que **subir `VERSION`** (por ejemplo, X.Y.Z+1). El chequeo de la etiqueta no se cambia.
 - Novedades: en `tools/estudio/CHANGELOG.md`, bajo «## [Sin publicar]».
 - Publicar: Actions → **«Publicar Estudio de Temas»** → Run workflow.
   - **«Privado (borrador)»** (marcado por defecto): compila y deja una Release en borrador que solo ve
@@ -214,10 +222,37 @@ lea este documento.
 - Compilado: sin `PIL._tkinter_finder` el programa se cierra al abrir. numpy está excluido.
 - En macOS el workflow usa `perl -e 'alarm 90; exec @ARGV'` porque no existe `timeout`.
 
+- **Avisos con «Ir»** (1.3.0): el resaltado de un control son cuatro marcos puestos encima con `place`
+  (`App.flash`), no su `highlightbackground`: cada dibujo vuelve a configurar las filas con `cfg` y se lo
+  comería. El contorno de la vista previa (`Preview.flash`) se vuelve a poner en cada `_put`, porque la
+  vista previa se redibuja (y cambia de escala) mientras dura.
+- `Scrollable.all` es la lista de columnas vivas: la de la lista de avisos se crea y se destruye, y se saca
+  sola de la lista al destruirse. Si quedara, `--probar` fallaba al revisar las columnas y no se cerraba.
+- **Texto sobre la imagen de fondo** (1.3.0): ya no se usan los 5 colores de la imagen (`colors_check` queda
+  solo para el degradado). Cada texto con nombre (`vista.text_zones`) se mide contra el percentil 90 de lo
+  que tiene debajo (la imagen oscurecida y, en los paneles de una pieza, suavizada y teñida;
+  `vista.text_backdrop` repite lo que hace `Preview._build`): 4.5:1 el texto y 3:1 el secundario. Los paneles
+  opacos no cuentan (ahí manda la pareja de colores). Si no se lee, busca el oscurecido mínimo (de 5 en 5,
+  hasta 90) y, si la peor zona está en un panel de una pieza, el tinte mínimo.
+  - Corre en un hilo aparte (`App.image_check`): clave de lo que influye, espera de 120 ms tras el último
+    cambio, una medición a la vez y solo la última pedida. Mientras tanto se muestra la anterior o
+    «midiendo…». Es un hilo «daemon» para no demorar el cierre.
+  - Exportar y enviar **no dependen del hilo**: `_blocked_by_legibility` (con `blocking_rows`, que usa
+    `legibility_rows(sync=True)`) mide en el momento si no hay medición al día. Solo ahí se mide síncrono;
+    la pestaña Exportar muestra lo que haya.
+  - Las zonas (`text_zones`) y las planchas de las pestañas (`tab_boxes`) usan las letras (FreeType, con
+    cachés compartidas): se calculan en el hilo de Tk y se le pasan a `measure_image`; el hilo de medición
+    solo trabaja con la imagen.
+  - Si la medición falla, el error queda en `error.log` (sin ventana) y, para esa clave, se usa la revisión
+    de antes (los colores principales de la imagen: `colors_check`, y `one_piece_check` en los paneles de
+    una pieza). No se reintenta hasta que algo cambie y el panel lo dice, en vez de quedarse en «midiendo…».
+  - Un resultado que llega cuando ya cambió algo no se toma como vigente: solo como «la última» medición.
+
 ## 9. Probar la interfaz sin mirarla (útil para Claude Code)
 Con `xvfb-run` se abre el Estudio en una pantalla virtual y se sacan capturas con
 `PIL.ImageGrab.grab(xdisplay=...)`, por ejemplo para comprobar tamaños (2000 × 1100, 1420 × 900,
-1100 × 660) o paneles ocultos. La prueba `--probar` ya recorre todas las pantallas y exporta un tema.
+1100 × 660) o paneles ocultos. La prueba `--probar` ya recorre todas las pantallas, prueba «Ir» (a un
+color y a una sección) y la lista de avisos, mide el texto sobre la imagen de fondo y exporta un tema.
 
 ## 10. Pendiente / ideas ofrecidas
 - **Publicar la 1.0**: primero en privado (borrador), probar en los 3 sistemas, y luego público.

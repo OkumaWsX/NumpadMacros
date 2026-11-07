@@ -22,7 +22,12 @@ Tiene sus propias [Releases](https://github.com/OkumaWsX/NumpadMacros/releases?q
    generada con la paleta). Con **«Fondo de una pieza»** el fondo pasa también por detrás de los paneles,
    suavizado y teñido con el **«Tinte de los paneles»**. La vista previa es la ventana de Numpad
    Macros 3.4.1, sobre un fondo de escritorio de ejemplo: toca cualquier parte para editar su color. El panel
-   de legibilidad avisa si algún texto no se lee.
+   de **legibilidad** avisa si algún texto no se lee y te dice qué hacer (por ejemplo, «sube «Oscurecer la
+   imagen» a 65 % o más»). Con **«Ir ›»** te lleva al ajuste que lo arregla, lo resalta un momento y marca
+   en la vista previa lo que no se lee; tocando el resumen ves la lista de todo lo que conviene mejorar,
+   primero lo ilegible (✗) y luego lo justo (⚠). Con una imagen de fondo se revisa cada texto contra la
+   parte de la imagen que tiene debajo: una luna en un rincón sin texto no molesta, pero un brillo justo bajo
+   el título sí se nota.
 2. **Transparencia por sección**: el encabezado, el panel de teclas, las teclas, las pestañas, el panel de la
    pestaña y el pie tienen cada uno la transparencia de su fondo y de su contenido, y un borde de realce.
    «Destacar» deja una sección a todo color y atenúa las demás; también hay estilos rápidos.

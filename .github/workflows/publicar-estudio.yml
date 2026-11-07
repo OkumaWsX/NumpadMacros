@@ -57,6 +57,7 @@ jobs:
         shell: python
         env:
           PRIVADO: ${{ inputs.privado }}
+          BETA: ${{ inputs.beta }}
         run: |
           import datetime, os, re, subprocess, sys
           src = open("tools/estudio/estudio.py", encoding="utf-8").read()
@@ -77,6 +78,9 @@ jobs:
               print("::error::tools/estudio/CHANGELOG.md no tiene novedades para esta versión.")
               sys.exit(1)
           today = datetime.date.today().isoformat()
+          beta = os.environ["BETA"] == "true"
+          if beta:
+              today += " (beta)"       # en el historial se ve que fue una versión de prueba
           if body(r"\[Sin publicar\]"):
               # «Sin publicar» pasa a ser la versión (y se deja un «Sin publicar» vacío arriba)
               log = log.replace("## [Sin publicar]\n", f"## [Sin publicar]\n\n## [{ver}] - {today}\n", 1)
@@ -96,9 +100,11 @@ jobs:
               notes + "\n\n---\nPrograma aparte de Numpad Macros para crear temas `.npt`. "
               "[Historial completo](https://github.com/" + os.environ["GITHUB_REPOSITORY"]
               + "/blob/main/tools/estudio/CHANGELOG.md)\n", caps))
-          readme = open("README.md", encoding="utf-8").read()
-          readme = re.sub(r"releases/download/estudio-v[0-9.]+/", f"releases/download/estudio-v{ver}/", readme)
-          open("README.md", "w", encoding="utf-8").write(readme)
+          # los enlaces de descarga del README siguen en la última estable: una beta no los cambia
+          if not beta:
+              readme = open("README.md", encoding="utf-8").read()
+              readme = re.sub(r"releases/download/estudio-v[0-9.]+/", f"releases/download/estudio-v{ver}/", readme)
+              open("README.md", "w", encoding="utf-8").write(readme)
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
               f.write(f"version={ver}\n")
       - uses: actions/upload-artifact@v4

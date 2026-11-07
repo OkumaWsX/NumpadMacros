@@ -8,13 +8,16 @@ sección, las 9 zonas con imagen (también animadas) y la opacidad de la ventana
 un fondo de escritorio de ejemplo.
 
 Cada parte deja una zona «tocable»: «t:<capa>» (el color que la pinta), «z:<espacio>»
-(zona de imagen) y «s:<sección>».
+(zona de imagen) y «s:<sección>». Los textos que van sobre el fondo, además, llevan un nombre
+(text_zones): con ellos se mide la legibilidad sobre la imagen de fondo, zona por zona.
 """
 from __future__ import annotations
 
 import copy
+import hashlib
 import os
 import sys
+import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -260,6 +263,8 @@ class Preview:
     def __init__(self, cv):
         self.cv = cv
         self.hits: list = []
+        self.texts: list = []              # textos con nombre: (x1, y1, x2, y2, etiqueta, nombre), sin OX/OY
+        self._flash = None                 # contorno temporal de «Ir» (ver flash)
         self._photo = None
         self._item = None
         self._job = None
@@ -326,7 +331,7 @@ class Preview:
         except Exception:
             self._pending = None
             raise
-        for name in ("hits", "e", "_full", "_layers", "_anim", "_shown", "_cover_key", "_cover_img"):
+        for name in ("hits", "texts", "e", "_full", "_layers", "_anim", "_shown", "_cover_key", "_cover_img"):
             if hasattr(sh, name):
                 setattr(self, name, getattr(sh, name))
         if abs(sh.k - self.k) > 1e-9 and self._pending is None:
@@ -345,7 +350,7 @@ class Preview:
         slot_frames = slot_frames or (lambda *a: None)
         sections = sections or {}
         sec = {k: L.section(sections, k) for k in npt.SECTIONS}
-        self.hits = []
+        self.hits, self.texts = [], []
         window_bg = None
         if gradient:
             window_bg = L.gradient_image(gradient, (WW * S, WH * S))
@@ -454,8 +459,10 @@ class Preview:
         if self._anim and not self.quiet:
             self._job = self.cv.after(60, self._tick)
 
-    def _hit(self, x1, y1, x2, y2, tag):
+    def _hit(self, x1, y1, x2, y2, tag, name=None):
         self.hits.append((x1 + OX, y1 + OY, x2 + OX, y2 + OY, tag))
+        if name:
+            self.texts.append((x1, y1, x2, y2, tag, name))
 
     # ------------------------------------------------------------ composición
     @staticmethod
@@ -512,6 +519,8 @@ class Preview:
             self._item = self.cv.create_image(0, 0, anchor="nw", image=self._photo)
         else:
             self.cv.itemconfigure(self._item, image=self._photo)
+        if self._flash:                     # el contorno de «Ir» sigue encima (y a la escala nueva)
+            self._flash_draw()
 
     def _tick(self):
         self._job = None
@@ -599,12 +608,12 @@ class Preview:
     def _head(self, p, e, sec, logo=False, **_kw):
         x = 44 if logo else 12
         p.text(x, 21, "Numpad Macros", rgba(e["text"]), 18, True)
-        self._hit(x, 8, x + 150, 34, "t:text")
+        self._hit(x, 8, x + 150, 34, "t:text", "el título «Numpad Macros»")
         for i, (lab, parts) in enumerate((("Audífonos", ((.46, "ok"), (.10, "warn"))),
                                           ("Micrófono virtual", ((.56, "ok"), (.12, "warn"), (.07, "bad"))))):
             y = 14 + i * 14
             p.text(264, y, lab, rgba(e["muted"]), 8, anchor="rm")
-            self._hit(196, y - 6, 264, y + 6, "t:muted")
+            self._hit(196, y - 6, 264, y + 6, "t:muted", "las etiquetas de los medidores")
             p.rect(268, y - 3, 346, y + 3, fill=rgba(e["line"]))
             x0 = 268
             for frac, tok in parts:
@@ -618,7 +627,7 @@ class Preview:
             p.text(x1 + 15, 20, ch, rgba(e["text"]), 8, anchor="mm")
             self._hit(x1, 9, x1 + 30, 31, "t:panel2")
         p.text(519, 20, "1. Stream", rgba(e["text"]), 11, True, anchor="mm")
-        self._hit(484, 9, 554, 31, "t:text")
+        self._hit(484, 9, 554, 31, "t:text", "«1. Stream» del encabezado")
         p.rect(592, 9, 672, 31, fill=rgba(e["ok"]))
         p.text(632, 20, "● ACTIVO", rgba(e["on_ok"]), 10, True, anchor="mm")
         self._hit(592, 9, 672, 31, "t:ok")
@@ -639,7 +648,7 @@ class Preview:
         p.text(216, 83, "Teclas virtuales", rgba(e["text"]), 9, True, anchor="mm")
         self._hit(152, 72, 280, 96, "t:acc")
         p.text(18, 108, "Capa que estás editando", rgba(e["muted"]), 9)
-        self._hit(18, 102, 160, 114, "t:muted")
+        self._hit(18, 102, 160, 114, "t:muted", "«Capa que estás editando»")
         p.rect(18, 118, 170, 140, fill=rgba(e["panel2"]), outline=rgba(e["line"]))
         p.text(26, 129, "1. Stream", rgba(e["text"]), 9.5)
         p.text(162, 129, "▼", rgba(e["muted"]), 6, anchor="rm")
@@ -654,10 +663,10 @@ class Preview:
                 p.text(x1 + 16, 129, ch, rgba(e["text"]), 11, anchor="mm")
             self._hit(x1, 118, x1 + 32, 140, "t:panel2")
         p.text(18, 155, "Teclas virtuales · 30", rgba(e["text"]), 11, True)
-        self._hit(18, 148, 170, 162, "t:text")
+        self._hit(18, 148, 170, 162, "t:text", "«Teclas virtuales · 30»")
         p.text(280, 155, "5 × 6 · G = Global", rgba(e["muted"]), 8.5, anchor="rm")
         p.text(18, 456, "Solo se tocan en la app del celular.", rgba(e["muted"]), 8.5)
-        self._hit(18, 449, 280, 463, "t:muted")
+        self._hit(18, 449, 280, 463, "t:muted", "la nota al pie del panel de teclas")
 
     def _keys(self, p, e, sec, **_kw):
         fa = sec["keys"]["fondo"] / 100
@@ -706,6 +715,7 @@ class Preview:
             on = i == 0
             p.rect(x, 64 if on else 67, x + w, 87 if on else 86, outline=rgba(e["line"]))
             p.text(x + w / 2, 76 if on else 77, name, rgba(e["text"] if on else e["muted"]), 9, True, anchor="mm")
+            self.texts.append((x, 66, x + w, 86, "t:text" if on else "t:muted", "los nombres de las pestañas"))
             x += w - 1
         tw = text_w(TABS[0], 9, True) + 14
         p.rect(301, 85, 300 + tw - 1, 88, fill=rgba(e["panel"]))
@@ -715,14 +725,14 @@ class Preview:
         tw = text_w(TABS[0], 9, True) + 14
         p.line([(300 + tw - 1, 86), (672, 86), (672, 512), (300, 512), (300, 86)], rgba(e["line"]), 1)
         p.text(314, 102, "Virtual 7  ·  Stream", rgba(e["text"]), 14, True)
-        self._hit(314, 92, 520, 112, "t:text")
+        self._hit(314, 92, 520, 112, "t:text", "el título de la pestaña")
         p.text(314, 121, "Tecla virtual 7: no es una tecla física, solo se toca en la app del celular.",
                rgba(e["muted"]), 8.5, maxw=344)
-        self._hit(314, 114, 658, 128, "t:muted")
+        self._hit(314, 114, 658, 128, "t:muted", "la ayuda de la pestaña")
 
         def field(y, label, val, x1=376, x2=658, arrow=True):
             p.text(314, y + 10, label, rgba(e["muted"]), 9)
-            self._hit(314, y, 372, y + 20, "t:muted")
+            self._hit(314, y, 372, y + 20, "t:muted", "las etiquetas de los campos")
             p.rect(x1, y, x2, y + 20, fill=rgba(e["panel2"]), outline=rgba(e["line"]))
             p.text(x1 + 8, y + 10, val, rgba(e["text"]), 9, maxw=x2 - x1 - 24)
             if arrow:
@@ -731,7 +741,7 @@ class Preview:
 
         field(136, "Acción", "♪ Reproducir sonido")
         p.text(314, 172, "♪ Tambores", rgba(e["text"]), 11.5, True)
-        self._hit(314, 164, 450, 180, "t:text")
+        self._hit(314, 164, 450, 180, "t:text", "«Tambores»")
         field(186, "Buscar", "", x2=530, arrow=False)
         p.rect(536, 186, 658, 206, fill=rgba(e["panel2"]), outline=rgba(e["line"]))
         p.text(597, 196, "+ Agregar archivos…", rgba(e["text"]), 8.5, anchor="mm")
@@ -782,9 +792,10 @@ class Preview:
     # ------------------------------------------------------------ pie
     def _foot(self, p, e, sec, **_kw):
         p.text(16, 526.5, "Listo.", rgba(e["muted"]), 8.5)
-        self._hit(16, 520, 54, 533, "t:muted")
+        self._hit(16, 520, 54, 533, "t:muted", "«Listo.» del pie")
         p.rect(348, 519, 446, 534, outline=rgba(e["line"]))
         p.text(397, 526.5, "v3.4.1 · Novedades", rgba(e["muted"]), 8, anchor="mm")
+        self.texts.append((350, 520, 444, 533, "t:muted", "«Novedades» del pie"))
         self._hit(348, 519, 446, 534, "t:line")
         p.rect(452, 519, 606, 534, fill=rgba(e["panel2"]))
         p.text(529, 526.5, "Creado por OkumaWsX · Soporte", rgba(e["text"]), 8, anchor="mm")
@@ -844,3 +855,207 @@ class Preview:
             if tag.startswith(prefix) and x1 <= x < x2 and y1 <= y < y2:
                 return tag[len(prefix):]
         return None
+
+    # ------------------------------------------------------------ marcas de «Ir»
+    def rects(self, marks):
+        """Rectángulos (coordenadas de la ventana) de las marcas de un aviso: [(etiqueta, dónde)], con dónde =
+        None, «fondo» (fuera de los paneles) o «paneles» (dentro, sin las teclas). Ver logica.PAIR_MARKS."""
+        zones()
+        out = []
+        for tag, where in marks:
+            if tag == "ventana":
+                out.append((0, 0, WW, WH))
+                continue
+            for x1, y1, x2, y2, t in self.hits:
+                if t != tag:
+                    continue
+                r = (x1 - OX, y1 - OY, x2 - OX, y2 - OY)
+                if where and (_region(r) in ("left", "tabs", "body")) != (where == "paneles"):
+                    continue
+                if where == "paneles" and _inside(r, SECTION_BOXES["keys"]):
+                    continue
+                if r not in out:
+                    out.append(r)
+        return out
+
+    def flash(self, rects, color, dim=None, worst=None, label=None, font=None, ms=4000):
+        """Contorno temporal sobre la vista previa (rects en coordenadas de la ventana). Con ``worst``, ese
+        se marca más fuerte (y con ``label`` debajo) y los demás con trazos. Se borra solo a los ``ms``; si
+        mientras tanto se vuelve a dibujar la vista previa (o cambia su tamaño), se vuelve a poner encima."""
+        if self._flash and self._flash.get("job"):
+            self.cv.after_cancel(self._flash["job"])
+        self._flash = {"rects": list(rects), "color": color, "dim": dim or color, "worst": worst,
+                       "label": label, "font": font}
+        self._flash_draw()
+        self._flash["job"] = self.cv.after(ms, self.unflash)
+
+    def unflash(self):
+        if self._flash and self._flash.get("job"):
+            try:
+                self.cv.after_cancel(self._flash["job"])
+            except Exception:
+                pass
+        self._flash = None
+        self.cv.delete("flash")
+
+    def _flash_draw(self):
+        f, k, cv = self._flash, self.k, self.cv
+        cv.delete("flash")
+        for x1, y1, x2, y2 in f["rects"]:
+            strong = f["worst"] is None or tuple(f["worst"]) == (x1, y1, x2, y2)
+            pad = 3 if strong else 2
+            cv.create_rectangle((x1 + OX) * k - pad, (y1 + OY) * k - pad, (x2 + OX) * k + pad, (y2 + OY) * k + pad,
+                                outline=f["color"] if strong else f["dim"], width=3 if strong else 1,
+                                dash=() if strong else (3, 2), tags="flash")
+        if f["worst"] is not None and f["label"]:
+            x1, _y1, _x2, y2 = f["worst"]
+            t = cv.create_text((x1 + OX) * k + 4, (y2 + OY) * k + 9, anchor="nw", text=f["label"], tags="flash",
+                               fill="#1a1306", font=f["font"])
+            bb = cv.bbox(t)
+            if bb:
+                cv.create_rectangle(bb[0] - 4, bb[1] - 2, bb[2] + 4, bb[3] + 2, fill=f["color"], width=0, tags="flash")
+                cv.tag_raise(t)
+        cv.tag_raise("flash")
+
+
+def _inside(r, box) -> bool:
+    cx, cy = (r[0] + r[2]) / 2, (r[1] + r[3]) / 2
+    return box[0] <= cx <= box[2] and box[1] <= cy <= box[3]
+
+
+def _region(r) -> str:
+    """Sección de la ventana donde cae (el centro de) un rectángulo: head, left, tabs, body o foot."""
+    zones()
+    if _inside(r, SECTION_BOXES["tabs"]) and r[3] <= 86:
+        return "tabs"
+    for k in ("left", "body", "head", "foot"):
+        if _inside(r, SECTION_BOXES[k] if k != "body" else (300, 64, 672, 512)):
+            return k
+    return "head" if r[1] < 60 else "foot"
+
+
+# ---------------------------------------------------------------- texto sobre la imagen de fondo
+_TEXTS: dict = {}
+
+
+class _AnyColor(dict):
+    def __missing__(self, k):
+        return "#808080"
+
+
+class _NoPen:
+    """Lápiz que no dibuja: para recorrer el armado solo por sus zonas (sin tocar las cachés de letras, que
+    usa a la vez el hilo de la vista previa)."""
+
+    def __getattr__(self, name):
+        return lambda *a, **kw: None
+
+
+def text_zones(logo=False) -> list:
+    """Los textos de la ventana principal que pueden ir sobre el fondo (sin las teclas, que llevan su
+    plancha): [{rect, tag, nombre, seccion}], en coordenadas de la ventana. Se arman una vez (sin Tk)."""
+    if logo not in _TEXTS:
+        zones()
+        pv = Preview(None)
+        p = _NoPen()
+        sec = {k: L.section({}, k) for k in npt.SECTIONS}
+        e = _AnyColor()
+        for fn in (pv._head, pv._left, pv._tabs, pv._body, pv._foot):
+            fn(p, e, sec, logo=logo)
+        _TEXTS[logo] = [{"rect": (x1, y1, x2, y2), "tag": tag, "nombre": name, "seccion": _region((x1, y1, x2, y2))}
+                        for x1, y1, x2, y2, tag, name in pv.texts]
+    return [dict(z) for z in _TEXTS[logo]]
+
+
+def tab_boxes() -> list:
+    """Planchas de las pestañas [(x1, y1, x2, y2)], como en _plates. Usa las letras (anchos): llamar desde el
+    hilo de Tk y pasarlas a measure_image."""
+    out, x = [], 300
+    for i, name in enumerate(TABS):
+        w = text_w(name, 9, True) + 14
+        out.append((round(x), 64 if i == 0 else 67, round(x + w), 87 if i == 0 else 86))
+        x += w - 1
+    return out
+
+
+def text_backdrop(cov, e, under, one_piece, tint, sections, tabs=None):
+    """Lo que queda debajo del texto con imagen de fondo, a escala 1 (WW × WH, RGB): ``cov`` es la imagen ya
+    oscurecida cubriendo la ventana; encima, el «fondo de una pieza» (suavizado y teñido) y las planchas de
+    las secciones, igual que en Preview._build. ``tabs``: tab_boxes() (si falta, se calcula aquí)."""
+    from PIL import Image as _I
+    sec = {k: L.section(sections or {}, k) for k in npt.SECTIONS}
+    im = cov.convert("RGB")
+    panel = L.tint_panel(e, under, tint) if one_piece else e["panel"]
+    prgb = L.hex2rgb(panel)
+
+    def veil(box, a):
+        if a <= 0:
+            return
+        reg = im.crop(box)
+        im.paste(_I.blend(reg, _I.new("RGB", reg.size, prgb), min(1.0, a)), box[:2])
+    if one_piece:
+        radius = max(12, min(WW, WH) // 25)
+        soft = im.reduce(2).filter(ImageFilter.GaussianBlur(radius / 2)).resize(im.size, _I.BILINEAR)
+        for box in Preview.ONE_PIECE:
+            im.paste(soft.crop(box), box[:2])
+            veil(box, tint / 100)
+    for k, box in (("left", (8, 64, 290, 512)), ("body", (300, 86, 672, 512)), ("foot", (8, 516, 672, 537))):
+        veil(box, 0 if one_piece and k in ("left", "body") else sec[k]["fondo"] / 100)
+    if sec["tabs"]["fondo"] > 0:                               # las pestañas (como en _plates)
+        layer = _I.new("RGBA", im.size, (0, 0, 0, 0))
+        from PIL import ImageDraw as _D
+        d = _D.Draw(layer)
+        for i, box in enumerate(tabs or tab_boxes()):
+            col = panel if i == 0 else L.mix(under, panel, .5)
+            d.rectangle(list(box), fill=L.hex2rgb(col) + (round(255 * sec["tabs"]["fondo"] / 100),))
+        im = _I.alpha_composite(im.convert("RGBA"), layer).convert("RGB")
+    veil((0, 0, WW, 60), sec["head"]["fondo"] / 100)          # el tinte del encabezado (va con el contenido)
+    return im
+
+
+_SRC: dict = {}
+_SRC_LOCK = threading.Lock()
+
+
+def _source(src: bytes):
+    """La imagen de fondo sin oscurecer cubriendo la ventana (WW × WH) y su color promedio. Se guarda la
+    última: los dos hilos (la medición y la exportación) la pueden pedir."""
+    key = hashlib.md5(src).digest()
+    with _SRC_LOCK:
+        if _SRC.get("key") == key:
+            return _SRC["val"]
+    im = L.load_frames(src, max_side=1920)[0][0].convert("RGB")
+    val = (L.cover(im, WW, WH).convert("RGB"), L.image_avg(im))
+    with _SRC_LOCK:
+        _SRC.update(key=key, val=val)
+    return val
+
+
+def on_image(z, one_piece, sections) -> bool:
+    """¿Se ve la imagen debajo de este texto? En los paneles sin «fondo de una pieza» y en las secciones
+    con plancha opaca, no: ahí el texto va sobre su color (eso lo revisan las parejas de colores)."""
+    k = z["seccion"]
+    if one_piece and k in ("left", "body"):
+        return True
+    return L.section(sections or {}, k)["fondo"] < 100
+
+
+def measure_image(src: bytes, bg: str, e: dict, dark: int, tint: int, one_piece: bool, sections: dict,
+                  logo=False, zones=None, tabs=None):
+    """Legibilidad del texto sobre la imagen de fondo, zona por zona (logica.image_check), o None si ningún
+    texto queda sobre la imagen. Desde otro hilo, pasar ``zones`` (text_zones) y ``tabs`` (tab_boxes) ya
+    calculados en el hilo de Tk: así este solo trabaja con la imagen y no toca las letras (FreeType)."""
+    from PIL import Image as _I
+    cov0, avg0 = _source(src)
+    bgc = L.hex2rgb(bg)
+    zs = []
+    for z in (dict(z) for z in zones) if zones is not None else text_zones(logo):
+        if on_image(z, one_piece, sections):
+            z["panel"] = one_piece and z["seccion"] in ("left", "tabs", "body")
+            z["contenido"] = L.section(sections or {}, z["seccion"])["contenido"]   # se mezcla con lo de abajo
+            zs.append(z)
+
+    def backdrop(d, t):
+        img = _I.blend(cov0, _I.new("RGB", cov0.size, bgc), d / 100) if d else cov0
+        return text_backdrop(img, e, L.mix(avg0, bg, d / 100), one_piece, t, sections, tabs)
+    return L.image_check(backdrop, zs, e, dark, tint, one_piece)

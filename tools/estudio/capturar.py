@@ -43,6 +43,7 @@ CAPTURAS = [  # (pantalla, archivo, descripción para la Release)
     ("exp", "exportar.png", "Exportar: la revisión «comunidad» (la misma que usa el bot) antes de enviar tu tema a Discord"),
     ("key", "firma.png", "Mi firma de autor: así apareces en Numpad Macros como «Comunidad · tu nombre»"),
     ("about", "acerca.png", "Acerca de: avisos de versión nueva y novedades de la versión instalada"),
+    ("avisos", "avisos.png", "Avisos de legibilidad: cada uno dice qué hacer y «Ir» te lleva al ajuste que lo arregla"),
 ]
 
 
@@ -78,9 +79,26 @@ def main():
         img.save(os.path.join(salida, nombre), optimize=True)
         print("✓", nombre)
 
+    def avisos():
+        """Un tema a medio hacer (una tecla que no se lee y las pestañas atenuadas): «Ir» al primer aviso y
+        la lista de lo que conviene mejorar."""
+        app.colors["key_set_text"] = app.colors["key_set"]
+        app.sections = {**app.sections, "tabs": {"fondo": 100, "contenido": 40, "realce": False}}
+        app.mark()
+        app._show_now("edit")
+        app._render_now()
+        app.go(app.problems()[0])
+        root.update()
+        app.open_problems()
+
     pasos = [(lambda: (app.apply_palette(), app.apply_template("todo"), app.bg_generate(),
-                       app.onep_var.set(True), app.on_one_piece()), 600)]
+                       app.onep_var.set(True), app.on_one_piece()), 600),
+             (lambda: (app.image_check(sync=True), app._render_now()), 300)]     # sin «midiendo…»
     for sid, nombre, _t in CAPTURAS:
+        if sid == "avisos":
+            pasos.append((avisos, 900))
+            pasos.append((lambda nombre=nombre: grab(nombre), 300))
+            continue
         if sid == "exp":              # la revisión «comunidad» corre en otro hilo: se espera a que termine
             pasos.append((lambda: app._show_now("exp"), 600))
             pasos.append((lambda: [root.update() or time.sleep(0.05) for _ in range(600)
