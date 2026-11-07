@@ -83,7 +83,9 @@ try:
 except Exception:          # sin la librería se elige la imagen con un botón
     TkinterDnD = None
 
-VERSION = "1.3.0"                    # siempre X.Y.Z: es lo que entienden el Publicador y los avisos de versión
+# Siempre X.Y.Z, solo y sin comentario en su línea: lo leen el Publicador, los avisos de versión, los
+# workflows (estudio.yml, publicar-estudio.yml, compilar.yml), crear_instalador.bat e instalar_linux.sh.
+VERSION = "1.3.0"
 # Versión de prueba: «beta.1», «beta.2»… (vacía en una versión estable). Solo se muestra (título y «Acerca de»).
 PRUEBA = ""
 # Foro de Discord (canal de tipo foro) donde la comunidad manda sus temas. Vacío = aún sin configurar.

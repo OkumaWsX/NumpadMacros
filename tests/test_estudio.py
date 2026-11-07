@@ -603,6 +603,23 @@ class NotaBetaTest(unittest.TestCase):
             E.PRUEBA = old
         self.assertTrue(re.match(r"^\d+\.\d+\.\d+$", E.VERSION))
 
+    def test_linea_version_legible_para_todos(self):
+        """La línea VERSION la leen con patrones simples los workflows y los scripts: nada más en esa línea
+        (un comentario ahí rompió el instalador de Windows en la CI de la 1.3.0)."""
+        import re
+        with open(os.path.join(EST, "estudio.py"), encoding="utf-8") as f:
+            text = f.read()
+        lines = [ln for ln in text.splitlines() if ln.startswith("VERSION = ")]
+        self.assertEqual(len(lines), 1)
+        line = lines[0]
+        ver = re.fullmatch(r'VERSION = "(\d+\.\d+\.\d+)"', line)
+        self.assertIsNotNone(ver, f"la línea debe ser solo VERSION = \"X.Y.Z\": {line!r}")
+        ver = ver.group(1)
+        self.assertEqual(re.search('^VERSION = .(.+?).$', text, re.M).group(1), ver)       # estudio.yml
+        self.assertEqual(re.search(r'^VERSION = "([^"]+)"', text, re.M).group(1), ver)    # publicar-estudio.yml
+        self.assertEqual(re.fullmatch(r'VERSION = "(.*)"', line).group(1), ver)            # instalar_linux.sh
+        self.assertEqual(line.split()[2].strip('"'), ver)                                  # crear_instalador.bat
+
 
 @unittest.skipIf(L is None, "Pillow no está instalado")
 class KeysTest(unittest.TestCase):
